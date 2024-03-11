@@ -41,12 +41,8 @@ const defaultX264LiveOptionsBuilder: EncoderOptionsBuilder = (options: EncoderOp
   }
 }
 
-const defaultAACOptionsBuilder: EncoderOptionsBuilder = async ({ input, streamNum, canCopyAudio }) => {
+const defaultAACOptionsBuilder: EncoderOptionsBuilder = async ({ input, streamNum }) => {
   const probe = await ffprobePromise(input)
-
-  if (canCopyAudio && await canDoQuickAudioTranscode(input, probe)) {
-    return { copy: true, outputOptions: [ ] }
-  }
 
   const parsedAudio = await getAudioStream(input, probe)
 
