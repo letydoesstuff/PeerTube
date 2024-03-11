@@ -603,6 +603,7 @@ export class ActorModel extends Model<Partial<AttributesOnly<ActorModel>>> {
         publicKeyPem: this.publicKey
       },
       published: this.getCreatedAt().toISOString(),
+      indexable: /\/(?:peertube|root(?:_channel)?)$/.test(this.url) ? false : true,
 
       icon,
 
