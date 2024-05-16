@@ -1,8 +1,3 @@
-import { generateMagnetUri } from '@server/helpers/webtorrent.js'
-import { tracer } from '@server/lib/opentelemetry/tracing.js'
-import { getLocalVideoFileMetadataUrl } from '@server/lib/video-urls.js'
-import { VideoViewsManager } from '@server/lib/views/video-views-manager.js'
-import { uuidToShort } from '@peertube/peertube-node-utils'
 import {
   Video,
   VideoAdditionalAttributes,
@@ -12,6 +7,11 @@ import {
   VideosCommonQueryAfterSanitize,
   VideoStreamingPlaylist
 } from '@peertube/peertube-models'
+import { uuidToShort } from '@peertube/peertube-node-utils'
+import { generateMagnetUri } from '@server/helpers/webtorrent.js'
+import { tracer } from '@server/lib/opentelemetry/tracing.js'
+import { getLocalVideoFileMetadataUrl } from '@server/lib/video-urls.js'
+import { VideoViewsManager } from '@server/lib/views/video-views-manager.js'
 import { isArray } from '../../../helpers/custom-validators/misc.js'
 import { VIDEO_CATEGORIES, VIDEO_LANGUAGES, VIDEO_LICENCES, VIDEO_PRIVACIES, VIDEO_STATES } from '../../../initializers/constants.js'
 import { MServer, MStreamingPlaylistRedundanciesOpt, MVideoFormattable, MVideoFormattableDetails } from '../../../types/models/index.js'
@@ -27,6 +27,7 @@ export type VideoFormattingJSONOptions = {
     scheduledUpdate?: boolean
     blacklistInfo?: boolean
     files?: boolean
+    source?: boolean
     blockedOwner?: boolean
   }
 }
@@ -41,6 +42,7 @@ export function guessAdditionalAttributesFromQuery (query: VideosCommonQueryAfte
       scheduledUpdate: !!(query.include & VideoInclude.NOT_PUBLISHED_STATE),
       blacklistInfo: !!(query.include & VideoInclude.BLACKLISTED),
       files: !!(query.include & VideoInclude.FILES),
+      source: !!(query.include & VideoInclude.SOURCE),
       blockedOwner: !!(query.include & VideoInclude.BLOCKED_OWNER)
     }
   }
@@ -89,8 +91,10 @@ export function videoModelToFormattedJSON (video: MVideoFormattable, options: Vi
     isLocal: video.isOwned(),
     duration: video.duration,
 
+    aspectRatio: video.aspectRatio,
+
     views: video.views,
-    viewers: VideoViewsManager.Instance.getViewers(video),
+    viewers: VideoViewsManager.Instance.getTotalViewersOf(video),
 
     likes: video.likes,
     dislikes: video.dislikes,
@@ -209,10 +213,11 @@ export function videoFilesModelToFormattedJSON (
 
         resolution: {
           id: videoFile.resolution,
-          label: videoFile.resolution === 0
-            ? 'Audio'
-            : `${videoFile.resolution}p`
+          label: getResolutionLabel(videoFile.resolution)
         },
+
+        width: videoFile.width,
+        height: videoFile.height,
 
         magnetUri: includeMagnet && videoFile.hasTorrent()
           ? generateMagnetUri(video, videoFile, trackerUrls)
@@ -252,6 +257,12 @@ export function getPrivacyLabel (id: number) {
 
 export function getStateLabel (id: number) {
   return VIDEO_STATES[id] || 'Unknown'
+}
+
+export function getResolutionLabel (resolution: number) {
+  if (resolution === 0) return 'Audio'
+
+  return `${resolution}p`
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +310,10 @@ function buildAdditionalAttributes (video: MVideoFormattable, options: VideoForm
   if (add?.files === true) {
     result.streamingPlaylists = streamingPlaylistsModelToFormattedJSON(video, video.VideoStreamingPlaylists)
     result.files = videoFilesModelToFormattedJSON(video, video.VideoFiles)
+  }
+
+  if (add?.source === true) {
+    result.videoSource = video.VideoSource?.toFormattedJSON() || null
   }
 
   return result

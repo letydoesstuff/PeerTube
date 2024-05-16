@@ -88,6 +88,8 @@ export class VideoTableAttributes {
       'metadataUrl',
       'videoStreamingPlaylistId',
       'videoId',
+      'width',
+      'height',
       'storage'
     ]
   }
@@ -163,6 +165,21 @@ export class VideoTableAttributes {
       'replaySettingId',
       'createdAt',
       'updatedAt'
+    ]
+  }
+
+  getVideoSourceAttributes () {
+    return [
+      'id',
+      'inputFilename',
+      'keptOriginalFilename',
+      'resolution',
+      'size',
+      'width',
+      'height',
+      'fps',
+      'metadata',
+      'createdAt'
     ]
   }
 
@@ -255,6 +272,7 @@ export class VideoTableAttributes {
       'dislikes',
       'remote',
       'isLive',
+      'aspectRatio',
       'url',
       'commentsEnabled',
       'downloadEnabled',

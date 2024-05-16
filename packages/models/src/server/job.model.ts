@@ -31,6 +31,8 @@ export type JobType =
   | 'video-transcoding'
   | 'videos-views-stats'
   | 'generate-video-storyboard'
+  | 'create-user-export'
+  | 'import-user-archive'
 
 export interface Job {
   id: number | string
@@ -58,7 +60,7 @@ export type ActivitypubHttpBroadcastPayload = {
 
 export type ActivitypubFollowPayload = {
   followerActorId: number
-  name: string
+  name?: string
   host: string
   isAutoFollow?: boolean
   assertIsChannel?: boolean
@@ -301,4 +303,16 @@ export interface TranscodingJobBuilderPayload {
 export interface GenerateStoryboardPayload {
   videoUUID: string
   federate: boolean
+}
+
+// ---------------------------------------------------------------------------
+
+export interface CreateUserExportPayload {
+  userExportId: number
+}
+
+// ---------------------------------------------------------------------------
+
+export interface ImportUserArchivePayload {
+  userImportId: number
 }

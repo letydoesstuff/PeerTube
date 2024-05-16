@@ -1,7 +1,9 @@
 import { ContextType } from '@peertube/peertube-models'
-import { ACTIVITY_PUB } from '@server/initializers/constants.js'
+import { ACTIVITY_PUB, REMOTE_SCHEME } from '@server/initializers/constants.js'
+import { isArray } from './custom-validators/misc.js'
 import { buildDigest } from './peertube-crypto.js'
 import type { signJsonLDObject } from './peertube-jsonld.js'
+import { doJSONRequest } from './requests.js'
 
 export type ContextFilter = <T> (arg: T) => Promise<T>
 
@@ -36,6 +38,29 @@ export async function signAndContextify <T> (options: {
   return signerFunction({ byActor, data: activity })
 }
 
+export async function getApplicationActorOfHost (host: string) {
+  const url = REMOTE_SCHEME.HTTP + '://' + host + '/.well-known/nodeinfo'
+  const { body } = await doJSONRequest<{ links: { rel: string, href: string }[] }>(url)
+
+  if (!isArray(body.links)) return undefined
+
+  const found = body.links.find(l => l.rel === 'https://www.w3.org/ns/activitystreams#Application')
+
+  return found?.href || undefined
+}
+
+export function getAPPublicValue () {
+  return 'https://www.w3.org/ns/activitystreams#Public'
+}
+
+export function hasAPPublic (toOrCC: string[]) {
+  if (!isArray(toOrCC)) return false
+
+  const publicValue = getAPPublicValue()
+
+  return toOrCC.some(f => f === 'as:Public' || publicValue)
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -45,7 +70,6 @@ type ContextValue = { [ id: string ]: (string | { '@type': string, '@id': string
 const contextStore: { [ id in ContextType ]: (string | { [ id: string ]: string })[] } = {
   Video: buildContext({
     Hashtag: 'as:Hashtag',
-    uuid: 'sc:identifier',
     category: 'sc:category',
     licence: 'sc:license',
     subtitleLanguage: 'sc:subtitleLanguage',
@@ -80,6 +104,15 @@ const contextStore: { [ id in ContextType ]: (string | { [ id: string ]: string 
     tileDuration: {
       '@type': 'sc:Number',
       '@id': 'pt:tileDuration'
+    },
+    aspectRatio: {
+      '@type': 'sc:Float',
+      '@id': 'pt:aspectRatio'
+    },
+
+    uuid: {
+      '@type': 'sc:identifier',
+      '@id': 'pt:uuid'
     },
 
     originallyPublishedAt: 'sc:datePublished',
@@ -153,12 +186,23 @@ const contextStore: { [ id in ContextType ]: (string | { [ id: string ]: string 
       '@type': 'sc:Number',
       '@id': 'pt:stopTimestamp'
     },
-    uuid: 'sc:identifier'
+    uuid: {
+      '@type': 'sc:identifier',
+      '@id': 'pt:uuid'
+    }
   }),
 
   CacheFile: buildContext({
     expires: 'sc:expires',
-    CacheFile: 'pt:CacheFile'
+    CacheFile: 'pt:CacheFile',
+    size: {
+      '@type': 'sc:Number',
+      '@id': 'pt:size'
+    },
+    fps: {
+      '@type': 'sc:Number',
+      '@id': 'pt:fps'
+    }
   }),
 
   Flag: buildContext({
@@ -179,6 +223,9 @@ const contextStore: { [ id in ContextType ]: (string | { [ id: string ]: string 
       '@type': 'sc:Boolean'
     },
 
+    lemmy: 'https://join-lemmy.org/ns#',
+    postingRestrictedToMods: 'lemmy:postingRestrictedToMods',
+
     // TODO: remove in a few versions, introduced in 4.2
     icons: 'as:icon'
   }),
@@ -189,33 +236,78 @@ const contextStore: { [ id in ContextType ]: (string | { [ id: string ]: string 
       '@type': 'sc:Number',
       '@id': 'pt:startTimestamp'
     },
-    stopTimestamp: {
+    endTimestamp: {
       '@type': 'sc:Number',
-      '@id': 'pt:stopTimestamp'
+      '@id': 'pt:endTimestamp'
     },
-    watchSection: {
-      '@type': 'sc:Number',
-      '@id': 'pt:stopTimestamp'
+    uuid: {
+      '@type': 'sc:identifier',
+      '@id': 'pt:uuid'
     },
-    uuid: 'sc:identifier'
+    actionStatus: 'sc:actionStatus',
+    watchSections: {
+      '@type': '@id',
+      '@id': 'pt:watchSections'
+    },
+    addressRegion: 'sc:addressRegion',
+    addressCountry: 'sc:addressCountry'
+  }),
+
+  View: buildContext({
+    WatchAction: 'sc:WatchAction',
+    InteractionCounter: 'sc:InteractionCounter',
+    interactionType: 'sc:interactionType',
+    userInteractionCount: 'sc:userInteractionCount'
   }),
 
   Collection: buildContext(),
   Follow: buildContext(),
   Reject: buildContext(),
   Accept: buildContext(),
-  View: buildContext(),
   Announce: buildContext(),
   Comment: buildContext(),
   Delete: buildContext(),
   Rate: buildContext(),
 
   Chapters: buildContext({
-    name: 'sc:name',
     hasPart: 'sc:hasPart',
     endOffset: 'sc:endOffset',
     startOffset: 'sc:startOffset'
   })
+}
+
+let allContext: (string | ContextValue)[]
+export function getAllContext () {
+  if (allContext) return allContext
+
+  const processed = new Set<string>()
+  allContext = []
+
+  let staticContext: ContextValue = {}
+
+  for (const v of Object.values(contextStore)) {
+    for (const item of v) {
+      if (typeof item === 'string') {
+        if (!processed.has(item)) {
+          allContext.push(item)
+        }
+
+        processed.add(item)
+      } else {
+        for (const subKey of Object.keys(item)) {
+          if (!processed.has(subKey)) {
+            staticContext = { ...staticContext, [subKey]: item[subKey] }
+          }
+
+          processed.add(subKey)
+        }
+      }
+    }
+  }
+
+  allContext = [ ...allContext, staticContext ]
+
+  return allContext
 }
 
 async function getContextData (type: ContextType, contextFilter: ContextFilter) {

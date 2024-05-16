@@ -5,8 +5,6 @@ import { SelectOptionsItem } from 'src/types'
 import { Component, Inject, LOCALE_ID, OnInit } from '@angular/core'
 import { ActivatedRoute } from '@angular/router'
 import { Notifier, PeerTubeRouterService } from '@app/core'
-import { NumberFormatterPipe, VideoDetails } from '@app/shared/shared-main'
-import { LiveVideoService } from '@app/shared/shared-video-live'
 import { secondsToTime } from '@peertube/peertube-core-utils'
 import {
   HttpStatusCode,
@@ -17,12 +15,24 @@ import {
   VideoStatsTimeserieMetric
 } from '@peertube/peertube-models'
 import { VideoStatsService } from './video-stats.service'
+import { ButtonComponent } from '../../shared/shared-main/buttons/button.component'
+import { ChartModule } from 'primeng/chart'
+import { NgbNav, NgbNavItem, NgbNavLink, NgbNavLinkBase, NgbNavContent, NgbNavOutlet } from '@ng-bootstrap/ng-bootstrap'
+import { FormsModule } from '@angular/forms'
+import { SelectOptionsComponent } from '../../shared/shared-forms/select/select-options.component'
+import { EmbedComponent } from '../../shared/shared-main/video/embed.component'
+import { PeerTubeTemplateDirective } from '../../shared/shared-main/angular/peertube-template.directive'
+import { HelpComponent } from '../../shared/shared-main/misc/help.component'
+import { NgFor, NgIf } from '@angular/common'
+import { NumberFormatterPipe } from '@app/shared/shared-main/angular/number-formatter.pipe'
+import { VideoDetails } from '@app/shared/shared-main/video/video-details.model'
+import { LiveVideoService } from '@app/shared/shared-video-live/live-video.service'
 
-type ActiveGraphId = VideoStatsTimeserieMetric | 'retention' | 'countries'
+type ActiveGraphId = VideoStatsTimeserieMetric | 'retention' | 'countries' | 'regions'
 
-type CountryData = { name: string, viewers: number }[]
+type GeoData = { name: string, viewers: number }[]
 
-type ChartIngestData = VideoStatsTimeserie | VideoStatsRetention | CountryData
+type ChartIngestData = VideoStatsTimeserie | VideoStatsRetention | GeoData
 type ChartBuilderResult = {
   type: 'line' | 'bar'
 
@@ -42,7 +52,25 @@ ChartJSDefaults.color = getComputedStyle(document.body).getPropertyValue('--main
 @Component({
   templateUrl: './video-stats.component.html',
   styleUrls: [ './video-stats.component.scss' ],
-  providers: [ NumberFormatterPipe ]
+  providers: [ NumberFormatterPipe ],
+  standalone: true,
+  imports: [
+    NgFor,
+    NgIf,
+    HelpComponent,
+    PeerTubeTemplateDirective,
+    EmbedComponent,
+    SelectOptionsComponent,
+    FormsModule,
+    NgbNav,
+    NgbNavItem,
+    NgbNavLink,
+    NgbNavLinkBase,
+    NgbNavContent,
+    ChartModule,
+    ButtonComponent,
+    NgbNavOutlet
+  ]
 })
 export class VideoStatsComponent implements OnInit {
   // Cannot handle date filters
@@ -59,7 +87,8 @@ export class VideoStatsComponent implements OnInit {
 
   video: VideoDetails
 
-  countries: CountryData = []
+  countries: GeoData = []
+  regions: GeoData = []
 
   chartPlugins = [ zoomPlugin ]
 
@@ -104,6 +133,11 @@ export class VideoStatsComponent implements OnInit {
         id: 'countries',
         label: $localize`Countries`,
         zoomEnabled: false
+      },
+      {
+        id: 'regions',
+        label: $localize`Regions`,
+        zoomEnabled: false
       }
     ]
 
@@ -140,11 +174,17 @@ export class VideoStatsComponent implements OnInit {
     return this.countries.length !== 0
   }
 
+  hasRegions () {
+    return this.regions.length !== 0
+  }
+
   onChartChange (newActive: ActiveGraphId) {
     this.activeGraphId = newActive
 
     if (newActive === 'countries') {
       this.chartHeight = `${Math.max(this.countries.length * 20, 300)}px`
+    } else if (newActive === 'regions') {
+      this.chartHeight = `${Math.max(this.regions.length * 20, 300)}px`
     } else {
       this.chartHeight = '300px'
     }
@@ -192,6 +232,8 @@ export class VideoStatsComponent implements OnInit {
             name: this.countryCodeToName(c.isoCode),
             viewers: c.viewers
           }))
+
+          this.regions = res.subdivisions
 
           this.buildOverallStatCard(res)
         },
@@ -267,7 +309,7 @@ export class VideoStatsComponent implements OnInit {
       {
         label: $localize`Views`,
         value: this.numberFormatter.transform(this.video.views),
-        help: $localize`A view means that someone watched the video for at least 30 seconds`
+        help: $localize`A view means that someone watched the video for several seconds (10 seconds by default)`
       },
       {
         label: $localize`Likes`,
@@ -278,11 +320,11 @@ export class VideoStatsComponent implements OnInit {
     this.overallStatCards = [
       {
         label: $localize`Average watch time`,
-        value: secondsToTime(overallStats.averageWatchTime)
+        value: secondsToTime({ seconds: overallStats.averageWatchTime, format: 'locale-string' })
       },
       {
         label: $localize`Total watch time`,
-        value: secondsToTime(overallStats.totalWatchTime)
+        value: secondsToTime({ seconds: overallStats.totalWatchTime, format: 'locale-string' })
       },
       {
         label: $localize`Peak viewers`,
@@ -301,6 +343,13 @@ export class VideoStatsComponent implements OnInit {
       this.overallStatCards.push({
         label: $localize`Countries`,
         value: this.numberFormatter.transform(overallStats.countries.length)
+      })
+    }
+
+    if (overallStats.subdivisions.length !== 0) {
+      this.overallStatCards.push({
+        label: $localize`Regions`,
+        value: this.numberFormatter.transform(overallStats.subdivisions.length)
       })
     }
   }
@@ -322,7 +371,9 @@ export class VideoStatsComponent implements OnInit {
         metric: 'viewers'
       }),
 
-      countries: of(this.countries)
+      countries: of(this.countries),
+
+      regions: of(this.regions)
     }
 
     obsBuilders[this.activeGraphId].subscribe({
@@ -343,7 +394,8 @@ export class VideoStatsComponent implements OnInit {
       retention: (rawData: VideoStatsRetention) => this.buildRetentionChartOptions(rawData),
       aggregateWatchTime: (rawData: VideoStatsTimeserie) => this.buildTimeserieChartOptions(rawData),
       viewers: (rawData: VideoStatsTimeserie) => this.buildTimeserieChartOptions(rawData),
-      countries: (rawData: CountryData) => this.buildCountryChartOptions(rawData)
+      countries: (rawData: GeoData) => this.buildGeoChartOptions(rawData),
+      regions: (rawData: GeoData) => this.buildGeoChartOptions(rawData)
     }
 
     const { type, data, displayLegend, plugins, options } = dataBuilders[graphId](this.chartIngestData[graphId])
@@ -411,7 +463,7 @@ export class VideoStatsComponent implements OnInit {
 
     for (const d of rawData.data) {
       labels.push(secondsToTime(d.second))
-      data.push(d.retentionPercent)
+      data.push(Math.round(d.retentionPercent))
     }
 
     return {
@@ -494,7 +546,7 @@ export class VideoStatsComponent implements OnInit {
     }
   }
 
-  private buildCountryChartOptions (rawData: CountryData): ChartBuilderResult {
+  private buildGeoChartOptions (rawData: GeoData): ChartBuilderResult {
     const labels: string[] = []
     const data: number[] = []
 
@@ -574,7 +626,7 @@ export class VideoStatsComponent implements OnInit {
 
     if (graphId === 'retention') return value + ' %'
     if (graphId === 'aggregateWatchTime') return secondsToTime(+value)
-    if (graphId === 'countries' && scale) return scale.getLabelForValue(value as number)
+    if ((graphId === 'countries' || graphId === 'regions') && scale) return scale.getLabelForValue(value as number)
 
     return value.toLocaleString(this.localeId)
   }

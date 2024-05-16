@@ -2,7 +2,7 @@
 
 import { expect } from 'chai'
 import { expectStartWith } from '@tests/shared/checks.js'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 import { areMockObjectStorageTestsDisabled } from '@peertube/peertube-node-utils'
 import { HttpStatusCode, VideoPrivacy } from '@peertube/peertube-models'
 import {
@@ -24,7 +24,7 @@ async function importVideo (server: PeerTubeServer) {
     targetUrl: FIXTURE_URLS.goodVideo720
   }
 
-  const { video: { uuid } } = await server.imports.importVideo({ attributes })
+  const { video: { uuid } } = await server.videoImports.importVideo({ attributes })
 
   return uuid
 }
@@ -45,7 +45,7 @@ describe('Object storage for video import', function () {
     await setAccessTokensToServers([ server ])
     await setDefaultVideoChannel([ server ])
 
-    await server.config.enableImports()
+    await server.config.enableVideoImports()
   })
 
   describe('Without transcoding', async function () {

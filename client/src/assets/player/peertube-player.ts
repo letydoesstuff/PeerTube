@@ -6,6 +6,7 @@ import './shared/stats/stats-plugin'
 import './shared/bezels/bezels-plugin'
 import './shared/peertube/peertube-plugin'
 import './shared/resolutions/peertube-resolutions-plugin'
+import './shared/control-bar/caption-toggle-button'
 import './shared/control-bar/storyboard-plugin'
 import './shared/control-bar/chapters-plugin'
 import './shared/control-bar/time-tooltip'
@@ -122,8 +123,15 @@ export class PeerTubePlayer {
   }
 
   setPoster (url: string) {
+    // Use HTML video element to display poster
+    if (!this.player) {
+      this.options.playerElement().poster = url
+      return
+    }
+
+    // Prefer using player poster API
     this.player?.poster(url)
-    this.options.playerElement().poster = url
+    this.options.playerElement().poster = ''
   }
 
   enable () {
@@ -208,7 +216,8 @@ export class PeerTubePlayer {
         }
       }
 
-      this.player.one('error', () => handleError())
+      this.player.on('video-change', () => alreadyFallback = false)
+      this.player.on('error', () => handleError())
 
       this.player.on('network-info', (_, data: PlayerNetworkInfo) => {
         if (data.source !== 'p2p-media-loader' || isNaN(data.bandwidthEstimate)) return
@@ -334,7 +343,7 @@ export class PeerTubePlayer {
   }
 
   private async maybeFallbackToWebVideo () {
-    if (this.currentLoadOptions.webVideo.videoFiles.length === 0 || this.currentLoadOptions.mode === 'web-video') {
+    if (this.currentLoadOptions.mode === 'web-video') {
       this.player.peertube().displayFatalError()
       return
     }
@@ -352,7 +361,10 @@ export class PeerTubePlayer {
 
   getVideojsOptions (): videojs.PlayerOptions {
     const html5 = {
-      preloadTextTracks: false
+      preloadTextTracks: false,
+      // Prevent a bug on iOS where the text tracks added by peertube plugin are removed on play
+      // See https://github.com/Chocobozzz/PeerTube/issues/6351
+      nativeTextTracks: false
     }
 
     const plugins: VideoJSPluginOptions = {
@@ -374,6 +386,8 @@ export class PeerTubePlayer {
         videoUUID: () => this.currentLoadOptions.videoUUID,
         subtitle: () => this.currentLoadOptions.subtitle,
 
+        videoRatio: () => this.currentLoadOptions.videoRatio,
+
         poster: () => this.currentLoadOptions.poster,
 
         autoPlayerRatio: this.options.autoPlayerRatio
@@ -382,6 +396,7 @@ export class PeerTubePlayer {
         mode: () => this.currentLoadOptions.mode,
 
         metricsUrl: () => this.options.metricsUrl,
+        metricsInterval: () => this.options.metricsInterval,
         videoUUID: () => this.currentLoadOptions.videoUUID
       }
     }

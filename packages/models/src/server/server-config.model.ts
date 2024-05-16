@@ -1,3 +1,4 @@
+import { ActorImage } from '../index.js'
 import { ClientScriptJSON } from '../plugins/plugin-package-json.model.js'
 import { NSFWPolicyType } from '../videos/nsfw-policy.type.js'
 import { VideoPrivacyType } from '../videos/video-privacy.enum.js'
@@ -90,6 +91,9 @@ export interface ServerConfig {
       javascript: string
       css: string
     }
+
+    avatars: ActorImage[]
+    banners: ActorImage[]
   }
 
   search: {
@@ -207,8 +211,21 @@ export interface ServerConfig {
         enabled: boolean
       }
     }
+
     videoChannelSynchronization: {
       enabled: boolean
+    }
+
+    users: {
+      enabled: boolean
+    }
+  }
+
+  export: {
+    users: {
+      enabled: boolean
+      exportExpiration: number
+      maxUserVideoQuota: number
     }
   }
 
@@ -298,6 +315,31 @@ export interface ServerConfig {
   }
 
   homepage: {
+    enabled: boolean
+  }
+
+  openTelemetry: {
+    metrics: {
+      enabled: boolean
+
+      // milliseconds
+      playbackStatsInterval: number
+    }
+  }
+
+  views: {
+    videos: {
+      watchingInterval: {
+        // milliseconds
+        anonymous: number
+
+        // milliseconds
+        users: number
+      }
+    }
+  }
+
+  storyboards: {
     enabled: boolean
   }
 }

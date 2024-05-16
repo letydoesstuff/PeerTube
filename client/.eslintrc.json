@@ -159,6 +159,11 @@
         "quote-props": [
           "error",
           "consistent-as-needed"
+        ],
+        "no-constant-binary-expression": "error",
+        "@typescript-eslint/unbound-method": [
+          "error",
+          { "ignoreStatic": true }
         ]
       }
     },

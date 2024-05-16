@@ -114,6 +114,7 @@ const CONFIG = {
     LOG_DIR: buildPath(config.get<string>('storage.logs')),
     WEB_VIDEOS_DIR: buildPath(config.get<string>('storage.web_videos')),
     STREAMING_PLAYLISTS_DIR: buildPath(config.get<string>('storage.streaming_playlists')),
+    ORIGINAL_VIDEO_FILES_DIR: buildPath(config.get<string>('storage.original_video_files')),
     REDUNDANCY_DIR: buildPath(config.get<string>('storage.redundancy')),
     THUMBNAILS_DIR: buildPath(config.get<string>('storage.thumbnails')),
     STORYBOARDS_DIR: buildPath(config.get<string>('storage.storyboards')),
@@ -152,7 +153,18 @@ const CONFIG = {
     STREAMING_PLAYLISTS: {
       BUCKET_NAME: config.get<string>('object_storage.streaming_playlists.bucket_name'),
       PREFIX: config.get<string>('object_storage.streaming_playlists.prefix'),
-      BASE_URL: config.get<string>('object_storage.streaming_playlists.base_url')
+      BASE_URL: config.get<string>('object_storage.streaming_playlists.base_url'),
+      STORE_LIVE_STREAMS: config.get<string>('object_storage.streaming_playlists.store_live_streams')
+    },
+    USER_EXPORTS: {
+      BUCKET_NAME: config.get<string>('object_storage.user_exports.bucket_name'),
+      PREFIX: config.get<string>('object_storage.user_exports.prefix'),
+      BASE_URL: config.get<string>('object_storage.user_exports.base_url')
+    },
+    ORIGINAL_VIDEO_FILES: {
+      BUCKET_NAME: config.get<string>('object_storage.original_video_files.bucket_name'),
+      PREFIX: config.get<string>('object_storage.original_video_files.prefix'),
+      BASE_URL: config.get<string>('object_storage.original_video_files.base_url')
     }
   },
   WEBSERVER: {
@@ -228,6 +240,8 @@ const CONFIG = {
     METRICS: {
       ENABLED: config.get<boolean>('open_telemetry.metrics.enabled'),
 
+      PLAYBACK_STATS_INTERVAL: parseDurationToMs(config.get<string>('open_telemetry.metrics.playback_stats_interval')),
+
       HTTP_REQUEST_DURATION: {
         ENABLED: config.get<boolean>('open_telemetry.metrics.http_request_duration.enabled')
       },
@@ -294,13 +308,22 @@ const CONFIG = {
         MAX_AGE: parseDurationToMs(config.get('views.videos.remote.max_age'))
       },
       LOCAL_BUFFER_UPDATE_INTERVAL: parseDurationToMs(config.get('views.videos.local_buffer_update_interval')),
-      IP_VIEW_EXPIRATION: parseDurationToMs(config.get('views.videos.ip_view_expiration'))
+      VIEW_EXPIRATION: parseDurationToMs(config.get('views.videos.view_expiration')),
+      COUNT_VIEW_AFTER: parseDurationToMs(config.get<number>('views.videos.count_view_after')),
+      TRUST_VIEWER_SESSION_ID: config.get<boolean>('views.videos.trust_viewer_session_id'),
+      WATCHING_INTERVAL: {
+        ANONYMOUS: parseDurationToMs(config.get<string>('views.videos.watching_interval.anonymous')),
+        USERS: parseDurationToMs(config.get<string>('views.videos.watching_interval.users'))
+      }
     }
   },
   GEO_IP: {
     ENABLED: config.get<boolean>('geo_ip.enabled'),
     COUNTRY: {
       DATABASE_URL: config.get<string>('geo_ip.country.database_url')
+    },
+    CITY: {
+      DATABASE_URL: config.get<string>('geo_ip.city.database_url')
     }
   },
   PLUGINS: {
@@ -349,6 +372,20 @@ const CONFIG = {
       FRAMES_TO_ANALYZE: config.get<number>('thumbnails.generation_from_video.frames_to_analyze')
     }
   },
+  STATS: {
+    REGISTRATION_REQUESTS: {
+      ENABLED: config.get<boolean>('stats.registration_requests.enabled')
+    },
+    ABUSES: {
+      ENABLED: config.get<boolean>('stats.abuses.enabled')
+    },
+    TOTAL_MODERATORS: {
+      ENABLED: config.get<boolean>('stats.total_moderators.enabled')
+    },
+    TOTAL_ADMINS: {
+      ENABLED: config.get<boolean>('stats.total_admins.enabled')
+    }
+  },
   ADMIN: {
     get EMAIL () { return config.get<string>('admin.email') }
   },
@@ -383,6 +420,9 @@ const CONFIG = {
   },
   TRANSCODING: {
     get ENABLED () { return config.get<boolean>('transcoding.enabled') },
+    ORIGINAL_FILE: {
+      get KEEP () { return config.get<boolean>('transcoding.original_file.keep') }
+    },
     get ALLOW_ADDITIONAL_EXTENSIONS () { return config.get<boolean>('transcoding.allow_additional_extensions') },
     get ALLOW_AUDIO_FILES () { return config.get<boolean>('transcoding.allow_audio_files') },
     get THREADS () { return config.get<number>('transcoding.threads') },
@@ -502,6 +542,16 @@ const CONFIG = {
       get FULL_SYNC_VIDEOS_LIMIT () {
         return config.get<number>('import.video_channel_synchronization.full_sync_videos_limit')
       }
+    },
+    USERS: {
+      get ENABLED () { return config.get<boolean>('import.users.enabled') }
+    }
+  },
+  EXPORT: {
+    USERS: {
+      get ENABLED () { return config.get<boolean>('export.users.enabled') },
+      get MAX_USER_VIDEO_QUOTA () { return parseBytes(config.get<string>('export.users.max_user_video_quota')) },
+      get EXPORT_EXPIRATION () { return parseDurationToMs(config.get<string>('export.users.export_expiration')) }
     }
   },
   AUTO_BLACKLIST: {
@@ -557,8 +607,7 @@ const CONFIG = {
   },
   SERVICES: {
     TWITTER: {
-      get USERNAME () { return config.get<string>('services.twitter.username') },
-      get WHITELISTED () { return config.get<boolean>('services.twitter.whitelisted') }
+      get USERNAME () { return config.get<string>('services.twitter.username') }
     }
   },
   FOLLOWERS: {
@@ -604,8 +653,10 @@ const CONFIG = {
       get DISABLE_LOCAL_SEARCH () { return config.get<boolean>('search.search_index.disable_local_search') },
       get IS_DEFAULT_SEARCH () { return config.get<boolean>('search.search_index.is_default_search') }
     }
+  },
+  STORYBOARDS: {
+    get ENABLED () { return config.get<boolean>('storyboards.enabled') }
   }
-
 }
 
 function registerConfigChangedHandler (fun: Function) {

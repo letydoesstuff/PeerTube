@@ -176,12 +176,12 @@ class Redis {
 
   /* ************ Views per IP ************ */
 
-  setIPVideoView (ip: string, videoUUID: string) {
-    return this.setValue(this.generateIPViewKey(ip, videoUUID), '1', VIEW_LIFETIME.VIEW)
+  setSessionIdVideoView (ip: string, videoUUID: string) {
+    return this.setValue(this.generateSessionIdViewKey(ip, videoUUID), '1', VIEW_LIFETIME.VIEW)
   }
 
-  async doesVideoIPViewExist (ip: string, videoUUID: string) {
-    return this.exists(this.generateIPViewKey(ip, videoUUID))
+  async doesVideoSessionIdViewExist (sessionId: string, videoUUID: string) {
+    return this.exists(this.generateSessionIdViewKey(sessionId, videoUUID))
   }
 
   /* ************ Video views stats ************ */
@@ -281,8 +281,8 @@ class Redis {
     return this.getObject(viewerKey)
   }
 
-  setLocalVideoViewer (ip: string, videoId: number, object: any) {
-    const { setKey, viewerKey } = this.generateLocalVideoViewerKeys(ip, videoId)
+  setLocalVideoViewer (sessionId: string, videoId: number, object: any) {
+    const { setKey, viewerKey } = this.generateLocalVideoViewerKeys(sessionId, videoId)
 
     return Promise.all([
       this.addToSet(setKey, viewerKey),
@@ -307,26 +307,12 @@ class Redis {
 
   /* ************ Resumable uploads final responses ************ */
 
-  setUploadSession (uploadId: string, response?: { video: { id: number, shortUUID: string, uuid: string } }) {
-    return this.setValue(
-      'resumable-upload-' + uploadId,
-      response
-        ? JSON.stringify(response)
-        : '',
-      RESUMABLE_UPLOAD_SESSION_LIFETIME
-    )
+  setUploadSession (uploadId: string) {
+    return this.setValue('resumable-upload-' + uploadId, '', RESUMABLE_UPLOAD_SESSION_LIFETIME)
   }
 
   doesUploadSessionExist (uploadId: string) {
     return this.exists('resumable-upload-' + uploadId)
-  }
-
-  async getUploadSession (uploadId: string) {
-    const value = await this.getValue('resumable-upload-' + uploadId)
-
-    return value
-      ? JSON.parse(value) as { video: { id: number, shortUUID: string, uuid: string } }
-      : undefined
   }
 
   deleteUploadSession (uploadId: string) {
@@ -352,10 +338,16 @@ class Redis {
     return { setKey: `local-video-views-buffer`, videoKey: `local-video-views-buffer-${videoId}` }
   }
 
-  generateLocalVideoViewerKeys (ip: string, videoId: number): { setKey: string, viewerKey: string }
+  generateLocalVideoViewerKeys (sessionId: string, videoId: number): { setKey: string, viewerKey: string }
   generateLocalVideoViewerKeys (): { setKey: string }
-  generateLocalVideoViewerKeys (ip?: string, videoId?: number) {
-    return { setKey: `local-video-viewer-stats-keys`, viewerKey: `local-video-viewer-stats-${ip}-${videoId}` }
+  generateLocalVideoViewerKeys (sessionId?: string, videoId?: number) {
+    return {
+      setKey: `local-video-viewer-stats-keys`,
+
+      viewerKey: sessionId && videoId
+        ? `local-video-viewer-stats-${sessionId}-${videoId}`
+        : undefined
+    }
   }
 
   private generateVideoViewStatsKeys (options: { videoId?: number, hour?: number }) {
@@ -382,12 +374,12 @@ class Redis {
     return 'verify-email-registration-' + registrationId
   }
 
-  generateIPViewKey (ip: string, videoUUID: string) {
-    return `views-${videoUUID}-${ip}`
+  generateSessionIdViewKey (sessionId: string, videoUUID: string) {
+    return `views-${videoUUID}-${sessionId}`
   }
 
   private generateContactFormKey (ip: string) {
-    return 'contact-form-' + ip
+    return 'contact-form-' + sha256(CONFIG.SECRETS.PEERTUBE + '-' + ip)
   }
 
   private generateAPUnavailabilityKey (url: string) {

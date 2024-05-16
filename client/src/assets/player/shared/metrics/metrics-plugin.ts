@@ -25,10 +25,6 @@ class MetricsPlugin extends Plugin {
 
   private metricsInterval: any
 
-  private readonly CONSTANTS = {
-    METRICS_INTERVAL: 15000
-  }
-
   constructor (player: videojs.Player, options: MetricsPluginOptions) {
     super(player)
 
@@ -74,6 +70,7 @@ class MetricsPlugin extends Plugin {
 
   private runMetricsInterval () {
     if (this.metricsInterval) clearInterval(this.metricsInterval)
+    if (!this.options_.metricsUrl()) return
 
     this.metricsInterval = setInterval(() => {
       let resolution: number
@@ -135,7 +132,7 @@ class MetricsPlugin extends Plugin {
 
       return fetch(this.options_.metricsUrl(), { method: 'POST', body: JSON.stringify(body), headers })
         .catch(err => logger.error('Cannot send metrics to the server.', err))
-    }, this.CONSTANTS.METRICS_INTERVAL)
+    }, this.options_.metricsInterval())
   }
 
   private trackBytes () {
@@ -153,11 +150,11 @@ class MetricsPlugin extends Plugin {
   }
 
   private trackResolutionChange () {
-    this.player.on('engine-resolution-change', () => {
-      this.resolutionChanges++
-    })
+    this.player.on('resolution-change', (_: any, { initResolutionChange }: { initResolutionChange: boolean }) => {
+      if (initResolutionChange === true) return
 
-    this.player.on('user-resolution-change', () => {
+      debugLogger('Adding resolution change')
+
       this.resolutionChanges++
     })
   }

@@ -1,13 +1,13 @@
-import express from 'express'
-import { body, param } from 'express-validator'
 import { HttpStatusCode } from '@peertube/peertube-models'
 import { isVideoTimeValid } from '@server/helpers/custom-validators/video-view.js'
 import { getCachedVideoDuration } from '@server/lib/video.js'
 import { LocalVideoViewerModel } from '@server/models/view/local-video-viewer.js'
-import { isIdValid, isIntOrNull, toIntOrNull } from '../../../helpers/custom-validators/misc.js'
+import express from 'express'
+import { body, param } from 'express-validator'
+import { isIdValid, toIntOrNull } from '../../../helpers/custom-validators/misc.js'
 import { areValidationErrors, doesVideoExist, isValidVideoIdParam } from '../shared/index.js'
 
-const getVideoLocalViewerValidator = [
+export const getVideoLocalViewerValidator = [
   param('localViewerId')
     .custom(isIdValid),
 
@@ -28,34 +28,29 @@ const getVideoLocalViewerValidator = [
   }
 ]
 
-const videoViewValidator = [
+export const videoViewValidator = [
   isValidVideoIdParam('videoId'),
 
   body('currentTime')
     .customSanitizer(toIntOrNull)
-    .custom(isIntOrNull),
+    .isInt(),
 
   async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (areValidationErrors(req, res)) return
-    if (!await doesVideoExist(req.params.videoId, res, 'only-immutable-attributes')) return
+    if (!await doesVideoExist(req.params.videoId, res, 'unsafe-only-immutable-attributes')) return
 
     const video = res.locals.onlyImmutableVideo
     const { duration } = await getCachedVideoDuration(video.id)
 
-    if (!isVideoTimeValid(req.body.currentTime, duration)) {
+    const currentTime = req.body.currentTime
+    if (!isVideoTimeValid(currentTime, duration)) {
       return res.fail({
         status: HttpStatusCode.BAD_REQUEST_400,
-        message: 'Current time is invalid'
+        message: `Current time ${currentTime} is invalid (video ${video.uuid} duration: ${duration})`,
+        logLevel: 'warn'
       })
     }
 
     return next()
   }
 ]
-
-// ---------------------------------------------------------------------------
-
-export {
-  videoViewValidator,
-  getVideoLocalViewerValidator
-}

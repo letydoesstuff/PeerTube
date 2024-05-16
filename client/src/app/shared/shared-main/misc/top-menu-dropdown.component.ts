@@ -1,11 +1,13 @@
 import { Subscription } from 'rxjs'
 import { filter } from 'rxjs/operators'
 import { Component, Input, OnDestroy, OnInit, ViewChild } from '@angular/core'
-import { NavigationEnd, Router } from '@angular/router'
+import { NavigationEnd, Router, RouterLinkActive, RouterLink } from '@angular/router'
 import { MenuService, ScreenService } from '@app/core'
 import { scrollToTop } from '@app/helpers'
-import { GlobalIconName } from '@app/shared/shared-icons'
-import { NgbDropdown, NgbModal } from '@ng-bootstrap/ng-bootstrap'
+import { GlobalIconName } from '@app/shared/shared-icons/global-icon.component'
+import { NgbDropdown, NgbModal, NgbDropdownToggle, NgbDropdownMenu, NgbDropdownItem } from '@ng-bootstrap/ng-bootstrap'
+import { GlobalIconComponent } from '../../shared-icons/global-icon.component'
+import { NgClass, NgFor, NgIf } from '@angular/common'
 
 export type TopMenuDropdownParam = {
   label: string
@@ -15,7 +17,8 @@ export type TopMenuDropdownParam = {
   children?: {
     label: string
     routerLink: string
-    iconName?: GlobalIconName
+    queryParams?: { [id: string]: string }
+    iconName: GlobalIconName
 
     isDisplayed?: () => boolean // Default: () => true
   }[]
@@ -24,7 +27,20 @@ export type TopMenuDropdownParam = {
 @Component({
   selector: 'my-top-menu-dropdown',
   templateUrl: './top-menu-dropdown.component.html',
-  styleUrls: [ './top-menu-dropdown.component.scss' ]
+  styleUrls: [ './top-menu-dropdown.component.scss' ],
+  standalone: true,
+  imports: [
+    NgClass,
+    NgFor,
+    NgIf,
+    RouterLinkActive,
+    RouterLink,
+    NgbDropdown,
+    NgbDropdownToggle,
+    NgbDropdownMenu,
+    NgbDropdownItem,
+    GlobalIconComponent
+  ]
 })
 export class TopMenuDropdownComponent implements OnInit, OnDestroy {
   @Input() menuEntries: TopMenuDropdownParam[] = []
@@ -64,10 +80,6 @@ export class TopMenuDropdownComponent implements OnInit, OnDestroy {
     this.routeSub = this.router.events
       .pipe(filter(event => event instanceof NavigationEnd))
       .subscribe(() => this.updateChildLabels(window.location.pathname))
-
-    this.hasIcons = this.menuEntries.some(
-      e => e.children?.some(c => !!c.iconName)
-    )
   }
 
   ngOnDestroy () {

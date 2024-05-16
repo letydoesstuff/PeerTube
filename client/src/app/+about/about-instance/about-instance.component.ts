@@ -1,17 +1,33 @@
-import { ViewportScroller } from '@angular/common'
+import { NgFor, NgIf, ViewportScroller } from '@angular/common'
 import { AfterViewChecked, Component, ElementRef, OnInit, ViewChild } from '@angular/core'
-import { ActivatedRoute } from '@angular/router'
+import { ActivatedRoute, RouterLink } from '@angular/router'
 import { Notifier, ServerService } from '@app/core'
-import { AboutHTML } from '@app/shared/shared-instance'
+import { AboutHTML } from '@app/shared/shared-main/instance/instance.service'
+import { maxBy } from '@peertube/peertube-core-utils'
 import { HTMLServerConfig, ServerStats } from '@peertube/peertube-models'
 import { copyToClipboard } from '@root-helpers/utils'
+import { CustomMarkupContainerComponent } from '../../shared/shared-custom-markup/custom-markup-container.component'
+import { InstanceFeaturesTableComponent } from '../../shared/shared-instance/instance-features-table.component'
+import { PluginSelectorDirective } from '../../shared/shared-main/plugins/plugin-selector.directive'
 import { ResolverData } from './about-instance.resolver'
 import { ContactAdminModalComponent } from './contact-admin-modal.component'
+import { InstanceStatisticsComponent } from './instance-statistics.component'
 
 @Component({
   selector: 'my-about-instance',
   templateUrl: './about-instance.component.html',
-  styleUrls: [ './about-instance.component.scss' ]
+  styleUrls: [ './about-instance.component.scss' ],
+  standalone: true,
+  imports: [
+    NgIf,
+    RouterLink,
+    NgFor,
+    CustomMarkupContainerComponent,
+    PluginSelectorDirective,
+    InstanceFeaturesTableComponent,
+    InstanceStatisticsComponent,
+    ContactAdminModalComponent
+  ]
 })
 export class AboutInstanceComponent implements OnInit, AfterViewChecked {
   @ViewChild('descriptionWrapper') descriptionWrapper: ElementRef<HTMLInputElement>
@@ -19,6 +35,8 @@ export class AboutInstanceComponent implements OnInit, AfterViewChecked {
 
   aboutHTML: AboutHTML
   descriptionElement: HTMLDivElement
+
+  instanceBannerUrl: string
 
   languages: string[] = []
   categories: string[] = []
@@ -63,6 +81,10 @@ export class AboutInstanceComponent implements OnInit, AfterViewChecked {
     this.categories = categories
 
     this.shortDescription = about.instance.shortDescription
+
+    this.instanceBannerUrl = about.instance.banners.length !== 0
+      ? maxBy(about.instance.banners, 'width').path
+      : undefined
 
     this.serverConfig = this.serverService.getHTMLConfig()
 

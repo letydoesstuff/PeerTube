@@ -1,12 +1,10 @@
-import { forceNumber } from '@peertube/peertube-core-utils'
+import { forceNumber, maxBy } from '@peertube/peertube-core-utils'
 import { ActivityIconObject, ActorImageType, ActorImageType_Type, type ActivityPubActorType } from '@peertube/peertube-models'
-import { getLowercaseExtension } from '@peertube/peertube-node-utils'
 import { AttributesOnly } from '@peertube/peertube-typescript-utils'
 import { activityPubContextify } from '@server/helpers/activity-pub-utils.js'
 import { getContextFilter } from '@server/lib/activitypub/context.js'
-import { getBiggestActorImage } from '@server/lib/actor-image.js'
 import { ModelCache } from '@server/models/shared/model-cache.js'
-import { col, fn, literal, Op, QueryTypes, Transaction, where } from 'sequelize'
+import { Op, QueryTypes, Transaction, col, fn, literal, where } from 'sequelize'
 import {
   AllowNull,
   BelongsTo,
@@ -17,9 +15,7 @@ import {
   ForeignKey,
   HasMany,
   HasOne,
-  Is,
-  Model,
-  Scopes,
+  Is, Scopes,
   Table,
   UpdatedAt
 } from 'sequelize-typescript'
@@ -35,16 +31,14 @@ import { isActivityPubUrlValid } from '../../helpers/custom-validators/activityp
 import {
   ACTIVITY_PUB,
   ACTIVITY_PUB_ACTOR_TYPES,
-  CONSTRAINTS_FIELDS,
-  MIMETYPES,
-  SERVER_ACTOR_NAME,
+  CONSTRAINTS_FIELDS, SERVER_ACTOR_NAME,
   WEBSERVER
 } from '../../initializers/constants.js'
 import {
   MActor,
-  MActorAccountChannelId,
   MActorAPAccount,
   MActorAPChannel,
+  MActorAccountChannelId,
   MActorFollowersUrl,
   MActorFormattable,
   MActorFull,
@@ -58,7 +52,7 @@ import {
 import { AccountModel } from '../account/account.js'
 import { getServerActor } from '../application/application.js'
 import { ServerModel } from '../server/server.js'
-import { buildSQLAttributes, isOutdated, throwIfNotValid } from '../shared/index.js'
+import { SequelizeModel, buildSQLAttributes, isOutdated, throwIfNotValid } from '../shared/index.js'
 import { VideoChannelModel } from '../video/video-channel.js'
 import { VideoModel } from '../video/video.js'
 import { ActorFollowModel } from './actor-follow.js'
@@ -164,7 +158,7 @@ export const unusedActorAttributesForAPI: (keyof AttributesOnly<ActorModel>)[] =
     }
   ]
 })
-export class ActorModel extends Model<Partial<AttributesOnly<ActorModel>>> {
+export class ActorModel extends SequelizeModel<ActorModel> {
 
   @AllowNull(false)
   @Column(DataType.ENUM(...Object.values(ACTIVITY_PUB_ACTOR_TYPES)))
@@ -563,24 +557,15 @@ export class ActorModel extends Model<Partial<AttributesOnly<ActorModel>>> {
   }
 
   toActivityPubObject (this: MActorAPChannel | MActorAPAccount, name: string) {
-    let icon: ActivityIconObject[]
-    let image: ActivityIconObject
+    let icon: ActivityIconObject[] // Avatars
+    let image: ActivityIconObject[] // Banners
 
     if (this.hasImage(ActorImageType.AVATAR)) {
       icon = this.Avatars.map(a => a.toActivityPubObject())
     }
 
     if (this.hasImage(ActorImageType.BANNER)) {
-      const banner = getBiggestActorImage((this as MActorAPChannel).Banners)
-      const extension = getLowercaseExtension(banner.filename)
-
-      image = {
-        type: 'Image',
-        mediaType: MIMETYPES.IMAGE.EXT_MIMETYPE[extension],
-        height: banner.height,
-        width: banner.width,
-        url: ActorImageModel.getImageUrl(banner)
-      }
+      image = (this as MActorAPChannel).Banners.map(b => b.toActivityPubObject())
     }
 
     const json = {
@@ -663,6 +648,10 @@ export class ActorModel extends Model<Partial<AttributesOnly<ActorModel>>> {
     return this.Server ? `${this.preferredUsername}@${this.Server.host}` : this.preferredUsername
   }
 
+  getFullIdentifier (this: MActorHost) {
+    return `${this.preferredUsername}@${this.getHost()}`
+  }
+
   getHost (this: MActorHostOnly) {
     return this.Server ? this.Server.host : WEBSERVER.HOST
   }
@@ -677,6 +666,16 @@ export class ActorModel extends Model<Partial<AttributesOnly<ActorModel>>> {
       : this.Banners
 
     return Array.isArray(images) && images.length !== 0
+  }
+
+  getMaxQualityImage (type: ActorImageType_Type) {
+    if (!this.hasImage(type)) return undefined
+
+    const images = type === ActorImageType.AVATAR
+      ? this.Avatars
+      : this.Banners
+
+    return maxBy(images, 'height')
   }
 
   isOutdated () {

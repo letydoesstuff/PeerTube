@@ -1,4 +1,4 @@
-import { arrayify } from '@peertube/peertube-core-utils'
+import { arrayify, maxBy, minBy } from '@peertube/peertube-core-utils'
 import {
   ActivityHashTagObject,
   ActivityMagnetUrlObject,
@@ -11,26 +11,25 @@ import {
   VideoPrivacy,
   VideoStreamingPlaylistType
 } from '@peertube/peertube-models'
+import { hasAPPublic } from '@server/helpers/activity-pub-utils.js'
 import { isAPVideoFileUrlMetadataObject } from '@server/helpers/custom-validators/activitypub/videos.js'
 import { isArray } from '@server/helpers/custom-validators/misc.js'
 import { isVideoFileInfoHashValid } from '@server/helpers/custom-validators/videos.js'
 import { generateImageFilename } from '@server/helpers/image-utils.js'
 import { logger } from '@server/helpers/logger.js'
 import { getExtFromMimetype } from '@server/helpers/video.js'
-import { ACTIVITY_PUB, MIMETYPES, P2P_MEDIA_LOADER_PEER_VERSION, PREVIEWS_SIZE, THUMBNAILS_SIZE } from '@server/initializers/constants.js'
+import { MIMETYPES, P2P_MEDIA_LOADER_PEER_VERSION, PREVIEWS_SIZE, THUMBNAILS_SIZE } from '@server/initializers/constants.js'
 import { generateTorrentFileName } from '@server/lib/paths.js'
 import { VideoCaptionModel } from '@server/models/video/video-caption.js'
 import { VideoFileModel } from '@server/models/video/video-file.js'
 import { VideoStreamingPlaylistModel } from '@server/models/video/video-streaming-playlist.js'
 import { FilteredModelAttributes } from '@server/types/index.js'
 import { MChannelId, MStreamingPlaylistVideo, MVideo, MVideoId, isStreamingPlaylist } from '@server/types/models/index.js'
-import maxBy from 'lodash-es/maxBy.js'
-import minBy from 'lodash-es/minBy.js'
 import { decode as magnetUriDecode } from 'magnet-uri'
 import { basename, extname } from 'path'
 import { getDurationFromActivityStream } from '../../activity.js'
 
-function getThumbnailFromIcons (videoObject: VideoObject) {
+export function getThumbnailFromIcons (videoObject: VideoObject) {
   let validIcons = videoObject.icon.filter(i => i.width > THUMBNAILS_SIZE.minWidth)
   // Fallback if there are not valid icons
   if (validIcons.length === 0) validIcons = videoObject.icon
@@ -38,24 +37,23 @@ function getThumbnailFromIcons (videoObject: VideoObject) {
   return minBy(validIcons, 'width')
 }
 
-function getPreviewFromIcons (videoObject: VideoObject) {
+export function getPreviewFromIcons (videoObject: VideoObject) {
   const validIcons = videoObject.icon.filter(i => i.width > PREVIEWS_SIZE.minWidth)
 
   return maxBy(validIcons, 'width')
 }
 
-function getTagsFromObject (videoObject: VideoObject) {
+export function getTagsFromObject (videoObject: VideoObject) {
   return videoObject.tag
     .filter(isAPHashTagObject)
     .map(t => t.name)
 }
 
-function getFileAttributesFromUrl (
+export function getFileAttributesFromUrl (
   videoOrPlaylist: MVideo | MStreamingPlaylistVideo,
   urls: (ActivityTagObject | ActivityUrlObject)[]
 ) {
   const fileUrls = urls.filter(u => isAPVideoUrlObject(u)) as ActivityVideoUrlObject[]
-
   if (fileUrls.length === 0) return []
 
   const attributes: FilteredModelAttributes<VideoFileModel>[] = []
@@ -96,6 +94,9 @@ function getFileAttributesFromUrl (
       fps: fileUrl.fps || -1,
       metadataUrl: metadata?.href,
 
+      width: fileUrl.width,
+      height: fileUrl.height,
+
       // Use the name of the remote file because we don't proxify video file requests
       filename: basename(fileUrl.href),
       fileUrl: fileUrl.href,
@@ -115,7 +116,7 @@ function getFileAttributesFromUrl (
   return attributes
 }
 
-function getStreamingPlaylistAttributesFromObject (video: MVideoId, videoObject: VideoObject) {
+export function getStreamingPlaylistAttributesFromObject (video: MVideoId, videoObject: VideoObject) {
   const playlistUrls = videoObject.url.filter(u => isAPStreamingPlaylistUrlObject(u)) as ActivityPlaylistUrlObject[]
   if (playlistUrls.length === 0) return []
 
@@ -152,7 +153,7 @@ function getStreamingPlaylistAttributesFromObject (video: MVideoId, videoObject:
   return attributes
 }
 
-function getLiveAttributesFromObject (video: MVideoId, videoObject: VideoObject) {
+export function getLiveAttributesFromObject (video: MVideoId, videoObject: VideoObject) {
   return {
     saveReplay: videoObject.liveSaveReplay,
     permanentLive: videoObject.permanentLive,
@@ -161,7 +162,7 @@ function getLiveAttributesFromObject (video: MVideoId, videoObject: VideoObject)
   }
 }
 
-function getCaptionAttributesFromObject (video: MVideoId, videoObject: VideoObject) {
+export function getCaptionAttributesFromObject (video: MVideoId, videoObject: VideoObject) {
   return videoObject.subtitleLanguage.map(c => ({
     videoId: video.id,
     filename: VideoCaptionModel.generateCaptionName(c.identifier),
@@ -170,7 +171,7 @@ function getCaptionAttributesFromObject (video: MVideoId, videoObject: VideoObje
   }))
 }
 
-function getStoryboardAttributeFromObject (video: MVideoId, videoObject: VideoObject) {
+export function getStoryboardAttributeFromObject (video: MVideoId, videoObject: VideoObject) {
   if (!isArray(videoObject.preview)) return undefined
 
   const storyboard = videoObject.preview.find(p => p.rel.includes('storyboard'))
@@ -190,8 +191,8 @@ function getStoryboardAttributeFromObject (video: MVideoId, videoObject: VideoOb
   }
 }
 
-function getVideoAttributesFromObject (videoChannel: MChannelId, videoObject: VideoObject, to: string[] = []) {
-  const privacy = to.includes(ACTIVITY_PUB.PUBLIC)
+export function getVideoAttributesFromObject (videoChannel: MChannelId, videoObject: VideoObject, to: string[] = []) {
+  const privacy = hasAPPublic(to)
     ? VideoPrivacy.PUBLIC
     : VideoPrivacy.UNLISTED
 
@@ -223,6 +224,7 @@ function getVideoAttributesFromObject (videoChannel: MChannelId, videoObject: Vi
     waitTranscoding: videoObject.waitTranscoding,
     isLive: videoObject.isLiveBroadcast,
     state: videoObject.state,
+    aspectRatio: videoObject.aspectRatio,
     channelId: videoChannel.id,
     duration: getDurationFromActivityStream(videoObject.duration),
     createdAt: new Date(videoObject.published),
@@ -244,23 +246,7 @@ function getVideoAttributesFromObject (videoChannel: MChannelId, videoObject: Vi
 }
 
 // ---------------------------------------------------------------------------
-
-export {
-  getThumbnailFromIcons,
-  getPreviewFromIcons,
-
-  getTagsFromObject,
-
-  getFileAttributesFromUrl,
-  getStreamingPlaylistAttributesFromObject,
-
-  getLiveAttributesFromObject,
-  getCaptionAttributesFromObject,
-  getStoryboardAttributeFromObject,
-
-  getVideoAttributesFromObject
-}
-
+// Private
 // ---------------------------------------------------------------------------
 
 function isAPVideoUrlObject (url: any): url is ActivityVideoUrlObject {

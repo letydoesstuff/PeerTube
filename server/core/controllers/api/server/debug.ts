@@ -7,6 +7,7 @@ import { VideoChannelSyncLatestScheduler } from '@server/lib/schedulers/video-ch
 import { VideoViewsBufferScheduler } from '@server/lib/schedulers/video-views-buffer-scheduler.js'
 import { VideoViewsManager } from '@server/lib/views/video-views-manager.js'
 import { authenticate, ensureUserHasRight } from '../../../middlewares/index.js'
+import { RemoveExpiredUserExportsScheduler } from '@server/lib/schedulers/remove-expired-user-exports-scheduler.js'
 
 const debugRouter = express.Router()
 
@@ -42,10 +43,15 @@ async function runCommand (req: express.Request, res: express.Response) {
 
   const processors: { [id in SendDebugCommand['command']]: () => Promise<any> } = {
     'remove-dandling-resumable-uploads': () => RemoveDanglingResumableUploadsScheduler.Instance.execute(),
+    'remove-expired-user-exports': () => RemoveExpiredUserExportsScheduler.Instance.execute(),
     'process-video-views-buffer': () => VideoViewsBufferScheduler.Instance.execute(),
     'process-video-viewers': () => VideoViewsManager.Instance.processViewerStats(),
     'process-update-videos-scheduler': () => UpdateVideosScheduler.Instance.execute(),
     'process-video-channel-sync-latest': () => VideoChannelSyncLatestScheduler.Instance.execute()
+  }
+
+  if (!processors[body.command]) {
+    return res.fail({ message: 'Invalid command' })
   }
 
   await processors[body.command]()

@@ -1,6 +1,7 @@
-import { buildVideoEmbedPath, buildVideoWatchPath, pick, wait } from '@peertube/peertube-core-utils'
+import { buildVideoEmbedPath, buildVideoWatchPath, maxBy, minBy, pick, wait } from '@peertube/peertube-core-utils'
 import { ffprobePromise, getAudioStream, getVideoStreamDimensionsInfo, getVideoStreamFPS, hasAudioStream } from '@peertube/peertube-ffmpeg'
 import {
+  FileStorage,
   ResultList,
   ThumbnailType,
   UserRight,
@@ -13,19 +14,18 @@ import {
   VideoPrivacy,
   VideoRateType,
   VideoState,
-  VideoStorage,
   VideoStreamingPlaylistType,
   type VideoPrivacyType,
   type VideoStateType
 } from '@peertube/peertube-models'
 import { uuidToShort } from '@peertube/peertube-node-utils'
-import { AttributesOnly } from '@peertube/peertube-typescript-utils'
-import { getPrivaciesForFederation, isPrivacyForFederation, isStateForFederation } from '@server/helpers/video.js'
+import { getPrivaciesForFederation } from '@server/helpers/video.js'
 import { InternalEventEmitter } from '@server/lib/internal-event-emitter.js'
 import { LiveManager } from '@server/lib/live/live-manager.js'
 import {
   removeHLSFileObjectStorageByFilename,
   removeHLSObjectStorage,
+  removeOriginalFileObjectStorage,
   removeWebVideoObjectStorage
 } from '@server/lib/object-storage/index.js'
 import { tracer } from '@server/lib/opentelemetry/tracing.js'
@@ -35,10 +35,9 @@ import { VideoPathManager } from '@server/lib/video-path-manager.js'
 import { isVideoInPrivateDirectory } from '@server/lib/video-privacy.js'
 import { getServerActor } from '@server/models/application/application.js'
 import { ModelCache } from '@server/models/shared/model-cache.js'
+import { MVideoSource } from '@server/types/models/video/video-source.js'
 import Bluebird from 'bluebird'
 import { remove } from 'fs-extra/esm'
-import maxBy from 'lodash-es/maxBy.js'
-import minBy from 'lodash-es/minBy.js'
 import { FindOptions, IncludeOptions, Includeable, Op, QueryTypes, ScopeOptions, Sequelize, Transaction, WhereOptions } from 'sequelize'
 import {
   AfterCreate,
@@ -58,9 +57,7 @@ import {
   Is,
   IsInt,
   IsUUID,
-  Min,
-  Model,
-  Scopes,
+  Min, Scopes,
   Table,
   UpdatedAt
 } from 'sequelize-typescript'
@@ -118,7 +115,15 @@ import { VideoRedundancyModel } from '../redundancy/video-redundancy.js'
 import { ServerModel } from '../server/server.js'
 import { TrackerModel } from '../server/tracker.js'
 import { VideoTrackerModel } from '../server/video-tracker.js'
-import { buildTrigramSearchIndex, buildWhereIdOrUUID, getVideoSort, isOutdated, setAsUpdated, throwIfNotValid } from '../shared/index.js'
+import {
+  SequelizeModel,
+  buildTrigramSearchIndex,
+  buildWhereIdOrUUID,
+  getVideoSort,
+  isOutdated,
+  setAsUpdated,
+  throwIfNotValid
+} from '../shared/index.js'
 import { UserVideoHistoryModel } from '../user/user-video-history.js'
 import { UserModel } from '../user/user.js'
 import { VideoViewModel } from '../view/video-view.js'
@@ -452,7 +457,7 @@ export type ForAPIOptions = {
     }
   ]
 })
-export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
+export class VideoModel extends SequelizeModel<VideoModel> {
 
   @AllowNull(false)
   @Default(DataType.UUIDV4)
@@ -559,6 +564,10 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
   @Is('VideoState', value => throwIfNotValid(value, isVideoStateValid, 'state'))
   @Column
   state: VideoStateType
+
+  @AllowNull(true)
+  @Column(DataType.FLOAT)
+  aspectRatio: number
 
   // We already have the information in videoSource table for local videos, but we prefer to normalize it for performance
   // And also to store the info from remote instances
@@ -808,7 +817,7 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
 
     logger.info('Stopping live of video %s after video deletion.', instance.uuid)
 
-    LiveManager.Instance.stopSessionOf({ videoUUID: instance.uuid, error: null })
+    LiveManager.Instance.stopSessionOfVideo({ videoUUID: instance.uuid, error: null })
   }
 
   @BeforeDestroy
@@ -858,6 +867,12 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
       for (const p of instance.VideoStreamingPlaylists) {
         tasks.push(instance.removeStreamingPlaylistFiles(p))
       }
+
+      // Remove source files
+      const promiseRemoveSources = VideoSourceModel.listAll(instance.id, options.transaction)
+        .then(sources => Promise.all(sources.map(s => instance.removeOriginalFile(s))))
+
+      tasks.push(promiseRemoveSources)
     }
 
     // Do not wait video deletion because we could be in a transaction
@@ -1377,6 +1392,12 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     return queryBuilder.queryVideo({ id, transaction, type: 'thumbnails-blacklist' })
   }
 
+  static loadAndPopulateAccountAndFiles (id: number | string, transaction?: Transaction): Promise<MVideoAccountLightBlacklistAllFiles> {
+    const queryBuilder = new VideoModelGetQueryBuilder(VideoModel.sequelize)
+
+    return queryBuilder.queryVideo({ id, transaction, type: 'account-blacklist-files' })
+  }
+
   static loadImmutableAttributes (id: number | string, t?: Transaction): Promise<MVideoImmutable> {
     const fun = () => {
       const query = {
@@ -1433,7 +1454,19 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     return queryBuilder.queryVideo({ url, transaction, type: 'thumbnails' })
   }
 
-  static loadByUrlAndPopulateAccount (url: string, transaction?: Transaction): Promise<MVideoAccountLightBlacklistAllFiles> {
+  static loadByUrlWithBlacklist (url: string, transaction?: Transaction): Promise<MVideoThumbnailBlacklist> {
+    const queryBuilder = new VideoModelGetQueryBuilder(VideoModel.sequelize)
+
+    return queryBuilder.queryVideo({ url, transaction, type: 'thumbnails-blacklist' })
+  }
+
+  static loadByUrlAndPopulateAccount (url: string, transaction?: Transaction): Promise<MVideoAccountLight> {
+    const queryBuilder = new VideoModelGetQueryBuilder(VideoModel.sequelize)
+
+    return queryBuilder.queryVideo({ url, transaction, type: 'account' })
+  }
+
+  static loadByUrlAndPopulateAccountAndFiles (url: string, transaction?: Transaction): Promise<MVideoAccountLightBlacklistAllFiles> {
     const queryBuilder = new VideoModelGetQueryBuilder(VideoModel.sequelize)
 
     return queryBuilder.queryVideo({ url, transaction, type: 'account-blacklist-files' })
@@ -1492,6 +1525,15 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
       totalLocalVideoViews,
       totalVideos
     }
+  }
+
+  static loadByNameAndChannel (channel: MChannelId, name: string): Promise<MVideo> {
+    return VideoModel.unscoped().findOne({
+      where: {
+        name,
+        channelId: channel.id
+      }
+    })
   }
 
   static incrementViews (id: number, views: number) {
@@ -1569,16 +1611,16 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     return VideoModel.update({ support: ofChannel.support }, options)
   }
 
-  static getAllIdsFromChannel (videoChannel: MChannelId): Promise<number[]> {
-    const query = {
+  static async getAllIdsFromChannel (videoChannel: MChannelId, limit?: number): Promise<number[]> {
+    const videos = await VideoModel.findAll({
       attributes: [ 'id' ],
       where: {
         channelId: videoChannel.id
-      }
-    }
+      },
+      limit
+    })
 
-    return VideoModel.findAll(query)
-                     .then(videos => videos.map(v => v.id))
+    return videos.map(v => v.id)
   }
 
   // threshold corresponds to how many video the field should have to be returned
@@ -1679,9 +1721,9 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     return this.VideoChannel.Account.Actor.Server?.isBlocked() || this.VideoChannel.Account.isBlocked()
   }
 
-  getQualityFileBy<T extends MVideoWithFile> (this: T, fun: (files: MVideoFile[], it: (file: MVideoFile) => number) => MVideoFile) {
+  getQualityFileBy<T extends MVideoWithFile> (this: T, fun: (files: MVideoFile[], property: 'resolution') => MVideoFile) {
     const files = this.getAllFiles()
-    const file = fun(files, file => file.resolution)
+    const file = fun(files, 'resolution')
     if (!file) return undefined
 
     if (file.videoId) {
@@ -1729,6 +1771,12 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     this.Thumbnails.push(savedThumbnail)
   }
 
+  // ---------------------------------------------------------------------------
+
+  hasMiniature () {
+    return !!this.getMiniature()
+  }
+
   getMiniature () {
     if (Array.isArray(this.Thumbnails) === false) return undefined
 
@@ -1744,6 +1792,8 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
 
     return this.Thumbnails.find(t => t.type === ThumbnailType.PREVIEW)
   }
+
+  // ---------------------------------------------------------------------------
 
   isOwned () {
     return this.remote === false
@@ -1921,7 +1971,7 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     const promises: Promise<any>[] = [ remove(filePath) ]
     if (!isRedundancy) promises.push(videoFile.removeTorrent())
 
-    if (videoFile.storage === VideoStorage.OBJECT_STORAGE) {
+    if (videoFile.storage === FileStorage.OBJECT_STORAGE) {
       promises.push(removeWebVideoObjectStorage(videoFile))
     }
 
@@ -1961,7 +2011,7 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
         streamingPlaylistWithFiles.VideoFiles.map(file => file.removeTorrent())
       )
 
-      if (streamingPlaylist.storage === VideoStorage.OBJECT_STORAGE) {
+      if (streamingPlaylist.storage === FileStorage.OBJECT_STORAGE) {
         await removeHLSObjectStorage(streamingPlaylist.withVideo(this))
       }
     }
@@ -1975,7 +2025,7 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     const resolutionFilename = getHlsResolutionPlaylistFilename(videoFile.filename)
     await remove(VideoPathManager.Instance.getFSHLSOutputPath(this, resolutionFilename))
 
-    if (videoFile.storage === VideoStorage.OBJECT_STORAGE) {
+    if (videoFile.storage === FileStorage.OBJECT_STORAGE) {
       await removeHLSFileObjectStorageByFilename(streamingPlaylist.withVideo(this), videoFile.filename)
       await removeHLSFileObjectStorageByFilename(streamingPlaylist.withVideo(this), resolutionFilename)
     }
@@ -1985,8 +2035,19 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     const filePath = VideoPathManager.Instance.getFSHLSOutputPath(this, filename)
     await remove(filePath)
 
-    if (streamingPlaylist.storage === VideoStorage.OBJECT_STORAGE) {
+    if (streamingPlaylist.storage === FileStorage.OBJECT_STORAGE) {
       await removeHLSFileObjectStorageByFilename(streamingPlaylist.withVideo(this), filename)
+    }
+  }
+
+  async removeOriginalFile (videoSource: MVideoSource) {
+    if (!videoSource.keptOriginalFilename) return
+
+    const filePath = VideoPathManager.Instance.getFSOriginalVideoFilePath(videoSource.keptOriginalFilename)
+    await remove(filePath)
+
+    if (videoSource.storage === FileStorage.OBJECT_STORAGE) {
+      await removeOriginalFileObjectStorage(videoSource)
     }
   }
 
@@ -1994,18 +2055,6 @@ export class VideoModel extends Model<Partial<AttributesOnly<VideoModel>>> {
     if (this.isOwned()) return false
 
     return isOutdated(this, ACTIVITY_PUB.VIDEO_REFRESH_INTERVAL)
-  }
-
-  hasPrivacyForFederation () {
-    return isPrivacyForFederation(this.privacy)
-  }
-
-  hasStateForFederation () {
-    return isStateForFederation(this.state)
-  }
-
-  isNewVideoForFederation (newPrivacy: VideoPrivacyType) {
-    return this.hasPrivacyForFederation() === false && isPrivacyForFederation(newPrivacy) === true
   }
 
   setAsRefreshed (transaction?: Transaction) {

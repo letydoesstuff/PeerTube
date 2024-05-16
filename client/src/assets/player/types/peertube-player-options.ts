@@ -30,6 +30,8 @@ export type PeerTubePlayerContructorOptions = {
   authorizationHeader: () => string
 
   metricsUrl: string
+  metricsInterval: number
+
   serverUrl: string
 
   errorNotifier: (message: string) => void
@@ -75,6 +77,7 @@ export type PeerTubePlayerLoadOptions = {
   videoShortUUID: string
 
   duration: number
+  videoRatio: number
 
   requiresUserAuth: boolean
   videoFileToken: () => string

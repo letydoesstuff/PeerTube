@@ -77,7 +77,8 @@ const icons = {
   'message-circle': require('!!raw-loader?!../../../assets/images/feather/message-circle.svg').default,
   'codesandbox': require('!!raw-loader?!../../../assets/images/feather/codesandbox.svg').default,
   'award': require('!!raw-loader?!../../../assets/images/feather/award.svg').default,
-  'stats': require('!!raw-loader?!../../../assets/images/feather/stats.svg').default
+  'stats': require('!!raw-loader?!../../../assets/images/feather/stats.svg').default,
+  'shield': require('!!raw-loader?!../../../assets/images/misc/shield.svg').default
 }
 
 export type GlobalIconName = keyof typeof icons
@@ -86,11 +87,11 @@ export type GlobalIconName = keyof typeof icons
   selector: 'my-global-icon',
   template: '',
   styleUrls: [ './global-icon.component.scss' ],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  standalone: true
 })
 export class GlobalIconComponent implements OnInit {
   @Input() iconName: GlobalIconName
-  @Input() width: string
 
   constructor (
     private el: ElementRef,
@@ -99,6 +100,7 @@ export class GlobalIconComponent implements OnInit {
 
   async ngOnInit () {
     const nativeElement = this.el.nativeElement as HTMLElement
+
     nativeElement.innerHTML = await this.hooks.wrapFun(
       this.getSVGContent.bind(this),
       { name: this.iconName },
@@ -107,10 +109,6 @@ export class GlobalIconComponent implements OnInit {
       'filter:internal.common.svg-icons.get-content.result'
     )
     nativeElement.ariaHidden = 'true'
-
-    if (this.width) {
-      nativeElement.style.width = this.width
-    }
   }
 
   private getSVGContent (options: { name: GlobalIconName }) {

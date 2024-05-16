@@ -104,6 +104,15 @@ async function register ({ registerHook, registerSetting, settingsManager, stora
   })
 
   registerHook({
+    target: 'filter:api.user.me.get.result',
+    handler: (result) => {
+      result.customParam = 'Customized'
+
+      return result
+    }
+  })
+
+  registerHook({
     target: 'filter:api.user.me.subscription-videos.list.params',
     handler: obj => addToCount(obj)
   })
@@ -207,6 +216,16 @@ async function register ({ registerHook, registerSetting, settingsManager, stora
     handler: ({ accepted }, { video }) => {
       if (!accepted) return { accepted: false }
       if (video.name.includes('bad word')) return { accepted: false, errorMessage: 'bad word' }
+
+      return { accepted: true }
+    }
+  })
+
+  registerHook({
+    target: 'filter:api.video.user-import.accept.result',
+    handler: ({ accepted }, { videoBody }) => {
+      if (!accepted) return { accepted: false }
+      if (videoBody.name === 'video 1') return { accepted: false, errorMessage: 'bad word' }
 
       return { accepted: true }
     }
@@ -402,7 +421,8 @@ async function register ({ registerHook, registerSetting, settingsManager, stora
     'filter:api.video.upload.video-attribute.result',
     'filter:api.video.import-url.video-attribute.result',
     'filter:api.video.import-torrent.video-attribute.result',
-    'filter:api.video.live.video-attribute.result'
+    'filter:api.video.live.video-attribute.result',
+    'filter:api.video.user-import.video-attribute.result'
   ]) {
     registerHook({
       target,

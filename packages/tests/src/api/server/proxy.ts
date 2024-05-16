@@ -13,7 +13,7 @@ import {
   setDefaultVideoChannel,
   waitJobs
 } from '@peertube/peertube-server-commands'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 import { expectStartWith, expectNotStartWith } from '@tests/shared/checks.js'
 import { MockProxy } from '@tests/shared/mock-servers/mock-proxy.js'
 
@@ -85,7 +85,7 @@ describe('Test proxy', function () {
   describe('Videos import', async function () {
 
     function quickImport (expectedStatus: HttpStatusCodeType = HttpStatusCode.OK_200) {
-      return servers[0].imports.importVideo({
+      return servers[0].videoImports.importVideo({
         attributes: {
           name: 'video import',
           channelId: servers[0].store.channel.id,

@@ -1,11 +1,9 @@
-import { forceNumber } from '@peertube/peertube-core-utils'
+import { forceNumber, maxBy } from '@peertube/peertube-core-utils'
 import { UserNotification, type UserNotificationType_Type } from '@peertube/peertube-models'
 import { uuidToShort } from '@peertube/peertube-node-utils'
-import { AttributesOnly } from '@peertube/peertube-typescript-utils'
-import { getBiggestActorImage } from '@server/lib/actor-image.js'
 import { UserNotificationIncludes, UserNotificationModelForApi } from '@server/types/models/user/index.js'
 import { ModelIndexesOptions, Op, WhereOptions } from 'sequelize'
-import { AllowNull, BelongsTo, Column, CreatedAt, Default, ForeignKey, Is, Model, Table, UpdatedAt } from 'sequelize-typescript'
+import { AllowNull, BelongsTo, Column, CreatedAt, Default, ForeignKey, Is, Table, UpdatedAt } from 'sequelize-typescript'
 import { isBooleanValid } from '../../helpers/custom-validators/misc.js'
 import { isUserNotificationTypeValid } from '../../helpers/custom-validators/user-notifications.js'
 import { AbuseModel } from '../abuse/abuse.js'
@@ -13,7 +11,7 @@ import { AccountModel } from '../account/account.js'
 import { ActorFollowModel } from '../actor/actor-follow.js'
 import { ApplicationModel } from '../application/application.js'
 import { PluginModel } from '../server/plugin.js'
-import { throwIfNotValid } from '../shared/index.js'
+import { SequelizeModel, throwIfNotValid } from '../shared/index.js'
 import { VideoBlacklistModel } from '../video/video-blacklist.js'
 import { VideoCommentModel } from '../video/video-comment.js'
 import { VideoImportModel } from '../video/video-import.js'
@@ -110,7 +108,7 @@ import { UserModel } from './user.js'
     }
   ] as (ModelIndexesOptions & { where?: WhereOptions })[]
 })
-export class UserNotificationModel extends Model<Partial<AttributesOnly<UserNotificationModel>>> {
+export class UserNotificationModel extends SequelizeModel<UserNotificationModel> {
 
   @AllowNull(false)
   @Default(null)
@@ -519,7 +517,7 @@ export class UserNotificationModel extends Model<Partial<AttributesOnly<UserNoti
     if (!avatars || avatars.length === 0) return { avatar: undefined, avatars: [] }
 
     return {
-      avatar: this.formatAvatar(getBiggestActorImage(avatars)),
+      avatar: this.formatAvatar(maxBy(avatars, 'width')),
 
       avatars: avatars.map(a => this.formatAvatar(a))
     }

@@ -16,7 +16,7 @@ import {
   setAccessTokensToServers
 } from '@peertube/peertube-server-commands'
 import { checkBadCountPagination, checkBadSortPagination, checkBadStartPagination } from '@tests/shared/checks.js'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 import { checkUploadVideoParam } from '@tests/shared/videos.js'
 
 describe('Test video passwords validator', function () {
@@ -36,7 +36,7 @@ describe('Test video passwords validator', function () {
 
     await setAccessTokensToServers([ server ])
 
-    await server.config.updateCustomSubConfig({
+    await server.config.updateExistingConfig({
       newConfig: {
         live: {
           enabled: true,
@@ -111,7 +111,7 @@ describe('Test video passwords validator', function () {
 
     if (mode === 'import') {
       const attributes = { ...baseCorrectParams, targetUrl: FIXTURE_URLS.goodVideo, videoPasswords }
-      return server.imports.importVideo({ attributes, expectedStatus })
+      return server.videoImports.importVideo({ attributes, expectedStatus })
     }
 
     if (mode === 'updateVideo') {

@@ -48,7 +48,6 @@ export interface CustomConfig {
   services: {
     twitter: {
       username: string
-      whitelisted: boolean
     }
   }
 
@@ -117,6 +116,10 @@ export interface CustomConfig {
 
   transcoding: {
     enabled: boolean
+
+    originalFile: {
+      keep: boolean
+    }
 
     allowAdditionalExtensions: boolean
     allowAudioFiles: boolean
@@ -193,9 +196,22 @@ export interface CustomConfig {
         enabled: boolean
       }
     }
+
     videoChannelSynchronization: {
       enabled: boolean
       maxPerUser: number
+    }
+
+    users: {
+      enabled: boolean
+    }
+  }
+
+  export: {
+    users: {
+      enabled: boolean
+      maxUserVideoQuota: number
+      exportExpiration: number
     }
   }
 
@@ -257,4 +273,7 @@ export interface CustomConfig {
     }
   }
 
+  storyboards: {
+    enabled: boolean
+  }
 }

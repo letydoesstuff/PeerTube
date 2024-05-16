@@ -129,12 +129,15 @@ type PeerTubePluginOptions = {
   videoUUID: () => string
   subtitle: () => string
 
+  videoRatio: () => number
+
   poster: () => string
 }
 
 type MetricsPluginOptions = {
   mode: () => PlayerMode
   metricsUrl: () => string
+  metricsInterval: () => number
   videoUUID: () => string
 }
 

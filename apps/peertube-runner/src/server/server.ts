@@ -26,6 +26,7 @@ export class RunnerServer {
   private checkingAvailableJobs = false
 
   private cleaningUp = false
+  private initialized = false
 
   private readonly sockets = new Map<PeerTubeServer, Socket>()
 
@@ -70,6 +71,7 @@ export class RunnerServer {
 
     logger.info(`Using ${ConfigManager.Instance.getTranscodingDirectory()} for transcoding directory`)
 
+    this.initialized = true
     await this.checkAvailableJobs()
   }
 
@@ -98,8 +100,6 @@ export class RunnerServer {
     await this.saveRegisteredInstancesInConf()
 
     logger.info(`Registered runner ${runnerName} on ${url}`)
-
-    await this.checkAvailableJobs()
   }
 
   private loadServer (server: PeerTubeServer) {
@@ -114,8 +114,15 @@ export class RunnerServer {
     })
 
     socket.on('connect_error', err => logger.warn({ err }, `Cannot connect to ${url} socket`))
-    socket.on('connect', () => logger.info(`Connected to ${url} socket`))
-    socket.on('available-jobs', () => this.checkAvailableJobs())
+    socket.on('available-jobs', () => this.safeAsyncCheckAvailableJobs())
+
+    socket.on('connect', () => {
+      logger.info(`Connected to ${url} socket`)
+
+      this.safeAsyncCheckAvailableJobs()
+    })
+    socket.on('disconnect', () => logger.warn(`Disconnected from ${url} socket`))
+    socket.io.on('ping', () => logger.debug(`Received a "ping" for ${url}`))
 
     this.sockets.set(server, socket)
   }
@@ -169,7 +176,13 @@ export class RunnerServer {
 
   // ---------------------------------------------------------------------------
 
+  private safeAsyncCheckAvailableJobs () {
+    this.checkAvailableJobs()
+      .catch(err => logger.error({ err }, `Cannot check available jobs`))
+  }
+
   private async checkAvailableJobs () {
+    if (!this.initialized) return
     if (this.checkingAvailableJobs) return
 
     this.checkingAvailableJobs = true
@@ -187,18 +200,20 @@ export class RunnerServer {
 
         await this.tryToExecuteJobAsync(server, job)
       } catch (err) {
+        hadAvailableJob = false
+
         const code = (err.res?.body as PeerTubeProblemDocument)?.code
 
-        if (code === ServerErrorCode.RUNNER_JOB_NOT_IN_PROCESSING_STATE) {
-          logger.debug({ err }, 'Runner job is not in processing state anymore, retry later')
-          return
+        if (code === ServerErrorCode.RUNNER_JOB_NOT_IN_PENDING_STATE) {
+          logger.debug({ err }, 'Runner job is not in pending state anymore, retry later')
+          continue
         }
 
         if (code === ServerErrorCode.UNKNOWN_RUNNER_TOKEN) {
           logger.error({ err }, `Unregistering ${server.url} as the runner token ${server.runnerToken} is invalid`)
 
           await this.unregisterRunner({ url: server.url, runnerName: server.runnerName })
-          return
+          continue
         }
 
         logger.error({ err }, `Cannot request/accept job on ${server.url} for runner ${server.runnerName}`)

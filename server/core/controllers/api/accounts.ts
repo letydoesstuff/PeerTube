@@ -188,7 +188,11 @@ async function listAccountPlaylists (req: express.Request, res: express.Response
 
   const resultList = await VideoPlaylistModel.listForApi({
     search: req.query.search,
-    followerActorId: serverActor.id,
+
+    followerActorId: isUserAbleToSearchRemoteURI(res)
+      ? null
+      : serverActor.id,
+
     start: req.query.start,
     count: req.query.count,
     sort: req.query.sort,
@@ -226,7 +230,7 @@ async function listAccountVideos (req: express.Request, res: express.Response) {
   }, 'filter:api.accounts.videos.list.params')
 
   const resultList = await Hooks.wrapPromiseFun(
-    VideoModel.listForApi,
+    VideoModel.listForApi.bind(VideoModel),
     apiOptions,
     'filter:api.accounts.videos.list.result'
   )

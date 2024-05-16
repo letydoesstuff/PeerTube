@@ -1,15 +1,17 @@
-import debug from 'debug'
-import videojs from 'video.js'
 import { timeToInt } from '@peertube/peertube-core-utils'
 import { VideoView, VideoViewEvent } from '@peertube/peertube-models'
 import { logger } from '@root-helpers/logger'
 import { isIOS, isMobile, isSafari } from '@root-helpers/web-browser'
+import debug from 'debug'
+import videojs from 'video.js'
 import {
+  getPlayerSessionId,
   getStoredLastSubtitle,
   getStoredMute,
   getStoredVolume,
   saveLastSubtitle,
   saveMuteInStore,
+  savePreferredSubtitle,
   saveVideoWatchHistory,
   saveVolumeInStore
 } from '../../peertube-player-local-storage'
@@ -45,6 +47,8 @@ class PeerTubePlugin extends Plugin {
   private videoViewOnEndedHandler: (...args: any[]) => void
 
   private stopTimeHandler: (...args: any[]) => void
+
+  private resizeObserver: ResizeObserver
 
   constructor (player: videojs.Player, private readonly options: PeerTubePluginOptions) {
     super(player)
@@ -111,8 +115,11 @@ class PeerTubePlugin extends Plugin {
           return
         }
 
+        if (this.currentSubtitle === showing.language) return
+
         this.currentSubtitle = showing.language
         saveLastSubtitle(showing.language)
+        savePreferredSubtitle(showing.language)
       })
 
       this.player.on('video-change', () => {
@@ -120,6 +127,25 @@ class PeerTubePlugin extends Plugin {
 
         this.hideFatalError()
       })
+
+      this.updatePlayerSizeClasses()
+
+      if (typeof ResizeObserver !== 'undefined') {
+        this.resizeObserver = new ResizeObserver(() => {
+          this.updatePlayerSizeClasses()
+        })
+
+        this.resizeObserver.observe(this.player.el())
+      }
+    })
+
+    this.player.on('resolution-change', (_: any, { resolution }: { resolution: number }) => {
+      if (this.player.paused()) {
+        this.player.on('play', () => this.adaptPosterForAudioOnly(resolution))
+        return
+      }
+
+      this.adaptPosterForAudioOnly(resolution)
     })
 
     this.initOnRatioChange()
@@ -127,6 +153,7 @@ class PeerTubePlugin extends Plugin {
 
   dispose () {
     if (this.videoViewInterval) clearInterval(this.videoViewInterval)
+    if (this.resizeObserver) this.resizeObserver.disconnect()
 
     super.dispose()
   }
@@ -185,6 +212,10 @@ class PeerTubePlugin extends Plugin {
     this.player.removeChild(this.errorModal)
     this.errorModal.close()
     this.errorModal = undefined
+
+    if (this.player.loadingSpinner) {
+      this.player.loadingSpinner.show()
+    }
   }
 
   private initializePlayer () {
@@ -223,18 +254,41 @@ class PeerTubePlugin extends Plugin {
 
     const defaultRatio = getComputedStyle(this.player.el()).getPropertyValue(this.options.autoPlayerRatio.cssRatioVariable)
 
+    const tryToUpdateRatioFromOptions = () => {
+      if (!this.options.videoRatio()) return
+
+      this.adaptPlayerFromRatio({ ratio: this.options.videoRatio(), defaultRatio })
+      this.updatePlayerSizeClasses()
+    }
+
+    tryToUpdateRatioFromOptions()
+
+    this.player.on('video-change', () => tryToUpdateRatioFromOptions())
+
     this.player.on('video-ratio-changed', (_event, data: { ratio: number }) => {
-      const el = this.player.el() as HTMLElement
+      if (this.options.videoRatio()) return
 
-      // In portrait screen mode, we allow player with bigger height size than width
-      const portraitMode = getComputedStyle(el).getPropertyValue(this.options.autoPlayerRatio.cssPlayerPortraitModeVariable) === '1'
-
-      const currentRatio = isNaN(data.ratio) || (!portraitMode && data.ratio < 1)
-        ? defaultRatio
-        : data.ratio
-
-      el.style.setProperty('--player-ratio', currentRatio + '')
+      this.adaptPlayerFromRatio({ ratio: data.ratio, defaultRatio })
+      this.updatePlayerSizeClasses()
     })
+  }
+
+  private adaptPlayerFromRatio (options: {
+    ratio: number
+    defaultRatio: string
+  }) {
+    const { ratio, defaultRatio } = options
+
+    const el = this.player.el() as HTMLElement
+
+    // In portrait screen mode, we allow player with bigger height size than width
+    const portraitMode = getComputedStyle(el).getPropertyValue(this.options.autoPlayerRatio.cssPlayerPortraitModeVariable) === '1'
+
+    const currentRatio = isNaN(ratio) || (!portraitMode && ratio < 1)
+      ? defaultRatio
+      : ratio
+
+    el.style.setProperty('--player-ratio', currentRatio + '')
   }
 
   // ---------------------------------------------------------------------------
@@ -320,12 +374,51 @@ class PeerTubePlugin extends Plugin {
 
     if (!this.videoViewUrl()) return Promise.resolve(true)
 
-    const body: VideoView = { currentTime, viewEvent }
+    const sessionId = getPlayerSessionId()
+
+    const body: VideoView = { currentTime, viewEvent, sessionId }
 
     const headers = new Headers({ 'Content-type': 'application/json; charset=UTF-8' })
     if (this.authorizationHeader()) headers.set('Authorization', this.authorizationHeader())
 
     return fetch(this.videoViewUrl(), { method: 'POST', body: JSON.stringify(body), headers })
+  }
+
+  // ---------------------------------------------------------------------------
+
+  private adaptPosterForAudioOnly (resolution: number) {
+    debugLogger('Check if we need to adapt player for audio only', resolution)
+
+    if (resolution === 0) {
+      this.player.audioPosterMode(true)
+      this.player.poster(this.options.poster())
+      return
+    }
+
+    this.player.audioPosterMode(false)
+    this.player.poster('')
+  }
+
+  // ---------------------------------------------------------------------------
+
+  private updatePlayerSizeClasses () {
+    requestAnimationFrame(() => {
+      if (!this.player) return
+
+      debugLogger('Updating player size classes')
+
+      const width = this.player.currentWidth()
+
+      const breakpoints = [ 350, 570, 750 ]
+
+      for (const breakpoint of breakpoints) {
+        if (width <= breakpoint) {
+          this.player.addClass('vjs-size-' + breakpoint)
+        } else {
+          this.player.removeClass('vjs-size-' + breakpoint)
+        }
+      }
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -382,6 +475,8 @@ class PeerTubePlugin extends Plugin {
 
     this.player.tech(true).clearTracks('text')
 
+    this.player.removeClass('vjs-has-captions')
+
     for (const caption of this.options.videoCaptions()) {
       this.player.addRemoteTextTrack({
         kind: 'captions',
@@ -391,6 +486,8 @@ class PeerTubePlugin extends Plugin {
         src: caption.src,
         default: this.currentSubtitle === caption.language
       }, true)
+
+      this.player.addClass('vjs-has-captions')
     }
 
     this.player.trigger('captions-changed')

@@ -10,6 +10,10 @@ import {
   NSFWPolicyType,
   RunnerJobState,
   RunnerJobStateType,
+  UserExportState,
+  UserExportStateType,
+  UserImportState,
+  UserImportStateType,
   UserRegistrationState,
   UserRegistrationStateType,
   VideoChannelSyncState,
@@ -41,7 +45,7 @@ import { cpus } from 'os'
 
 // ---------------------------------------------------------------------------
 
-const LAST_MIGRATION_VERSION = 800
+const LAST_MIGRATION_VERSION = 835
 
 // ---------------------------------------------------------------------------
 
@@ -106,7 +110,19 @@ const SORTABLE_COLUMNS = {
   RUNNER_REGISTRATION_TOKENS: [ 'createdAt' ],
   RUNNER_JOBS: [ 'updatedAt', 'createdAt', 'priority', 'state', 'progress' ],
 
-  VIDEOS: [ 'name', 'duration', 'createdAt', 'publishedAt', 'originallyPublishedAt', 'views', 'likes', 'trending', 'hot', 'best' ],
+  VIDEOS: [
+    'name',
+    'duration',
+    'createdAt',
+    'publishedAt',
+    'originallyPublishedAt',
+    'views',
+    'likes',
+    'trending',
+    'hot',
+    'best',
+    'localVideoFilesSize'
+  ],
 
   // Don't forget to update peertube-search-index with the same values
   VIDEOS_SEARCH: [ 'name', 'duration', 'createdAt', 'publishedAt', 'originallyPublishedAt', 'views', 'likes', 'match' ],
@@ -124,7 +140,7 @@ const SORTABLE_COLUMNS = {
 
   PLUGINS: [ 'name', 'createdAt', 'updatedAt' ],
 
-  AVAILABLE_PLUGINS: [ 'npmName', 'popularity' ],
+  AVAILABLE_PLUGINS: [ 'npmName', 'popularity', 'trending' ],
 
   VIDEO_REDUNDANCIES: [ 'name' ]
 }
@@ -191,7 +207,9 @@ const JOB_ATTEMPTS: { [id in JobType]: number } = {
   'transcoding-job-builder': 1,
   'generate-video-storyboard': 1,
   'notify': 1,
-  'federate-video': 1
+  'federate-video': 1,
+  'create-user-export': 1,
+  'import-user-archive': 1
 }
 // Excluded keys are jobs that can be configured by admins
 const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'video-import'>]: number } = {
@@ -217,7 +235,9 @@ const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'video-im
   'transcoding-job-builder': 1,
   'generate-video-storyboard': 1,
   'notify': 5,
-  'federate-video': 3
+  'federate-video': 3,
+  'create-user-export': 1,
+  'import-user-archive': 1
 }
 const JOB_TTL: { [id in JobType]: number } = {
   'activitypub-http-broadcast': 60000 * 10, // 10 minutes
@@ -244,7 +264,9 @@ const JOB_TTL: { [id in JobType]: number } = {
   'after-video-channel-import': 60000 * 5, // 5 minutes
   'transcoding-job-builder': 60000, // 1 minute
   'notify': 60000 * 5, // 5 minutes
-  'federate-video': 60000 * 5 // 5 minutes
+  'federate-video': 60000 * 5, // 5 minutes,
+  'create-user-export': 60000 * 60 * 24, // 24 hours
+  'import-user-archive': 60000 * 60 * 24 // 24 hours
 }
 const REPEAT_JOBS: { [ id in JobType ]?: RepeatOptions } = {
   'videos-views-stats': {
@@ -313,6 +335,7 @@ const SCHEDULER_INTERVALS_MS = {
   AUTO_FOLLOW_INDEX_INSTANCES: 60000 * 60 * 24, // 1 day
   REMOVE_OLD_VIEWS: 60000 * 60 * 24, // 1 day
   REMOVE_OLD_HISTORY: 60000 * 60 * 24, // 1 day
+  REMOVE_EXPIRED_USER_EXPORTS: 1000 * 3600, // 1 hour
   UPDATE_INBOX_STATS: 1000 * 60, // 1 minute
   REMOVE_DANGLING_RESUMABLE_UPLOADS: 60000 * 60, // 1 hour
   CHANNEL_SYNC_CHECK_INTERVAL: CONFIG.IMPORT.VIDEO_CHANNEL_SYNCHRONIZATION.CHECK_INTERVAL
@@ -403,6 +426,9 @@ const CONSTRAINTS_FIELDS = {
     PARTIAL_UPLOAD_SIZE: { max: 50 * 1024 * 1024 * 1024 }, // 50GB
     URL: { min: 3, max: 2000 } // Length
   },
+  VIDEO_SOURCE: {
+    FILENAME: { min: 1, max: 1000 } // Length
+  },
   VIDEO_PLAYLISTS: {
     NAME: { min: 1, max: 120 }, // Length
     DESCRIPTION: { min: 3, max: 1000 }, // Length
@@ -476,10 +502,11 @@ const CONSTRAINTS_FIELDS = {
 }
 
 const VIEW_LIFETIME = {
-  VIEW: CONFIG.VIEWS.VIDEOS.IP_VIEW_EXPIRATION,
+  VIEW: CONFIG.VIEWS.VIDEOS.VIEW_EXPIRATION,
   VIEWER_COUNTER: 60000 * 2, // 2 minutes
   VIEWER_STATS: 60000 * 60 // 1 hour
 }
+let VIEWER_SYNC_REDIS = 30000 // Sync viewer into redis
 
 const MAX_LOCAL_VIEWER_WATCH_SECTIONS = 100
 
@@ -500,6 +527,10 @@ const DEFAULT_AUDIO_RESOLUTION = VideoResolution.H_480P
 const VIDEO_RATE_TYPES: { [ id: string ]: VideoRateType } = {
   LIKE: 'like',
   DISLIKE: 'dislike'
+}
+
+const USER_IMPORT = {
+  MAX_PLAYLIST_ELEMENTS: 1000
 }
 
 const FFMPEG_NICE = {
@@ -617,6 +648,20 @@ const RUNNER_JOB_STATES: { [ id in RunnerJobStateType ]: string } = {
   [RunnerJobState.PARENT_CANCELLED]: 'Parent job cancelled'
 }
 
+const USER_EXPORT_STATES: { [ id in UserExportStateType ]: string } = {
+  [UserExportState.PENDING]: 'Pending',
+  [UserExportState.PROCESSING]: 'Processing',
+  [UserExportState.COMPLETED]: 'Completed',
+  [UserExportState.ERRORED]: 'Failed'
+}
+
+const USER_IMPORT_STATES: { [ id in UserImportStateType ]: string } = {
+  [UserImportState.PENDING]: 'Pending',
+  [UserImportState.PROCESSING]: 'Processing',
+  [UserImportState.COMPLETED]: 'Completed',
+  [UserImportState.ERRORED]: 'Failed'
+}
+
 const MIMETYPES = {
   AUDIO: {
     MIMETYPE_EXT: {
@@ -729,7 +774,6 @@ const ACTIVITY_PUB = {
     'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
   ],
   ACCEPT_HEADER: 'application/activity+json, application/ld+json',
-  PUBLIC: 'https://www.w3.org/ns/activitystreams#Public',
   COLLECTION_ITEMS_PER_PAGE: 10,
   FETCH_PAGE_LIMIT: 2000,
   MAX_RECURSION_COMMENTS: 100,
@@ -772,6 +816,7 @@ const USER_PASSWORD_RESET_LIFETIME = 60000 * 60 // 60 minutes
 const USER_PASSWORD_CREATE_LIFETIME = 60000 * 60 * 24 * 7 // 7 days
 
 const TWO_FACTOR_AUTH_REQUEST_TOKEN_LIFETIME = 60000 * 10 // 10 minutes
+let JWT_TOKEN_USER_EXPORT_FILE_LIFETIME = '15 minutes'
 
 const EMAIL_VERIFY_LIFETIME = 60000 * 60 // 60 minutes
 
@@ -780,6 +825,10 @@ const NSFW_POLICY_TYPES: { [ id: string ]: NSFWPolicyType } = {
   BLUR: 'blur',
   DISPLAY: 'display'
 }
+
+// ---------------------------------------------------------------------------
+
+const USER_EXPORT_MAX_ITEMS = 1000
 
 // ---------------------------------------------------------------------------
 
@@ -806,7 +855,9 @@ const STATIC_PATHS = {
 const STATIC_DOWNLOAD_PATHS = {
   TORRENTS: '/download/torrents/',
   VIDEOS: '/download/videos/',
-  HLS_VIDEOS: '/download/streaming-playlists/hls/videos/'
+  HLS_VIDEOS: '/download/streaming-playlists/hls/videos/',
+  USER_EXPORTS: '/download/user-exports/',
+  ORIGINAL_VIDEO_FILE: '/download/original-video-files/'
 }
 const LAZY_STATIC_PATHS = {
   THUMBNAILS: '/lazy-static/thumbnails/',
@@ -846,7 +897,15 @@ const PREVIEWS_SIZE = {
   minWidth: 400
 }
 const ACTOR_IMAGES_SIZE: { [key in ActorImageType_Type]: { width: number, height: number }[] } = {
-  [ActorImageType.AVATAR]: [
+  [ActorImageType.AVATAR]: [ // 1/1 ratio
+    {
+      width: 1500,
+      height: 1500
+    },
+    {
+      width: 600,
+      height: 600
+    },
     {
       width: 120,
       height: 120
@@ -856,10 +915,14 @@ const ACTOR_IMAGES_SIZE: { [key in ActorImageType_Type]: { width: number, height
       height: 48
     }
   ],
-  [ActorImageType.BANNER]: [
+  [ActorImageType.BANNER]: [ // 6/1 ratio
     {
       width: 1920,
-      height: 317 // 6/1 ratio
+      height: 317
+    },
+    {
+      width: 600,
+      height: 100
     }
   ]
 }
@@ -922,10 +985,12 @@ const DIRECTORIES = {
     PRIVATE: join(CONFIG.STORAGE.STREAMING_PLAYLISTS_DIR, 'hls', 'private')
   },
 
-  VIDEOS: {
+  WEB_VIDEOS: {
     PUBLIC: CONFIG.STORAGE.WEB_VIDEOS_DIR,
     PRIVATE: join(CONFIG.STORAGE.WEB_VIDEOS_DIR, 'private')
   },
+
+  ORIGINAL_VIDEOS: CONFIG.STORAGE.ORIGINAL_VIDEO_FILES_DIR,
 
   HLS_REDUNDANCY: join(CONFIG.STORAGE.REDUNDANCY_DIR, 'hls')
 }
@@ -1102,6 +1167,8 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     PLUGIN_EXTERNAL_AUTH_TOKEN_LIFETIME = 5000
 
     JOB_REMOVAL_OPTIONS.SUCCESS['videos-views-stats'] = 10000
+
+    VIEWER_SYNC_REDIS = 1000
   }
 
   if (isTestInstance()) {
@@ -1122,6 +1189,8 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     VIDEO_LIVE.EDGE_LIVE_DELAY_SEGMENTS_NOTIFICATION = 1
 
     RUNNER_JOBS.LAST_CONTACT_UPDATE_INTERVAL = 2000
+
+    JWT_TOKEN_USER_EXPORT_FILE_LIFETIME = '2 seconds'
   }
 }
 
@@ -1165,6 +1234,8 @@ export {
   DIRECTORIES,
   RESUMABLE_UPLOAD_SESSION_LIFETIME,
   RUNNER_JOB_STATES,
+  USER_EXPORT_STATES,
+  USER_IMPORT_STATES,
   P2P_MEDIA_LOADER_PEER_VERSION,
   STORYBOARD,
   ACTOR_IMAGES_SIZE,
@@ -1184,6 +1255,7 @@ export {
   STATS_TIMESERIE,
   BROADCAST_CONCURRENCY,
   AUDIT_LOG_FILENAME,
+  USER_IMPORT,
   PAGINATION,
   ACTOR_FOLLOW_SCORE,
   PREVIEWS_SIZE,
@@ -1192,6 +1264,7 @@ export {
   DEFAULT_USER_THEME_NAME,
   SERVER_ACTOR_NAME,
   TWO_FACTOR_AUTH_REQUEST_TOKEN_LIFETIME,
+  JWT_TOKEN_USER_EXPORT_FILE_LIFETIME,
   PLUGIN_GLOBAL_CSS_FILE_NAME,
   PLUGIN_GLOBAL_CSS_PATH,
   PRIVATE_RSA_KEY_SIZE,
@@ -1202,7 +1275,9 @@ export {
   DEFAULT_THEME_NAME,
   NSFW_POLICY_TYPES,
   STATIC_MAX_AGE,
+  VIEWER_SYNC_REDIS,
   STATIC_PATHS,
+  USER_EXPORT_MAX_ITEMS,
   VIDEO_IMPORT_TIMEOUT,
   VIDEO_PLAYLIST_TYPES,
   MAX_LOGS_OUTPUT_CHARACTERS,
@@ -1402,6 +1477,7 @@ async function buildLanguages () {
     sfs: true, // South African sign language
     swl: true, // Swedish sign language
     rsl: true, // Russian sign language
+    fse: true, // Finnish sign language
 
     kab: true, // Kabyle
     gcf: true, // Guadeloupean
@@ -1432,6 +1508,10 @@ async function buildLanguages () {
   // Override Portuguese label
   languages['pt'] = 'Portuguese (Brazilian)'
   languages['pt-PT'] = 'Portuguese (Portugal)'
+
+  // Override Spanish labels
+  languages['es'] = 'Spanish (Spain)'
+  languages['es-419'] = 'Spanish (Latin America)'
 
   // Chinese languages
   languages['zh-Hans'] = 'Simplified Chinese'

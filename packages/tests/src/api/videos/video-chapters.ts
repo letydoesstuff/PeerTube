@@ -9,7 +9,7 @@ import {
   setDefaultVideoChannel,
   waitJobs
 } from '@peertube/peertube-server-commands'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 import { expect } from 'chai'
 
 describe('Test video chapters', function () {
@@ -237,7 +237,7 @@ describe('Test video chapters', function () {
         targetUrl: FIXTURE_URLS.youtubeChapters,
         description: 'this is a super description\n'
       }
-      const { video } = await servers[0].imports.importVideo({ attributes })
+      const { video } = await servers[0].videoImports.importVideo({ attributes })
 
       await waitJobs(servers)
 
@@ -277,7 +277,7 @@ describe('Test video chapters', function () {
           '00:03 chapter 2\n' +
           '00:04 chapter 3\n'
       }
-      const { video } = await servers[0].imports.importVideo({ attributes })
+      const { video } = await servers[0].videoImports.importVideo({ attributes })
 
       await waitJobs(servers)
 
@@ -309,7 +309,7 @@ describe('Test video chapters', function () {
         privacy: VideoPrivacy.PUBLIC,
         targetUrl: FIXTURE_URLS.chatersVideo
       }
-      const { video } = await servers[0].imports.importVideo({ attributes })
+      const { video } = await servers[0].videoImports.importVideo({ attributes })
 
       await waitJobs(servers)
 

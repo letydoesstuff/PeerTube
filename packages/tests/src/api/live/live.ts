@@ -48,11 +48,13 @@ describe('Test live', function () {
     await setAccessTokensToServers(servers)
     await setDefaultVideoChannel(servers)
 
-    await servers[0].config.updateCustomSubConfig({
+    await servers[0].config.enableMinimumTranscoding()
+    await servers[0].config.updateExistingConfig({
       newConfig: {
         live: {
           enabled: true,
           allowReplay: true,
+          maxUserLives: -1,
           latencySetting: {
             enabled: true
           },
@@ -114,6 +116,8 @@ describe('Test live', function () {
         expect(video.channel.host).to.equal(servers[0].store.channel.host)
 
         expect(video.isLive).to.be.true
+
+        expect(video.aspectRatio).to.not.exist
 
         expect(video.nsfw).to.be.false
         expect(video.waitTranscoding).to.be.false
@@ -286,15 +290,16 @@ describe('Test live', function () {
       rtmpUrl = 'rtmp://' + servers[0].hostname + ':' + servers[0].rtmpPort + ''
     })
 
-    async function createLiveWrapper () {
-      const liveAttributes = {
-        name: 'user live',
-        channelId: servers[0].store.channel.id,
-        privacy: VideoPrivacy.PUBLIC,
-        saveReplay: false
-      }
-
-      const { uuid } = await commands[0].create({ fields: liveAttributes })
+    async function createLiveWrapper (token?: string, channelId?: number) {
+      const { uuid } = await commands[0].create({
+        token,
+        fields: {
+          name: 'user live',
+          channelId: channelId ?? servers[0].store.channel.id,
+          privacy: VideoPrivacy.PUBLIC,
+          saveReplay: false
+        }
+      })
 
       const live = await commands[0].get({ videoId: uuid })
       const video = await servers[0].videos.get({ id: uuid })
@@ -349,6 +354,18 @@ describe('Test live', function () {
       await testFfmpegStreamError(command, true)
     })
 
+    it('Should not allow a stream on if the owner has been blocked', async function () {
+      this.timeout(60000)
+
+      const { token, userId, userChannelId } = await servers[0].users.generate('user1')
+      liveVideo = await createLiveWrapper(token, userChannelId)
+
+      await servers[0].users.banUser({ userId })
+
+      const command = sendRTMPStream({ rtmpBaseUrl: rtmpUrl + '/live', streamKey: liveVideo.streamKey })
+      await testFfmpegStreamError(command, true)
+    })
+
     it('Should not allow a stream on a live that was deleted', async function () {
       this.timeout(60000)
 
@@ -381,7 +398,7 @@ describe('Test live', function () {
     }
 
     function updateConf (resolutions: number[]) {
-      return servers[0].config.updateCustomSubConfig({
+      return servers[0].config.updateExistingConfig({
         newConfig: {
           live: {
             enabled: true,
@@ -539,6 +556,7 @@ describe('Test live', function () {
 
         expect(video.state.id).to.equal(VideoState.PUBLISHED)
         expect(video.duration).to.be.greaterThan(1)
+        expect(video.aspectRatio).to.equal(1.7778)
         expect(video.files).to.have.lengthOf(0)
 
         const hlsPlaylist = video.streamingPlaylists.find(s => s.type === VideoStreamingPlaylistType.HLS)
@@ -586,7 +604,7 @@ describe('Test live', function () {
       const resolutions = [ 240, 480 ]
       await updateConf(resolutions)
 
-      await servers[0].config.updateExistingSubConfig({
+      await servers[0].config.updateExistingConfig({
         newConfig: {
           live: {
             transcoding: {

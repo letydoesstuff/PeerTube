@@ -1,7 +1,6 @@
 import cors from 'cors'
 import express from 'express'
 import {
-  VideoChapterObject,
   VideoChaptersObject,
   VideoCommentObject,
   VideoPlaylistPrivacy,
@@ -57,6 +56,7 @@ import { VideoShareModel } from '../../models/video/video-share.js'
 import { activityPubResponse } from './utils.js'
 import { VideoChapterModel } from '@server/models/video/video-chapter.js'
 import { InternalEventEmitter } from '@server/lib/internal-event-emitter.js'
+import { buildChaptersAPHasPart } from '@server/lib/activitypub/video-chapters.js'
 
 const activityPubClientRouter = express.Router()
 activityPubClientRouter.use(cors())
@@ -120,7 +120,7 @@ activityPubClientRouter.get('/videos/watch/:id/activity',
 activityPubClientRouter.get('/videos/watch/:id/announces',
   executeIfActivityPub,
   activityPubRateLimiter,
-  asyncMiddleware(videosCustomGetValidator('only-immutable-attributes')),
+  asyncMiddleware(videosCustomGetValidator('only-video-and-blacklist')),
   asyncMiddleware(videoAnnouncesController)
 )
 activityPubClientRouter.get('/videos/watch/:id/announces/:actorId',
@@ -132,19 +132,19 @@ activityPubClientRouter.get('/videos/watch/:id/announces/:actorId',
 activityPubClientRouter.get('/videos/watch/:id/likes',
   executeIfActivityPub,
   activityPubRateLimiter,
-  asyncMiddleware(videosCustomGetValidator('only-immutable-attributes')),
+  asyncMiddleware(videosCustomGetValidator('only-video-and-blacklist')),
   asyncMiddleware(videoLikesController)
 )
 activityPubClientRouter.get('/videos/watch/:id/dislikes',
   executeIfActivityPub,
   activityPubRateLimiter,
-  asyncMiddleware(videosCustomGetValidator('only-immutable-attributes')),
+  asyncMiddleware(videosCustomGetValidator('only-video-and-blacklist')),
   asyncMiddleware(videoDislikesController)
 )
 activityPubClientRouter.get('/videos/watch/:id/comments',
   executeIfActivityPub,
   activityPubRateLimiter,
-  asyncMiddleware(videosCustomGetValidator('only-immutable-attributes')),
+  asyncMiddleware(videosCustomGetValidator('only-video-and-blacklist')),
   asyncMiddleware(videoCommentsController)
 )
 activityPubClientRouter.get('/videos/watch/:videoId/comments/:commentId',
@@ -175,7 +175,7 @@ activityPubClientRouter.get('/videos/watch/:id/chapters',
   activityPubRateLimiter,
   apVideoChaptersSetCacheKey,
   chaptersCacheRouteMiddleware(ROUTE_CACHE_LIFETIME.ACTIVITY_PUB.VIDEOS),
-  asyncMiddleware(videosCustomGetValidator('only-video')),
+  asyncMiddleware(videosCustomGetValidator('only-video-and-blacklist')),
   asyncMiddleware(videoChaptersController)
 )
 
@@ -330,7 +330,7 @@ async function videoAnnounceController (req: express.Request, res: express.Respo
 }
 
 async function videoAnnouncesController (req: express.Request, res: express.Response) {
-  const video = res.locals.onlyImmutableVideo
+  const video = res.locals.onlyVideo
 
   if (redirectIfNotOwned(video.url, res)) return
 
@@ -347,7 +347,7 @@ async function videoAnnouncesController (req: express.Request, res: express.Resp
 }
 
 async function videoLikesController (req: express.Request, res: express.Response) {
-  const video = res.locals.onlyImmutableVideo
+  const video = res.locals.onlyVideo
 
   if (redirectIfNotOwned(video.url, res)) return
 
@@ -357,7 +357,7 @@ async function videoLikesController (req: express.Request, res: express.Response
 }
 
 async function videoDislikesController (req: express.Request, res: express.Response) {
-  const video = res.locals.onlyImmutableVideo
+  const video = res.locals.onlyVideo
 
   if (redirectIfNotOwned(video.url, res)) return
 
@@ -367,7 +367,7 @@ async function videoDislikesController (req: express.Request, res: express.Respo
 }
 
 async function videoCommentsController (req: express.Request, res: express.Response) {
-  const video = res.locals.onlyImmutableVideo
+  const video = res.locals.onlyVideo
 
   if (redirectIfNotOwned(video.url, res)) return
 
@@ -433,19 +433,9 @@ async function videoChaptersController (req: express.Request, res: express.Respo
 
   const chapters = await VideoChapterModel.listChaptersOfVideo(video.id)
 
-  const hasPart: VideoChapterObject[] = []
-
-  if (chapters.length !== 0) {
-    for (let i = 0; i < chapters.length - 1; i++) {
-      hasPart.push(chapters[i].toActivityPubJSON({ video, nextChapter: chapters[i + 1] }))
-    }
-
-    hasPart.push(chapters[chapters.length - 1].toActivityPubJSON({ video: res.locals.onlyVideo, nextChapter: null }))
-  }
-
   const chaptersObject: VideoChaptersObject = {
     id: getLocalVideoChaptersActivityPubUrl(video),
-    hasPart
+    hasPart: buildChaptersAPHasPart(video, chapters)
   }
 
   return activityPubResponse(activityPubContextify(chaptersObject, 'Chapters', getContextFilter()), res)

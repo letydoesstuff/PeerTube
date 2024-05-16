@@ -9,7 +9,7 @@ import {
   setAccessTokensToServers,
   setDefaultVideoChannel
 } from '@peertube/peertube-server-commands'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 
 describe('Test config defaults', function () {
   let server: PeerTubeServer
@@ -59,7 +59,7 @@ describe('Test config defaults', function () {
 
     before(async function () {
       await server.config.disableTranscoding()
-      await server.config.enableImports()
+      await server.config.enableVideoImports()
       await server.config.enableLive({ allowReplay: false, transcoding: false })
     })
 
@@ -82,7 +82,7 @@ describe('Test config defaults', function () {
     })
 
     it('Should respect default values when importing a video using URL', async function () {
-      const { video: { id } } = await server.imports.importVideo({
+      const { video: { id } } = await server.videoImports.importVideo({
         attributes: {
           ...attributes,
           channelId,
@@ -95,7 +95,7 @@ describe('Test config defaults', function () {
     })
 
     it('Should respect default values when importing a video using magnet URI', async function () {
-      const { video: { id } } = await server.imports.importVideo({
+      const { video: { id } } = await server.videoImports.importVideo({
         attributes: {
           ...attributes,
           channelId,
@@ -212,7 +212,7 @@ describe('Test config defaults', function () {
 
   describe('Default user attributes', function () {
     it('Should create a user and register a user with the default config', async function () {
-      await server.config.updateCustomSubConfig({
+      await server.config.updateExistingConfig({
         newConfig: {
           user: {
             history: {
@@ -252,7 +252,7 @@ describe('Test config defaults', function () {
     })
 
     it('Should update config and create a user and register a user with the new default config', async function () {
-      await server.config.updateCustomSubConfig({
+      await server.config.updateExistingConfig({
         newConfig: {
           user: {
             history: {

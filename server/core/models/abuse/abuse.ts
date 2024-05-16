@@ -1,4 +1,4 @@
-import { abusePredefinedReasonsMap } from '@peertube/peertube-core-utils'
+import { abusePredefinedReasonsMap, forceNumber } from '@peertube/peertube-core-utils'
 import {
   AbuseFilter,
   AbuseObject,
@@ -10,9 +10,9 @@ import {
   AdminVideoCommentAbuse,
   UserAbuse,
   UserVideoAbuse,
-  type AbuseStateType
+  type AbuseStateType,
+  AbuseState
 } from '@peertube/peertube-models'
-import { AttributesOnly } from '@peertube/peertube-typescript-utils'
 import { isAbuseModerationCommentValid, isAbuseReasonValid, isAbuseStateValid } from '@server/helpers/custom-validators/abuses.js'
 import invert from 'lodash-es/invert.js'
 import { Op, QueryTypes, literal } from 'sequelize'
@@ -25,9 +25,7 @@ import {
   Default,
   ForeignKey,
   HasOne,
-  Is,
-  Model,
-  Scopes,
+  Is, Scopes,
   Table,
   UpdatedAt
 } from 'sequelize-typescript'
@@ -41,7 +39,7 @@ import {
   MUserAccountId
 } from '../../types/models/index.js'
 import { AccountModel, ScopeNames as AccountScopeNames, SummaryOptions as AccountSummaryOptions } from '../account/account.js'
-import { getSort, throwIfNotValid } from '../shared/index.js'
+import { SequelizeModel, getSort, parseAggregateResult, throwIfNotValid } from '../shared/index.js'
 import { ThumbnailModel } from '../video/thumbnail.js'
 import { VideoBlacklistModel } from '../video/video-blacklist.js'
 import { SummaryOptions as ChannelSummaryOptions, VideoChannelModel, ScopeNames as VideoChannelScopeNames } from '../video/video-channel.js'
@@ -76,7 +74,8 @@ export enum ScopeNames {
               '(' +
                 'SELECT count(*) ' +
                 'FROM "videoAbuse" ' +
-                'WHERE "videoId" = "VideoAbuse"."videoId" AND "videoId" IS NOT NULL' +
+                'WHERE "videoId" IN (SELECT "videoId" FROM "videoAbuse" WHERE "abuseId" = "AbuseModel"."id") ' +
+                'AND "videoId" IS NOT NULL' +
               ')'
             ),
             'countReportsForVideo'
@@ -87,11 +86,10 @@ export enum ScopeNames {
               '(' +
                 'SELECT t.nth ' +
                 'FROM ( ' +
-                  'SELECT id, ' +
-                         'row_number() OVER (PARTITION BY "videoId" ORDER BY "createdAt") AS nth ' +
+                  'SELECT id, "abuseId", row_number() OVER (PARTITION BY "videoId" ORDER BY "createdAt") AS nth ' +
                   'FROM "videoAbuse" ' +
                 ') t ' +
-                'WHERE t.id = "VideoAbuse".id AND t.id IS NOT NULL' +
+                'WHERE t."abuseId" = "AbuseModel"."id" ' +
               ')'
             ),
             'nthReportForVideo'
@@ -195,7 +193,7 @@ export enum ScopeNames {
     }
   ]
 })
-export class AbuseModel extends Model<Partial<AttributesOnly<AbuseModel>>> {
+export class AbuseModel extends SequelizeModel<AbuseModel> {
 
   @AllowNull(false)
   @Default(null)
@@ -219,6 +217,10 @@ export class AbuseModel extends Model<Partial<AttributesOnly<AbuseModel>>> {
   @Default(null)
   @Column(DataType.ARRAY(DataType.INTEGER))
   predefinedReasons: AbusePredefinedReasonsType[]
+
+  @AllowNull(true)
+  @Column
+  processedAt: Date
 
   @CreatedAt
   createdAt: Date
@@ -441,6 +443,36 @@ export class AbuseModel extends Model<Partial<AttributesOnly<AbuseModel>>> {
     return { total, data }
   }
 
+  // ---------------------------------------------------------------------------
+
+  static getStats () {
+    const query = `SELECT ` +
+      `AVG(EXTRACT(EPOCH FROM ("processedAt" - "createdAt") * 1000)) ` +
+        `FILTER (WHERE "processedAt" IS NOT NULL AND "createdAt" > CURRENT_DATE - INTERVAL '3 months')` +
+        `AS "avgResponseTime", ` +
+      // "processedAt" has been introduced in PeerTube 6.1 so also check the abuse state to check processed abuses
+      `COUNT(*) FILTER (WHERE "processedAt" IS NOT NULL OR "state" != ${AbuseState.PENDING}) AS "processedAbuses", ` +
+      `COUNT(*) AS "totalAbuses" ` +
+      `FROM "abuse"`
+
+    return AbuseModel.sequelize.query<any>(query, {
+      type: QueryTypes.SELECT,
+      raw: true
+    }).then(([ row ]) => {
+      return {
+        totalAbuses: parseAggregateResult(row.totalAbuses),
+
+        totalAbusesProcessed: parseAggregateResult(row.processedAbuses),
+
+        averageAbuseResponseTimeMs: row?.avgResponseTime
+          ? forceNumber(row.avgResponseTime)
+          : null
+      }
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+
   buildBaseVideoCommentAbuse (this: MAbuseUserFormattable) {
     // Associated video comment could have been destroyed if the video has been deleted
     if (!this.VideoCommentAbuse?.VideoComment) return null
@@ -613,7 +645,8 @@ export class AbuseModel extends Model<Partial<AttributesOnly<AbuseModel>>> {
                          id: {
                            [Op.in]: ids
                          }
-                       }
+                       },
+                       limit: parameters.count
                      })
   }
 

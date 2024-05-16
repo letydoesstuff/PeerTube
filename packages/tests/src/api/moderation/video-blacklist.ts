@@ -1,16 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
 import { expect } from 'chai'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 import { sortObjectComparator } from '@peertube/peertube-core-utils'
-import { UserAdminFlag, UserRole, VideoBlacklist, VideoBlacklistType } from '@peertube/peertube-models'
+import { HttpStatusCode, UserAdminFlag, UserRole, VideoBlacklist, VideoBlacklistType } from '@peertube/peertube-models'
 import {
   BlacklistCommand,
   cleanupTests,
   createMultipleServers,
-  doubleFollow,
-  killallServers,
-  PeerTubeServer,
+  doubleFollow, makeActivityPubGetRequest, PeerTubeServer,
   setAccessTokensToServers,
   setDefaultChannelAvatar,
   waitJobs
@@ -300,6 +298,13 @@ describe('Test video blacklist', function () {
       expect(video4Blacklisted.unfederated).to.be.true
     })
 
+    it('Should not have AP comments/announces/likes/dislikes', async function () {
+      await makeActivityPubGetRequest(servers[0].url, `/videos/watch/${video3UUID}/comments`, HttpStatusCode.UNAUTHORIZED_401)
+      await makeActivityPubGetRequest(servers[0].url, `/videos/watch/${video3UUID}/announces`, HttpStatusCode.UNAUTHORIZED_401)
+      await makeActivityPubGetRequest(servers[0].url, `/videos/watch/${video3UUID}/likes`, HttpStatusCode.UNAUTHORIZED_401)
+      await makeActivityPubGetRequest(servers[0].url, `/videos/watch/${video3UUID}/dislikes`, HttpStatusCode.UNAUTHORIZED_401)
+    })
+
     it('Should remove the video from blacklist and refederate the video', async function () {
       await command.remove({ videoId: video4UUID })
 
@@ -321,18 +326,7 @@ describe('Test video blacklist', function () {
     before(async function () {
       this.timeout(20000)
 
-      await killallServers([ servers[0] ])
-
-      const config = {
-        auto_blacklist: {
-          videos: {
-            of_users: {
-              enabled: true
-            }
-          }
-        }
-      }
-      await servers[0].run(config)
+      await servers[0].config.enableAutoBlacklist()
 
       {
         const user = { username: 'user_without_flag', password: 'password' }
@@ -380,7 +374,7 @@ describe('Test video blacklist', function () {
         name: 'URL import',
         channelId: channelOfUserWithoutFlag
       }
-      await servers[0].imports.importVideo({ token: userWithoutFlag, attributes })
+      await servers[0].videoImports.importVideo({ token: userWithoutFlag, attributes })
 
       const body = await command.list({ sort: 'createdAt', type: VideoBlacklistType.AUTO_BEFORE_PUBLISHED })
       expect(body.total).to.equal(2)
@@ -393,7 +387,7 @@ describe('Test video blacklist', function () {
         name: 'Torrent import',
         channelId: channelOfUserWithoutFlag
       }
-      await servers[0].imports.importVideo({ token: userWithoutFlag, attributes })
+      await servers[0].videoImports.importVideo({ token: userWithoutFlag, attributes })
 
       const body = await command.list({ sort: 'createdAt', type: VideoBlacklistType.AUTO_BEFORE_PUBLISHED })
       expect(body.total).to.equal(3)

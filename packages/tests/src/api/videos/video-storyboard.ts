@@ -3,7 +3,7 @@
 import { expect } from 'chai'
 import { readdir } from 'fs/promises'
 import { basename } from 'path'
-import { FIXTURE_URLS } from '@tests/shared/tests.js'
+import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
 import { areHttpImportTestsDisabled } from '@peertube/peertube-node-utils'
 import { HttpStatusCode, VideoPrivacy } from '@peertube/peertube-models'
 import {
@@ -26,8 +26,9 @@ async function checkStoryboard (options: {
   spriteWidth?: number
   tilesCount?: number
   minSize?: number
+  spriteDuration?: number
 }) {
-  const { server, uuid, tilesCount, spriteHeight = 108, spriteWidth = 192, minSize = 1000 } = options
+  const { server, uuid, tilesCount, spriteDuration = 1, spriteHeight = 108, spriteWidth = 192, minSize = 1000 } = options
 
   const { storyboards } = await server.storyboard.list({ id: uuid })
 
@@ -35,7 +36,7 @@ async function checkStoryboard (options: {
 
   const storyboard = storyboards[0]
 
-  expect(storyboard.spriteDuration).to.equal(1)
+  expect(storyboard.spriteDuration).to.equal(spriteDuration)
   expect(storyboard.spriteHeight).to.equal(spriteHeight)
   expect(storyboard.spriteWidth).to.equal(spriteWidth)
   expect(storyboard.storyboardPath).to.exist
@@ -85,7 +86,7 @@ describe('Test video storyboard', function () {
     await waitJobs(servers)
 
     for (const server of servers) {
-      await checkStoryboard({ server, uuid, spriteHeight: 154, tilesCount: 100 })
+      await checkStoryboard({ server, uuid, spriteDuration: 2, spriteHeight: 154, tilesCount: 60 })
     }
   })
 
@@ -126,7 +127,7 @@ describe('Test video storyboard', function () {
     if (areHttpImportTestsDisabled()) return
 
     // 3s video
-    const { video } = await servers[0].imports.importVideo({
+    const { video } = await servers[0].videoImports.importVideo({
       attributes: {
         targetUrl: FIXTURE_URLS.goodVideo,
         channelId: servers[0].store.channel.id,
@@ -146,7 +147,7 @@ describe('Test video storyboard', function () {
     if (areHttpImportTestsDisabled()) return
 
     // 10s video
-    const { video } = await servers[0].imports.importVideo({
+    const { video } = await servers[0].videoImports.importVideo({
       attributes: {
         magnetUri: FIXTURE_URLS.magnet,
         channelId: servers[0].store.channel.id,
@@ -206,6 +207,27 @@ describe('Test video storyboard', function () {
     {
       const storyboads = await listFiles()
       expect(storyboads).to.not.include(storyboardName)
+    }
+  })
+
+  it('Should not generate storyboards if disabled by the admin', async function () {
+    this.timeout(60000)
+
+    await servers[0].config.updateExistingConfig({
+      newConfig: {
+        storyboards: {
+          enabled: false
+        }
+      }
+    })
+
+    const { uuid } = await servers[0].videos.quickUpload({ name: 'upload', fixture: 'video_short.webm' })
+    await waitJobs(servers)
+
+    for (const server of servers) {
+      const { storyboards } = await server.storyboard.list({ id: uuid })
+
+      expect(storyboards).to.have.lengthOf(0)
     }
   })
 
