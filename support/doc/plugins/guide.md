@@ -653,7 +653,7 @@ function register (...) {
 
 **PeerTube >= 3.2**
 
-To make your own HTTP requests using the current authenticated user, use an helper to automatically set appropriate headers:
+To make your own HTTP requests using the current authenticated user, use a helper to automatically set appropriate headers:
 
 ```js
 function register (...) {
@@ -793,10 +793,10 @@ async function register ({
   // Store data associated to this video
   registerHook({
     target: 'action:api.video.updated',
-    handler: ({ video, body }) => {
-      if (!body.pluginData) return
+    handler: ({ video, req }) => {
+      if (!req.body.pluginData) return
 
-      const value = body.pluginData[fieldName]
+      const value = req.body.pluginData[fieldName]
       if (!value) return
 
       storageManager.storeData(fieldName + '-' + video.id, value)

@@ -18,8 +18,9 @@
       [validationMessages]="validationMessages" [userVideoChannels]="userVideoChannels"
       [videoCaptions]="videoCaptions" [hideWaitTranscoding]="isWaitTranscodingHidden()"
       type="update" (pluginFieldsAdded)="hydratePluginFieldsFromVideo()"
-      [liveVideo]="liveVideo" [videoToUpdate]="videoDetails"
+      [liveVideo]="liveVideo" [publishedVideo]="videoDetails"
       [videoSource]="videoSource" [updateVideoFileEnabled]="isUpdateVideoFileEnabled()"
+      displayTranscriptionInfo="false"
 
       (formBuilt)="onFormBuilt()"
     >

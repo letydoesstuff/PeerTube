@@ -1,4 +1,5 @@
 import {
+  MyUser,
   RegisterClientFormFieldOptions,
   RegisterClientHookOptions,
   RegisterClientRouteOptions,
@@ -34,6 +35,8 @@ export type RegisterClientHelpers = {
   getAuthHeader: () => { 'Authorization': string } | undefined
 
   getSettings: () => Promise<SettingEntries>
+
+  getUser: () => MyUser
 
   getServerConfig: () => Promise<ServerConfig>
 

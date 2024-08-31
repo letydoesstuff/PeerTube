@@ -59,6 +59,15 @@ export function makeRawRequest (options: {
   return makeGetRequest(reqOptions)
 }
 
+export const makeFileRequest = (url: string) => {
+  return makeRawRequest({
+    url,
+    responseType: 'arraybuffer',
+    redirects: 1,
+    expectedStatus: HttpStatusCode.OK_200
+  })
+}
+
 export function makeGetRequest (options: CommonRequestParams & {
   query?: any
   rawQuery?: string
@@ -132,9 +141,20 @@ export function makeUploadRequest (options: CommonRequestParams & {
     if (!value) return
 
     if (Array.isArray(value)) {
-      req.attach(attach, buildAbsoluteFixturePath(value[0]), value[1])
+      req.attach(
+        attach,
+        value[0] instanceof Buffer
+          ? value[0]
+          : buildAbsoluteFixturePath(value[0]),
+        value[1]
+      )
     } else {
-      req.attach(attach, buildAbsoluteFixturePath(value))
+      req.attach(
+        attach,
+        value instanceof Buffer
+          ? value
+          : buildAbsoluteFixturePath(value)
+      )
     }
   })
 
@@ -166,9 +186,10 @@ export function makePutBodyRequest (options: {
 
 // ---------------------------------------------------------------------------
 
-export async function getRedirectionUrl (url: string) {
+export async function getRedirectionUrl (url: string, token?: string) {
   const res = await makeRawRequest({
     url,
+    token,
     redirects: 0,
     expectedStatus: HttpStatusCode.FOUND_302
   })

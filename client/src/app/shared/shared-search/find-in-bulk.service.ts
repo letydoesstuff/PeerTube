@@ -1,4 +1,4 @@
-import * as debug from 'debug'
+import debug from 'debug'
 import { Observable, Subject } from 'rxjs'
 import { filter, first, map } from 'rxjs/operators'
 import { Injectable } from '@angular/core'
@@ -60,7 +60,7 @@ export class FindInBulkService {
 
     return this.getData({
       observableObject: this.getPlaylistInBulk,
-      finder: p => p.uuid === uuid,
+      finder: p => p.uuid === uuid || p.shortUUID === uuid,
       param: uuid
     })
   }
@@ -136,7 +136,7 @@ export class FindInBulkService {
       notifier,
 
       result: buildBulkObservable({
-        time: 500,
+        time: 100,
         bulkGet,
         notifierObservable: notifier.asObservable()
       })

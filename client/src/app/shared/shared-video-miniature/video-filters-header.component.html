@@ -1,9 +1,8 @@
 <ng-template #updateSettings let-fragment>
-  <div class="label-description muted" i18n>
+  <div class="update-your-settings muted" i18n>
     Update
-    <a routerLink="/my-account/settings" [fragment]="fragment">
-      <button class="button-unstyle" (click)="onAccountSettingsClick($event)">your settings</button>
-    </a
+
+    <a routerLink="/my-account/settings" [fragment]="fragment" (click)="onAccountSettingsClick($event)">your settings</a
   ></div>
 </ng-template>
 
@@ -17,24 +16,33 @@
         [attr.aria-expanded]="!areFiltersCollapsed" aria-controls="collapseBasic"
         [ngClass]="{ active: !areFiltersCollapsed }"
       >
-        <ng-container i18n *ngIf="areFiltersCollapsed">More filters</ng-container>
-        <ng-container i18n *ngIf="!areFiltersCollapsed">Hide filters</ng-container>
+        @if (areFiltersCollapsed) {
+          <ng-container i18n>More filters</ng-container>
+        } @else {
+          <ng-container i18n>Hide filters</ng-container>
+        }
 
         <my-global-icon iconName="chevrons-up"></my-global-icon>
       </button>
 
-      <button
-        *ngFor="let activeFilter of filters.getActiveFilters()" (click)="resetFilter(activeFilter.key, activeFilter.canRemove)"
+      <div
+        *ngFor="let activeFilter of filters.getActiveFilters()"
         class="active-filter pastille button-unstyle" [ngClass]="{ 'can-remove': activeFilter.canRemove }" [title]="getFilterTitle(activeFilter.canRemove)"
       >
         <span>
           {{ activeFilter.label }}
 
-          <ng-container *ngIf="activeFilter.value">: {{ activeFilter.value }}</ng-container>
+          <ng-container *ngIf="activeFilter.value">: {{ getFilterValue(activeFilter) }}</ng-container>
         </span>
 
-        <my-global-icon *ngIf="activeFilter.canRemove" iconName="cross"></my-global-icon>
-      </button>
+        <button
+          *ngIf="activeFilter.canRemove" type="button" class="remove-button"
+          (click)="resetFilter(activeFilter.key, activeFilter.canRemove)"
+          i18n-title title="Remove this filter"
+        >
+          <my-global-icon iconName="cross"></my-global-icon>
+        </button>
+      </div>
     </div>
 
     <ng-select
@@ -48,9 +56,19 @@
       <ng-option i18n value="-originallyPublishedAt">Sort by <strong>"Original Publication Date"</strong></ng-option>
 
       <ng-option i18n value="name">Sort by <strong>"Name"</strong></ng-option>
-      <ng-option i18n *ngIf="isTrendingSortEnabled('most-viewed')" value="-trending">Sort by <strong>"Recent Views"</strong></ng-option>
-      <ng-option i18n *ngIf="isTrendingSortEnabled('hot')" value="-hot">Sort by <strong>"Hot"</strong></ng-option>
-      <ng-option i18n *ngIf="isTrendingSortEnabled('most-liked')" value="-likes">Sort by <strong>"Likes"</strong></ng-option>
+
+      @if (isTrendingSortEnabled('most-viewed')) {
+        <ng-option i18n value="-trending">Sort by <strong>"Recent Views"</strong></ng-option>
+      }
+
+      @if (isTrendingSortEnabled('hot')) {
+        <ng-option i18n value="-hot">Sort by <strong>"Hot"</strong></ng-option>
+      }
+
+      @if (isTrendingSortEnabled('most-liked')) {
+        <ng-option i18n value="-likes">Sort by <strong>"Likes"</strong></ng-option>
+      }
+
       <ng-option i18n value="-views">Sort by <strong>"Global Views"</strong></ng-option>
     </ng-select>
 

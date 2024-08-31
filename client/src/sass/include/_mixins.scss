@@ -12,13 +12,13 @@
     text-decoration: none !important;
   }
 
-  &:focus:not(.focus-visible) {
+  &:focus:not(:focus-visible) {
     outline: none !important;
   }
 }
 
 @mixin disable-outline {
-  &:focus:not(.focus-visible) {
+  &:focus:not(:focus-visible) {
     outline: none !important;
   }
 }
@@ -77,7 +77,7 @@
 
 @mixin button-focus($color) {
   &:focus,
-  &.focus-visible {
+  &:focus-visible {
     box-shadow: #{$focus-box-shadow-form} $color;
   }
 }
@@ -225,7 +225,7 @@
   $color: color.adjust($color: #c54130, $lightness: 10%);
   $text: #fff6f5;
 
-  @include button-focus(scale-color($color, $alpha: -95%));
+  @include button-focus(color.scale($color, $alpha: -95%));
 
   background-color: $color;
   color: $text;
@@ -451,6 +451,10 @@
 @mixin peertube-radio-container {
   label {
     font-size: $form-input-font-size;
+  }
+
+  [type=radio]:focus-visible + label::before {
+    outline: 2px solid;
   }
 
   [type=radio]:checked,
@@ -761,9 +765,11 @@
     > span > my-global-icon,
     > my-global-icon {
       @include margin-right(10px);
+
       width: 24px;
       height: 24px;
-      vertical-align: top;
+      position: relative;
+      top: -2px;
     }
 
     .pt-badge {
@@ -817,6 +823,8 @@
   }
 }
 
+// ---------------------------------------------------------------------------
+
 @mixin margin ($arg1: null, $arg2: null, $arg3: null, $arg4: null) {
   @if $arg2 == null and $arg3 == null and $arg4 == null {
     @include margin-original($arg1, $arg1, $arg1, $arg1);
@@ -844,6 +852,8 @@
   @include rfs($value, margin-inline-end);
 }
 
+// ---------------------------------------------------------------------------
+
 @mixin padding-original ($block-start, $inline-end, $block-end, $inline-start) {
   @include padding-left($inline-start);
   @include padding-right($inline-end);
@@ -870,3 +880,34 @@
 @mixin padding-right ($value) {
   @include rfs($value, padding-inline-end);
 }
+
+// ---------------------------------------------------------------------------
+
+
+/**
+ *
+ * inset-inline properties are not supported by iOS < 14.5
+ *
+ */
+
+@mixin right ($value) {
+  @supports (inset-inline-end: $value) {
+    inset-inline-end: $value;
+  }
+
+  @supports not (inset-inline-end: $value) {
+    right: $value;
+  }
+}
+
+
+@mixin left ($value) {
+  @supports (inset-inline-start: $value) {
+    inset-inline-start: $value;
+  }
+
+  @supports not (inset-inline-start: $value) {
+    left: $value;
+  }
+}
+

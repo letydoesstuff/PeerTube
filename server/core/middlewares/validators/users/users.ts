@@ -1,7 +1,7 @@
+import { forceNumber } from '@peertube/peertube-core-utils'
+import { HttpStatusCode, ServerErrorCode, UserRight, UserRole } from '@peertube/peertube-models'
 import express from 'express'
 import { body, param, query } from 'express-validator'
-import { forceNumber } from '@peertube/peertube-core-utils'
-import { HttpStatusCode, UserRight, UserRole } from '@peertube/peertube-models'
 import { exists, isBooleanValid, isIdValid, toBooleanOrNull, toIntOrNull } from '../../../helpers/custom-validators/misc.js'
 import { isThemeNameValid } from '../../../helpers/custom-validators/plugins.js'
 import {
@@ -31,6 +31,7 @@ import { Redis } from '../../../lib/redis.js'
 import { ActorModel } from '../../../models/actor/actor.js'
 import {
   areValidationErrors,
+  checkUserCanManageAccount,
   checkUserEmailExist,
   checkUserIdExist,
   checkUserNameOrEmailDoNotAlreadyExist,
@@ -39,7 +40,7 @@ import {
   isValidVideoIdParam
 } from '../shared/index.js'
 
-const usersListValidator = [
+export const usersListValidator = [
   query('blocked')
     .optional()
     .customSanitizer(toBooleanOrNull)
@@ -52,7 +53,7 @@ const usersListValidator = [
   }
 ]
 
-const usersAddValidator = [
+export const usersAddValidator = [
   body('username')
     .custom(isUserUsernameValid)
     .withMessage('Should have a valid username (lowercase alphanumeric characters)'),
@@ -111,7 +112,7 @@ const usersAddValidator = [
   }
 ]
 
-const usersRemoveValidator = [
+export const usersRemoveValidator = [
   param('id')
     .custom(isIdValid),
 
@@ -128,7 +129,7 @@ const usersRemoveValidator = [
   }
 ]
 
-const usersBlockingValidator = [
+export const usersBlockingValidator = [
   param('id')
     .custom(isIdValid),
   body('reason')
@@ -148,7 +149,7 @@ const usersBlockingValidator = [
   }
 ]
 
-const deleteMeValidator = [
+export const deleteMeValidator = [
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = res.locals.oauth.token.User
     if (user.username === 'root') {
@@ -159,7 +160,7 @@ const deleteMeValidator = [
   }
 ]
 
-const usersUpdateValidator = [
+export const usersUpdateValidator = [
   param('id').custom(isIdValid),
 
   body('password')
@@ -201,7 +202,7 @@ const usersUpdateValidator = [
   }
 ]
 
-const usersUpdateMeValidator = [
+export const usersUpdateMeValidator = [
   body('displayName')
     .optional()
     .custom(isUserDisplayNameValid),
@@ -210,7 +211,7 @@ const usersUpdateMeValidator = [
     .custom(isUserDescriptionValid),
   body('currentPassword')
     .optional()
-    .custom(isUserPasswordValid),
+    .custom(exists),
   body('password')
     .optional()
     .custom(isUserPasswordValid),
@@ -262,13 +263,14 @@ const usersUpdateMeValidator = [
       }
 
       if (!req.body.currentPassword) {
-        return res.fail({ message: 'currentPassword parameter is missing.' })
+        return res.fail({ message: 'currentPassword parameter is missing' })
       }
 
       if (await user.isPasswordMatch(req.body.currentPassword) !== true) {
         return res.fail({
           status: HttpStatusCode.UNAUTHORIZED_401,
-          message: 'currentPassword is invalid.'
+          message: 'currentPassword is invalid.',
+          type: ServerErrorCode.CURRENT_PASSWORD_IS_INVALID
         })
       }
     }
@@ -279,7 +281,7 @@ const usersUpdateMeValidator = [
   }
 ]
 
-const usersGetValidator = [
+export const usersGetValidator = [
   param('id')
     .custom(isIdValid),
   query('withStats')
@@ -294,7 +296,7 @@ const usersGetValidator = [
   }
 ]
 
-const usersVideoRatingValidator = [
+export const usersVideoRatingValidator = [
   isValidVideoIdParam('videoId'),
 
   async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -305,7 +307,7 @@ const usersVideoRatingValidator = [
   }
 ]
 
-const usersVideosValidator = [
+export const usersVideosValidator = [
   query('isLive')
     .optional()
     .customSanitizer(toBooleanOrNull)
@@ -325,7 +327,7 @@ const usersVideosValidator = [
   }
 ]
 
-const usersAskResetPasswordValidator = [
+export const usersAskResetPasswordValidator = [
   body('email')
     .isEmail(),
 
@@ -350,7 +352,7 @@ const usersAskResetPasswordValidator = [
   }
 ]
 
-const usersResetPasswordValidator = [
+export const usersResetPasswordValidator = [
   param('id')
     .custom(isIdValid),
   body('verificationString')
@@ -376,7 +378,7 @@ const usersResetPasswordValidator = [
   }
 ]
 
-const usersCheckCurrentPasswordFactory = (targetUserIdGetter: (req: express.Request) => number | string) => {
+export const usersCheckCurrentPasswordFactory = (targetUserIdGetter: (req: express.Request) => number | string) => {
   return [
     body('currentPassword').optional().custom(exists),
 
@@ -402,7 +404,8 @@ const usersCheckCurrentPasswordFactory = (targetUserIdGetter: (req: express.Requ
       if (await user.isPasswordMatch(req.body.currentPassword) !== true) {
         return res.fail({
           status: HttpStatusCode.FORBIDDEN_403,
-          message: 'currentPassword is invalid.'
+          message: 'currentPassword is invalid.',
+          type: ServerErrorCode.CURRENT_PASSWORD_IS_INVALID
         })
       }
 
@@ -411,47 +414,34 @@ const usersCheckCurrentPasswordFactory = (targetUserIdGetter: (req: express.Requ
   ]
 }
 
-const userAutocompleteValidator = [
+export const userAutocompleteValidator = [
   param('search')
     .isString()
     .not().isEmpty()
 ]
 
-const ensureAuthUserOwnsAccountValidator = [
+export const ensureAuthUserOwnsAccountValidator = [
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = res.locals.oauth.token.User
 
-    if (res.locals.account.id !== user.Account.id) {
-      return res.fail({
-        status: HttpStatusCode.FORBIDDEN_403,
-        message: 'Only owner of this account can access this resource.'
-      })
-    }
+    if (!checkUserCanManageAccount({ user, account: res.locals.account, specialRight: null, res })) return
 
     return next()
   }
 ]
 
-const ensureCanManageChannelOrAccount = [
+export const ensureCanManageChannelOrAccount = [
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = res.locals.oauth.token.user
     const account = res.locals.videoChannel?.Account ?? res.locals.account
-    const isUserOwner = account.userId === user.id
 
-    if (!isUserOwner && user.hasRight(UserRight.MANAGE_ANY_VIDEO_CHANNEL) === false) {
-      const message = `User ${user.username} does not have right this channel or account.`
-
-      return res.fail({
-        status: HttpStatusCode.FORBIDDEN_403,
-        message
-      })
-    }
+    if (!checkUserCanManageAccount({ account, user, res, specialRight: UserRight.MANAGE_ANY_VIDEO_CHANNEL })) return
 
     return next()
   }
 ]
 
-const ensureCanModerateUser = [
+export const ensureCanModerateUser = [
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authUser = res.locals.oauth.token.User
     const onUser = res.locals.user
@@ -461,29 +451,7 @@ const ensureCanModerateUser = [
 
     return res.fail({
       status: HttpStatusCode.FORBIDDEN_403,
-      message: 'A moderator can only manage users.'
+      message: 'Users can only be managed by moderators or admins.'
     })
   }
 ]
-
-// ---------------------------------------------------------------------------
-
-export {
-  usersListValidator,
-  usersAddValidator,
-  deleteMeValidator,
-  usersBlockingValidator,
-  usersRemoveValidator,
-  usersUpdateValidator,
-  usersUpdateMeValidator,
-  usersVideoRatingValidator,
-  usersCheckCurrentPasswordFactory,
-  usersGetValidator,
-  usersVideosValidator,
-  usersAskResetPasswordValidator,
-  usersResetPasswordValidator,
-  userAutocompleteValidator,
-  ensureAuthUserOwnsAccountValidator,
-  ensureCanModerateUser,
-  ensureCanManageChannelOrAccount
-}

@@ -16,6 +16,14 @@ type VideoFiltersKeys = {
 
 export type VideoFilterScope = 'local' | 'federated'
 
+export type VideoFilterActive = {
+  key: string
+  canRemove: boolean
+  label: string
+  value?: string
+  rawValue?: string[] | number[]
+}
+
 export class VideoFilters {
   sort: VideoSortField
   nsfw: BooleanBothQuery
@@ -40,7 +48,7 @@ export class VideoFilters {
     [ 'live', 'both' ]
   ])
 
-  private activeFilters: { key: string, canRemove: boolean, label: string, value?: string }[] = []
+  private activeFilters: VideoFilterActive[] = []
   private defaultNSFWPolicy: NSFWPolicyType
 
   private onChangeCallbacks: (() => void)[] = []
@@ -56,6 +64,8 @@ export class VideoFilters {
 
     this.reset()
   }
+
+  // ---------------------------------------------------------------------------
 
   onChange (cb: () => void) {
     this.onChangeCallbacks.push(cb)
@@ -73,6 +83,8 @@ export class VideoFilters {
     }
   }
 
+  // ---------------------------------------------------------------------------
+
   setDefaultScope (scope: VideoFilterScope) {
     this.defaultValues.set('scope', scope)
   }
@@ -85,6 +97,8 @@ export class VideoFilters {
     this.updateDefaultNSFW(nsfwPolicy)
   }
 
+  // ---------------------------------------------------------------------------
+
   reset (specificKey?: string) {
     for (const [ key, value ] of this.defaultValues) {
       if (specificKey && specificKey !== key) continue
@@ -94,6 +108,8 @@ export class VideoFilters {
 
     this.buildActiveFilters()
   }
+
+  // ---------------------------------------------------------------------------
 
   load (obj: Partial<AttributesOnly<VideoFilters>>) {
     // FIXME: We may use <ng-option> that doesn't escape HTML so prefer to escape things
@@ -122,6 +138,17 @@ export class VideoFilters {
     this.buildActiveFilters()
   }
 
+  clone () {
+    const cloned = new VideoFilters(this.defaultValues.get('sort'), this.defaultValues.get('scope'), this.hiddenFields)
+    cloned.setNSFWPolicy(this.defaultNSFWPolicy)
+
+    cloned.load(this.toUrlObject())
+
+    return cloned
+  }
+
+  // ---------------------------------------------------------------------------
+
   buildActiveFilters () {
     this.activeFilters = []
 
@@ -146,7 +173,8 @@ export class VideoFilters {
         key: 'languageOneOf',
         canRemove: true,
         label: $localize`Languages`,
-        value: this.languageOneOf.map(l => l.toUpperCase()).join(', ')
+        value: this.languageOneOf.map(l => l.toUpperCase()).join(', '),
+        rawValue: this.languageOneOf
       })
     }
 
@@ -155,7 +183,8 @@ export class VideoFilters {
         key: 'categoryOneOf',
         canRemove: true,
         label: $localize`Categories`,
-        value: this.categoryOneOf.join(', ')
+        value: this.categoryOneOf.join(', '),
+        rawValue: this.categoryOneOf
       })
     }
 
@@ -188,6 +217,8 @@ export class VideoFilters {
   getActiveFilters () {
     return this.activeFilters
   }
+
+  // ---------------------------------------------------------------------------
 
   toFormObject (): VideoFiltersKeys {
     const result: Partial<VideoFiltersKeys> = {}
@@ -241,6 +272,8 @@ export class VideoFilters {
       isLive
     }
   }
+
+  // ---------------------------------------------------------------------------
 
   getNSFWDisplayLabel () {
     if (this.defaultNSFWPolicy === 'blur') return $localize`Blurred`

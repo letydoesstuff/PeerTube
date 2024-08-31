@@ -1,4 +1,4 @@
-import * as debug from 'debug'
+import debug from 'debug'
 import { merge, Observable, of, ReplaySubject, Subject } from 'rxjs'
 import { catchError, filter, map, switchMap, tap } from 'rxjs/operators'
 import { HttpClient, HttpParams } from '@angular/common/http'
@@ -39,7 +39,7 @@ export class UserSubscriptionService {
   ) {
     this.existsObservable = merge(
       buildBulkObservable({
-        time: 500,
+        time: 200,
         notifierObservable: this.existsSubject,
         bulkGet: this.doSubscriptionsExist.bind(this)
       }).pipe(map(r => r.response)),

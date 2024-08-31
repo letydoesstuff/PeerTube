@@ -3,6 +3,7 @@ import { getLowercaseExtension } from '@peertube/peertube-node-utils'
 import { MActorId, MActorImage, MActorImageFormattable } from '@server/types/models/index.js'
 import { remove } from 'fs-extra/esm'
 import { join } from 'path'
+import { Op } from 'sequelize'
 import {
   AfterDestroy,
   AllowNull,
@@ -10,15 +11,13 @@ import {
   Column,
   CreatedAt,
   Default,
-  ForeignKey,
-  Is, Table,
+  ForeignKey, Table,
   UpdatedAt
 } from 'sequelize-typescript'
-import { isActivityPubUrlValid } from '../../helpers/custom-validators/activitypub/misc.js'
 import { logger } from '../../helpers/logger.js'
 import { CONFIG } from '../../initializers/config.js'
 import { LAZY_STATIC_PATHS, MIMETYPES, WEBSERVER } from '../../initializers/constants.js'
-import { SequelizeModel, buildSQLAttributes, throwIfNotValid } from '../shared/index.js'
+import { SequelizeModel, buildSQLAttributes } from '../shared/index.js'
 import { ActorModel } from './actor.js'
 
 @Table({
@@ -51,7 +50,6 @@ export class ActorImageModel extends SequelizeModel<ActorImageModel> {
   width: number
 
   @AllowNull(true)
-  @Is('ActorImageFileUrl', value => throwIfNotValid(value, isActivityPubUrlValid, 'fileUrl', true))
   @Column
   fileUrl: string
 
@@ -79,10 +77,10 @@ export class ActorImageModel extends SequelizeModel<ActorImageModel> {
     },
     onDelete: 'CASCADE'
   })
-  Actor: Awaited<ActorModel> // Remove awaited: https://github.com/sequelize/sequelize-typescript/issues/825
+  Actor: Awaited<ActorModel> // TODO: Remove awaited: https://github.com/sequelize/sequelize-typescript/issues/825
 
   @AfterDestroy
-  static removeFilesAndSendDelete (instance: ActorImageModel) {
+  static removeFile (instance: ActorImageModel) {
     logger.info('Removing actor image file %s.', instance.filename)
 
     // Don't block the transaction
@@ -102,7 +100,7 @@ export class ActorImageModel extends SequelizeModel<ActorImageModel> {
 
   // ---------------------------------------------------------------------------
 
-  static loadByName (filename: string) {
+  static loadByFilename (filename: string) {
     const query = {
       where: {
         filename
@@ -131,11 +129,33 @@ export class ActorImageModel extends SequelizeModel<ActorImageModel> {
     return { avatars, banners }
   }
 
+  static listRemoteOnDisk () {
+    return this.findAll<MActorImage>({
+      where: {
+        onDisk: true
+      },
+      include: [
+        {
+          attributes: [ 'id' ],
+          model: ActorModel.unscoped(),
+          required: true,
+          where: {
+            serverId: {
+              [Op.ne]: null
+            }
+          }
+        }
+      ]
+    })
+  }
+
   static getImageUrl (image: MActorImage) {
     if (!image) return undefined
 
     return WEBSERVER.URL + image.getStaticPath()
   }
+
+  // ---------------------------------------------------------------------------
 
   toFormattedJSON (this: MActorImageFormattable): ActorImage {
     return {

@@ -1,6 +1,8 @@
-import { Job } from 'bullmq'
-import { move, remove } from 'fs-extra/esm'
-import { stat } from 'fs/promises'
+import { buildAspectRatio } from '@peertube/peertube-core-utils'
+import {
+  ffprobePromise,
+  getChaptersFromContainer, getVideoStreamDuration
+} from '@peertube/peertube-ffmpeg'
 import {
   ThumbnailType,
   ThumbnailType_Type,
@@ -15,20 +17,26 @@ import {
 import { retryTransactionWrapper } from '@server/helpers/database-utils.js'
 import { YoutubeDLWrapper } from '@server/helpers/youtube-dl/index.js'
 import { CONFIG } from '@server/initializers/config.js'
+import { AutomaticTagger } from '@server/lib/automatic-tags/automatic-tagger.js'
+import { setAndSaveVideoAutomaticTags } from '@server/lib/automatic-tags/automatic-tags.js'
 import { isPostImportVideoAccepted } from '@server/lib/moderation.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
 import { ServerConfigManager } from '@server/lib/server-config-manager.js'
 import { createOptimizeOrMergeAudioJobs } from '@server/lib/transcoding/create-transcoding-job.js'
 import { isUserQuotaValid } from '@server/lib/user.js'
+import { createTranscriptionTaskIfNeeded } from '@server/lib/video-captions.js'
+import { replaceChaptersIfNotExist } from '@server/lib/video-chapters.js'
+import { buildNewFile } from '@server/lib/video-file.js'
+import { buildMoveJob, buildStoryboardJobIfNeeded } from '@server/lib/video-jobs.js'
 import { VideoPathManager } from '@server/lib/video-path-manager.js'
 import { buildNextVideoState } from '@server/lib/video-state.js'
-import { buildMoveJob, buildStoryboardJobIfNeeded } from '@server/lib/video-jobs.js'
+import { VideoCaptionModel } from '@server/models/video/video-caption.js'
 import { MUserId, MVideoFile, MVideoFullLight } from '@server/types/models/index.js'
 import { MVideoImport, MVideoImportDefault, MVideoImportDefaultFiles, MVideoImportVideo } from '@server/types/models/video/video-import.js'
-import {
-  ffprobePromise,
-  getChaptersFromContainer, getVideoStreamDuration
-} from '@peertube/peertube-ffmpeg'
+import { Job } from 'bullmq'
+import { FfprobeData } from 'fluent-ffmpeg'
+import { move, remove } from 'fs-extra/esm'
+import { stat } from 'fs/promises'
 import { logger } from '../../../helpers/logger.js'
 import { getSecureTorrentName } from '../../../helpers/utils.js'
 import { createTorrentAndSetInfoHash, downloadWebTorrentVideo } from '../../../helpers/webtorrent.js'
@@ -41,10 +49,6 @@ import { federateVideoIfNeeded } from '../../activitypub/videos/index.js'
 import { Notifier } from '../../notifier/index.js'
 import { generateLocalVideoMiniature } from '../../thumbnail.js'
 import { JobQueue } from '../job-queue.js'
-import { replaceChaptersIfNotExist } from '@server/lib/video-chapters.js'
-import { FfprobeData } from 'fluent-ffmpeg'
-import { buildNewFile } from '@server/lib/video-file.js'
-import { buildAspectRatio } from '@peertube/peertube-core-utils'
 
 async function processVideoImport (job: Job): Promise<VideoImportPreventExceptionResult> {
   const payload = job.data as VideoImportPayload
@@ -82,7 +86,7 @@ export {
 async function processTorrentImport (job: Job, videoImport: MVideoImportDefault, payload: VideoImportTorrentPayload) {
   logger.info('Processing torrent video import in job %s.', job.id)
 
-  const options = { type: payload.type, videoImportId: payload.videoImportId }
+  const options = { type: payload.type, generateTranscription: payload.generateTranscription, videoImportId: payload.videoImportId }
 
   const target = {
     torrentName: videoImport.torrentName ? getSecureTorrentName(videoImport.torrentName) : undefined,
@@ -94,7 +98,7 @@ async function processTorrentImport (job: Job, videoImport: MVideoImportDefault,
 async function processYoutubeDLImport (job: Job, videoImport: MVideoImportDefault, payload: VideoImportYoutubeDLPayload) {
   logger.info('Processing youtubeDL video import in job %s.', job.id)
 
-  const options = { type: payload.type, videoImportId: videoImport.id }
+  const options = { type: payload.type, generateTranscription: payload.generateTranscription, videoImportId: videoImport.id }
 
   const youtubeDL = new YoutubeDLWrapper(
     videoImport.targetUrl,
@@ -120,6 +124,7 @@ async function getVideoImportOrDie (payload: VideoImportPayload) {
 
 type ProcessFileOptions = {
   type: VideoImportYoutubeDLPayloadType | VideoImportTorrentPayloadType
+  generateTranscription: boolean
   videoImportId: number
 }
 async function processFile (downloader: () => Promise<string>, videoImport: MVideoImportDefault, options: ProcessFileOptions) {
@@ -209,6 +214,9 @@ async function processFile (downloader: () => Promise<string>, videoImport: MVid
 
           await replaceChaptersIfNotExist({ video, chapters: containerChapters, transaction: t })
 
+          const automaticTags = await new AutomaticTagger().buildVideoAutomaticTags({ video, transaction: t })
+          await setAndSaveVideoAutomaticTags({ video, automaticTags, transaction: t })
+
           // Now we can federate the video (reload from database, we need more attributes)
           const videoForFederation = await VideoModel.loadFull(video.uuid, t)
           await federateVideoIfNeeded(videoForFederation, true, t)
@@ -223,7 +231,14 @@ async function processFile (downloader: () => Promise<string>, videoImport: MVid
         })
       })
 
-      await afterImportSuccess({ videoImport: videoImportUpdated, video, videoFile, user: videoImport.User, videoFileAlreadyLocked: true })
+      await afterImportSuccess({
+        videoImport: videoImportUpdated,
+        video,
+        videoFile,
+        user: videoImport.User,
+        generateTranscription: options.generateTranscription,
+        videoFileAlreadyLocked: true
+      })
     } finally {
       videoFileLockReleaser()
     }
@@ -272,9 +287,12 @@ async function afterImportSuccess (options: {
   video: MVideoFullLight
   videoFile: MVideoFile
   user: MUserId
+
   videoFileAlreadyLocked: boolean
+
+  generateTranscription: boolean
 }) {
-  const { video, videoFile, videoImport, user, videoFileAlreadyLocked } = options
+  const { video, videoFile, videoImport, user, generateTranscription, videoFileAlreadyLocked } = options
 
   Notifier.Instance.notifyOnFinishedVideoImport({ videoImport: Object.assign(videoImport, { Video: video }), success: true })
 
@@ -288,6 +306,10 @@ async function afterImportSuccess (options: {
 
   // Generate the storyboard in the job queue, and don't forget to federate an update after
   await JobQueue.Instance.createJob(buildStoryboardJobIfNeeded({ video, federate: true }))
+
+  if (await VideoCaptionModel.hasVideoCaption(video.id) !== true && generateTranscription === true) {
+    await createTranscriptionTaskIfNeeded(video)
+  }
 
   if (video.state === VideoState.TO_MOVE_TO_EXTERNAL_STORAGE) {
     await JobQueue.Instance.createJob(

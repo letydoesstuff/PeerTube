@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test_suite: [ types-package, client, api-1, api-2, api-3, api-4, api-5, cli-plugin, lint, external-plugins ]
+        test_suite: [ types-package, client, api-1, api-2, api-3, api-4, api-5, transcription, cli-plugin, lint, external-plugins ]
 
     env:
       PGUSER: peertube
@@ -70,6 +70,20 @@ jobs:
             ${{ runner.OS }}-fixtures-${{ matrix.test_suite }}-
             ${{ runner.OS }}-fixtures-
             ${{ runner.OS }}-
+
+      - name: Cache PeerTube pip directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+          key: ${{ runner.OS }}-${{ matrix.test_suite }}-pip-v1
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+          key: ${{ runner.OS }}-${{ matrix.test_suite }}-hugging-face-v1
 
       - name: Set env test variable (schedule)
         if: github.event_name != 'schedule'

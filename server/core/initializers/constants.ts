@@ -1,4 +1,4 @@
-import { randomInt } from '@peertube/peertube-core-utils'
+import { maxBy, minBy, randomInt } from '@peertube/peertube-core-utils'
 import {
   AbuseState,
   AbuseStateType,
@@ -18,6 +18,8 @@ import {
   UserRegistrationStateType,
   VideoChannelSyncState,
   VideoChannelSyncStateType,
+  VideoCommentPolicy,
+  VideoCommentPolicyType,
   VideoImportState,
   VideoImportStateType,
   VideoPlaylistPrivacy,
@@ -45,7 +47,7 @@ import { cpus } from 'os'
 
 // ---------------------------------------------------------------------------
 
-const LAST_MIGRATION_VERSION = 835
+const LAST_MIGRATION_VERSION = 860
 
 // ---------------------------------------------------------------------------
 
@@ -134,6 +136,8 @@ const SORTABLE_COLUMNS = {
   ACCOUNTS_BLOCKLIST: [ 'createdAt' ],
   SERVERS_BLOCKLIST: [ 'createdAt' ],
 
+  WATCHED_WORDS_LISTS: [ 'createdAt', 'updatedAt', 'listName' ],
+
   USER_NOTIFICATIONS: [ 'createdAt', 'read' ],
 
   VIDEO_PLAYLISTS: [ 'name', 'displayName', 'createdAt', 'updatedAt' ],
@@ -209,7 +213,8 @@ const JOB_ATTEMPTS: { [id in JobType]: number } = {
   'notify': 1,
   'federate-video': 1,
   'create-user-export': 1,
-  'import-user-archive': 1
+  'import-user-archive': 1,
+  'video-transcription': 1
 }
 // Excluded keys are jobs that can be configured by admins
 const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'video-import'>]: number } = {
@@ -227,7 +232,7 @@ const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'video-im
   'video-redundancy': 1,
   'video-live-ending': 10,
   'video-studio-edition': 1,
-  'manage-video-torrent': 1,
+  'manage-video-torrent': 1, // Keep it to 1 to prevent concurrency issues
   'move-to-object-storage': 1,
   'move-to-file-system': 1,
   'video-channel-import': 1,
@@ -237,7 +242,8 @@ const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'video-im
   'notify': 5,
   'federate-video': 3,
   'create-user-export': 1,
-  'import-user-archive': 1
+  'import-user-archive': 1,
+  'video-transcription': 1
 }
 const JOB_TTL: { [id in JobType]: number } = {
   'activitypub-http-broadcast': 60000 * 10, // 10 minutes
@@ -266,7 +272,8 @@ const JOB_TTL: { [id in JobType]: number } = {
   'notify': 60000 * 5, // 5 minutes
   'federate-video': 60000 * 5, // 5 minutes,
   'create-user-export': 60000 * 60 * 24, // 24 hours
-  'import-user-archive': 60000 * 60 * 24 // 24 hours
+  'import-user-archive': 60000 * 60 * 24, // 24 hours
+  'video-transcription': 1000 * 3600 * 6 // 6 hours
 }
 const REPEAT_JOBS: { [ id in JobType ]?: RepeatOptions } = {
   'videos-views-stats': {
@@ -278,7 +285,8 @@ const REPEAT_JOBS: { [ id in JobType ]?: RepeatOptions } = {
 }
 const JOB_PRIORITY = {
   TRANSCODING: 100,
-  VIDEO_STUDIO: 150
+  VIDEO_STUDIO: 150,
+  TRANSCRIPTION: 200
 }
 
 const JOB_REMOVAL_OPTIONS = {
@@ -479,7 +487,7 @@ const CONSTRAINTS_FIELDS = {
   LOGS: {
     CLIENT_MESSAGE: { min: 1, max: 1000 }, // Length
     CLIENT_STACK_TRACE: { min: 1, max: 15000 }, // Length
-    CLIENT_META: { min: 1, max: 5000 }, // Length
+    CLIENT_META: { min: 1, max: 15000 }, // Length
     CLIENT_USER_AGENT: { min: 1, max: 200 } // Length
   },
   RUNNERS: {
@@ -498,6 +506,11 @@ const CONSTRAINTS_FIELDS = {
   },
   VIDEO_CHAPTERS: {
     TITLE: { min: 1, max: 100 } // Length
+  },
+  WATCHED_WORDS: {
+    LIST_NAME: { min: 1, max: 100 }, // Length
+    WORDS: { min: 1, max: 500 }, // Number of total words
+    WORD: { min: 1, max: 100 } // Length
   }
 }
 
@@ -513,12 +526,13 @@ const MAX_LOCAL_VIEWER_WATCH_SECTIONS = 100
 let CONTACT_FORM_LIFETIME = 60000 * 60 // 1 hour
 
 const VIDEO_TRANSCODING_FPS: VideoTranscodingFPS = {
-  MIN: 1,
+  HARD_MIN: 0.1,
+  SOFT_MIN: 1,
   STANDARD: [ 24, 25, 30 ],
   HD_STANDARD: [ 50, 60 ],
   AUDIO_MERGE: 25,
   AVERAGE: 30,
-  MAX: 60,
+  SOFT_MAX: 60,
   KEEP_ORIGIN_FPS_RESOLUTION_MIN: 720 // We keep the original FPS on high resolutions (720 minimum)
 }
 
@@ -660,6 +674,12 @@ const USER_IMPORT_STATES: { [ id in UserImportStateType ]: string } = {
   [UserImportState.PROCESSING]: 'Processing',
   [UserImportState.COMPLETED]: 'Completed',
   [UserImportState.ERRORED]: 'Failed'
+}
+
+const VIDEO_COMMENTS_POLICY: { [ id in VideoCommentPolicyType ]: string } = {
+  [VideoCommentPolicy.DISABLED]: 'Disabled',
+  [VideoCommentPolicy.ENABLED]: 'Enabled',
+  [VideoCommentPolicy.REQUIRES_APPROVAL]: 'Requires approval'
 }
 
 const MIMETYPES = {
@@ -829,6 +849,7 @@ const NSFW_POLICY_TYPES: { [ id: string ]: NSFWPolicyType } = {
 // ---------------------------------------------------------------------------
 
 const USER_EXPORT_MAX_ITEMS = 1000
+const USER_EXPORT_FILE_PREFIX = 'user-export-'
 
 // ---------------------------------------------------------------------------
 
@@ -887,14 +908,14 @@ const STATIC_MAX_AGE = {
 
 // Videos thumbnail size
 const THUMBNAILS_SIZE = {
-  width: 280,
-  height: 157,
-  minWidth: 150
+  width: minBy(CONFIG.THUMBNAILS.SIZES, 'width').width,
+  height: minBy(CONFIG.THUMBNAILS.SIZES, 'width').height,
+  minRemoteWidth: 150
 }
 const PREVIEWS_SIZE = {
-  width: 850,
-  height: 480,
-  minWidth: 400
+  width: maxBy(CONFIG.THUMBNAILS.SIZES, 'width').width,
+  height: maxBy(CONFIG.THUMBNAILS.SIZES, 'width').height,
+  minRemoteWidth: 400
 }
 const ACTOR_IMAGES_SIZE: { [key in ActorImageType_Type]: { width: number, height: number }[] } = {
   [ActorImageType.AVATAR]: [ // 1/1 ratio
@@ -972,6 +993,10 @@ const LRU_CACHE = {
     MAX_SIZE: 100_000,
     TTL: parseDurationToMs('8 hours')
   },
+  WATCHED_WORDS_REGEX: {
+    MAX_SIZE: 100,
+    TTL: parseDurationToMs('24 hours')
+  },
   TRACKER_IPS: {
     MAX_SIZE: 100_000
   }
@@ -992,7 +1017,9 @@ const DIRECTORIES = {
 
   ORIGINAL_VIDEOS: CONFIG.STORAGE.ORIGINAL_VIDEO_FILES_DIR,
 
-  HLS_REDUNDANCY: join(CONFIG.STORAGE.REDUNDANCY_DIR, 'hls')
+  HLS_REDUNDANCY: join(CONFIG.STORAGE.REDUNDANCY_DIR, 'hls'),
+
+  LOCAL_PIP_DIRECTORY: join(CONFIG.STORAGE.BIN_DIR, 'pip')
 }
 
 const RESUMABLE_UPLOAD_SESSION_LIFETIME = SCHEDULER_INTERVALS_MS.REMOVE_DANGLING_RESUMABLE_UPLOADS
@@ -1242,11 +1269,13 @@ export {
   ACCEPT_HEADERS,
   BCRYPT_SALT_SIZE,
   TRACKER_RATE_LIMITS,
+  VIDEO_COMMENTS_POLICY,
   FILES_CACHE,
   LOG_FILENAME,
   CONSTRAINTS_FIELDS,
   EMBED_SIZE,
   REDUNDANCY,
+  USER_EXPORT_FILE_PREFIX,
   JOB_CONCURRENCY,
   JOB_ATTEMPTS,
   AP_CLEANER,

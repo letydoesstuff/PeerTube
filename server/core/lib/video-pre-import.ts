@@ -1,4 +1,3 @@
-import { remove } from 'fs-extra/esm'
 import {
   ThumbnailType,
   ThumbnailType_Type,
@@ -18,7 +17,7 @@ import { sequelizeTypescript } from '@server/initializers/database.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
 import { ServerConfigManager } from '@server/lib/server-config-manager.js'
 import { autoBlacklistVideoIfNeeded } from '@server/lib/video-blacklist.js'
-import { setVideoTags } from '@server/lib/video.js'
+import { buildCommentsPolicy, setVideoTags } from '@server/lib/video.js'
 import { VideoImportModel } from '@server/models/video/video-import.js'
 import { VideoPasswordModel } from '@server/models/video/video-password.js'
 import { VideoModel } from '@server/models/video/video.js'
@@ -34,10 +33,11 @@ import {
   MVideoThumbnail,
   MVideoWithBlacklistLight
 } from '@server/types/models/index.js'
+import { remove } from 'fs-extra/esm'
 import { getLocalVideoActivityPubUrl } from './activitypub/url.js'
 import { updateLocalVideoMiniatureFromExisting, updateLocalVideoMiniatureFromUrl } from './thumbnail.js'
-import { replaceChapters, replaceChaptersFromDescriptionIfNeeded } from './video-chapters.js'
 import { createLocalCaption } from './video-captions.js'
+import { replaceChapters, replaceChaptersFromDescriptionIfNeeded } from './video-chapters.js'
 
 class YoutubeDlImportError extends Error {
   code: YoutubeDlImportError.CODE
@@ -127,7 +127,7 @@ async function buildVideoFromImport ({ channelId, importData, importDataOverride
     category: importDataOverride?.category || importData.category,
     licence: importDataOverride?.licence ?? importData.licence ?? CONFIG.DEFAULTS.PUBLISH.LICENCE,
     language: importDataOverride?.language || importData.language,
-    commentsEnabled: importDataOverride?.commentsEnabled ?? CONFIG.DEFAULTS.PUBLISH.COMMENTS_ENABLED,
+    commentsPolicy: buildCommentsPolicy(importDataOverride),
     downloadEnabled: importDataOverride?.downloadEnabled ?? CONFIG.DEFAULTS.PUBLISH.DOWNLOAD_ENABLED,
     waitTranscoding: importDataOverride?.waitTranscoding ?? true,
     state: VideoState.TO_IMPORT,
@@ -259,6 +259,7 @@ async function buildYoutubeDLImport (options: {
     type: 'youtube-dl' as 'youtube-dl',
     videoImportId: videoImport.id,
     fileExt,
+    generateTranscription: importDataOverride.generateTranscription ?? true,
     // If part of a sync process, there is a parent job that will aggregate children results
     preventException: !!channelSync
   }
@@ -272,10 +273,7 @@ async function buildYoutubeDLImport (options: {
 // ---------------------------------------------------------------------------
 
 export {
-  buildYoutubeDLImport,
-  YoutubeDlImportError,
-  insertFromImportIntoDB,
-  buildVideoFromImport
+  YoutubeDlImportError, buildVideoFromImport, buildYoutubeDLImport, insertFromImportIntoDB
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +317,12 @@ async function processYoutubeSubtitles (youtubeDL: YoutubeDLWrapper, targetUrl: 
         continue
       }
 
-      await createLocalCaption({ language: subtitle.language, path: subtitle.path, video })
+      await createLocalCaption({
+        language: subtitle.language,
+        path: subtitle.path,
+        video,
+        automaticallyGenerated: false
+      })
 
       logger.info('Added %s youtube-dl subtitle', subtitle.path)
     }

@@ -1,13 +1,13 @@
 import { pick, promisify0 } from '@peertube/peertube-core-utils'
-import { AvailableEncoders, EncoderOptionsBuilder, EncoderOptionsBuilderParams, EncoderProfile } from '@peertube/peertube-models'
+import {
+  AvailableEncoders,
+  EncoderOptionsBuilder,
+  EncoderOptionsBuilderParams,
+  EncoderProfile,
+  SimpleLogger
+} from '@peertube/peertube-models'
+import { MutexInterface } from 'async-mutex'
 import ffmpeg, { FfmpegCommand } from 'fluent-ffmpeg'
-
-type FFmpegLogger = {
-  info: (msg: string, obj?: object) => void
-  debug: (msg: string, obj?: object) => void
-  warn: (msg: string, obj?: object) => void
-  error: (msg: string, obj?: object) => void
-}
 
 export interface FFmpegCommandWrapperOptions {
   availableEncoders?: AvailableEncoders
@@ -17,7 +17,7 @@ export interface FFmpegCommandWrapperOptions {
   tmpDirectory: string
   threads: number
 
-  logger: FFmpegLogger
+  logger: SimpleLogger
   lTags?: { tags: string[] }
 
   updateJobProgress?: (progress?: number) => void
@@ -35,7 +35,7 @@ export class FFmpegCommandWrapper {
   private readonly tmpDirectory: string
   private readonly threads: number
 
-  private readonly logger: FFmpegLogger
+  private readonly logger: SimpleLogger
   private readonly lTags: { tags: string[] }
 
   private readonly updateJobProgress: (progress?: number) => void
@@ -83,7 +83,7 @@ export class FFmpegCommandWrapper {
     this.command = undefined
   }
 
-  buildCommand (input: string) {
+  buildCommand (input: string, inputFileMutexReleaser?: MutexInterface.Releaser) {
     if (this.command) throw new Error('Command is already built')
 
     // We set cwd explicitly because ffmpeg appears to create temporary files when trancoding which fails in read-only file systems
@@ -95,6 +95,12 @@ export class FFmpegCommandWrapper {
     if (this.threads > 0) {
       // If we don't set any threads ffmpeg will chose automatically
       this.command.outputOption('-threads ' + this.threads)
+    }
+
+    if (inputFileMutexReleaser) {
+      this.command.on('start', () => {
+        setTimeout(() => inputFileMutexReleaser(), 1000)
+      })
     }
 
     return this.command

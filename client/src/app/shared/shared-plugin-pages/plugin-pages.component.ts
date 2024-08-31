@@ -32,6 +32,24 @@ export class PluginPagesComponent implements OnDestroy, AfterViewInit {
     if (this.urlSub) this.urlSub.unsubscribe()
   }
 
+  onRootClick (event: Event) {
+    const target = event.target as HTMLElement
+    if (!target) return
+
+    const a = target.closest('a')
+    if (!a) return
+
+    // Get the href attribute set by the dev, not the one calculated by JS to detect if it's a relative/external link
+    const href = a.getAttribute('href') || ''
+
+    if (!a.target && href.startsWith('/')) {
+      event.preventDefault()
+      event.stopPropagation()
+
+      this.router.navigateByUrl(href)
+    }
+  }
+
   private async loadRoute () {
     await this.pluginService.ensurePluginsAreLoaded(this.route.snapshot.data.pluginScope || 'common')
 

@@ -1,8 +1,10 @@
 import { DatePipe, NgClass, NgFor, NgIf } from '@angular/common'
 import { Component, OnInit, ViewChild } from '@angular/core'
-import { ActivatedRoute, Router } from '@angular/router'
-import { AuthService, ConfirmService, Notifier, RestPagination, RestTable } from '@app/core'
+import { ActivatedRoute, Router, RouterLink } from '@angular/router'
+import { AuthService, ConfirmService, Notifier, RestPagination, RestTable, ServerService } from '@app/core'
 import { formatICU, getAbsoluteAPIUrl } from '@app/helpers'
+import { VideoDetails } from '@app/shared/shared-main/video/video-details.model'
+import { VideoFileTokenService } from '@app/shared/shared-main/video/video-file-token.service'
 import { Video } from '@app/shared/shared-main/video/video.model'
 import { VideoService } from '@app/shared/shared-main/video/video.service'
 import { VideoBlockComponent } from '@app/shared/shared-moderation/video-block.component'
@@ -10,8 +12,9 @@ import { VideoBlockService } from '@app/shared/shared-moderation/video-block.ser
 import { NgbTooltip } from '@ng-bootstrap/ng-bootstrap'
 import { getAllFiles } from '@peertube/peertube-core-utils'
 import { UserRight, VideoFile, VideoPrivacy, VideoState, VideoStreamingPlaylistType } from '@peertube/peertube-models'
+import { videoRequiresFileToken } from '@root-helpers/video'
 import { SharedModule, SortMeta } from 'primeng/api'
-import { TableModule } from 'primeng/table'
+import { TableModule, TableRowExpandEvent } from 'primeng/table'
 import { finalize } from 'rxjs/operators'
 import { AdvancedInputFilter, AdvancedInputFilterComponent } from '../../../shared/shared-forms/advanced-input-filter.component'
 import { GlobalIconComponent } from '../../../shared/shared-icons/global-icon.component'
@@ -27,6 +30,7 @@ import {
   VideoActionsDropdownComponent
 } from '../../../shared/shared-video-miniature/video-actions-dropdown.component'
 import { VideoAdminService } from './video-admin.service'
+import { VideoCaptionService } from '@app/shared/shared-main/video-caption/video-caption.service'
 
 @Component({
   selector: 'my-video-list',
@@ -51,6 +55,7 @@ import { VideoAdminService } from './video-admin.service'
     EmbedComponent,
     VideoBlockComponent,
     DatePipe,
+    RouterLink,
     BytesPipe
   ]
 })
@@ -80,10 +85,13 @@ export class VideoListComponent extends RestTable <Video> implements OnInit {
     removeFiles: true,
     transcoding: true,
     studio: true,
-    stats: true
+    stats: true,
+    generateTranscription: true
   }
 
   loading = true
+
+  private videoFileTokens: { [ videoId: number ]: string } = {}
 
   constructor (
     protected route: ActivatedRoute,
@@ -93,13 +101,20 @@ export class VideoListComponent extends RestTable <Video> implements OnInit {
     private notifier: Notifier,
     private videoService: VideoService,
     private videoAdminService: VideoAdminService,
-    private videoBlockService: VideoBlockService
+    private videoBlockService: VideoBlockService,
+    private videoCaptionService: VideoCaptionService,
+    private server: ServerService,
+    private videoFileTokenService: VideoFileTokenService
   ) {
     super()
   }
 
   get authUser () {
     return this.auth.getUser()
+  }
+
+  get serverConfig () {
+    return this.server.getHTMLConfig()
   }
 
   ngOnInit () {
@@ -152,6 +167,14 @@ export class VideoListComponent extends RestTable <Video> implements OnInit {
           handler: videos => this.removeVideoFiles(videos, 'web-videos'),
           isDisplayed: videos => videos.every(v => v.canRemoveFiles(this.authUser)),
           iconName: 'delete'
+        }
+      ],
+      [
+        {
+          label: $localize`Generate caption`,
+          handler: videos => this.generateCaption(videos),
+          isDisplayed: videos => videos.every(v => v.canGenerateTranscription(this.authUser, this.serverConfig.videoTranscription.enabled)),
+          iconName: 'video-lang'
         }
       ]
     ]
@@ -256,6 +279,36 @@ export class VideoListComponent extends RestTable <Video> implements OnInit {
       })
   }
 
+  buildSearchAutoTag (tag: string) {
+    const str = `autoTag:"${tag}"`
+
+    if (this.search) return this.search + ' ' + str
+
+    return str
+  }
+
+  // ---------------------------------------------------------------------------
+
+  onVideoPanelOpened (event: TableRowExpandEvent) {
+    const video = event.data as VideoDetails
+
+    if (!video.videoSource?.filename && !videoRequiresFileToken(video)) return
+
+    this.videoFileTokenService.getVideoFileToken({ videoUUID: video.uuid })
+      .subscribe(({ token }) => {
+        this.videoFileTokens[video.id] = token
+      })
+  }
+
+  getDownloadUrl (video: VideoDetails, downloadUrl: string) {
+    const token = this.videoFileTokens[video.id]
+    if (!token) return downloadUrl
+
+    return downloadUrl + `?videoFileToken=${token}`
+  }
+
+  // ---------------------------------------------------------------------------
+
   protected reloadDataInternal () {
     this.loading = true
 
@@ -351,12 +404,49 @@ export class VideoListComponent extends RestTable <Video> implements OnInit {
   }
 
   private runTranscoding (videos: Video[], type: 'hls' | 'web-video') {
-    this.videoService.runTranscoding({ videoIds: videos.map(v => v.id), type, askForForceTranscodingIfNeeded: false })
+    this.videoService.runTranscoding({ videos, type })
       .subscribe({
         next: () => {
           this.notifier.success($localize`Transcoding jobs created.`)
 
           this.reloadData()
+        },
+
+        error: err => this.notifier.error(err.message)
+      })
+  }
+
+  private generateCaption (videos: Video[]) {
+    this.videoCaptionService.generateCaption({ videos })
+      .subscribe({
+        next: result => {
+          if (result.success) {
+            this.notifier.success(
+              formatICU(
+                $localize`{count, plural, =1 {1 transcription job created.} other {{count} transcription jobs created.}}`,
+                { count: result.success }
+              )
+            )
+          }
+
+          if (result.alreadyHasCaptions) {
+            this.notifier.info(
+              formatICU(
+                $localize`{count, plural, =1 {1 video already has captions.} other {{count} videos already have captions.}}`,
+                { count: result.alreadyHasCaptions }
+              )
+            )
+          }
+
+          if (result.alreadyBeingTranscribed) {
+            this.notifier.info(
+              formatICU(
+                // eslint-disable-next-line max-len
+                $localize`{count, plural, =1 {1 video is already being transcribed.} other {{count} videos are already being transcribed.}}`,
+                { count: result.alreadyBeingTranscribed }
+              )
+            )
+          }
         },
 
         error: err => this.notifier.error(err.message)

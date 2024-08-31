@@ -354,11 +354,16 @@ export class ActorModel extends SequelizeModel<ActorModel> {
     const options = {
       type: QueryTypes.SELECT as QueryTypes.SELECT,
       replacements: { videoId },
-      plain: true as true,
+      plain: true,
       transaction
     }
 
     return ActorModel.sequelize.query<MActorId & MActorFollowersUrl>(query, options)
+      .then(res => {
+        if (res && res.length !== 0) return res[0]
+
+        return undefined
+      })
   }
 
   static listByFollowersUrls (followersUrls: string[], transaction?: Transaction): Promise<MActorFull[]> {
@@ -542,7 +547,7 @@ export class ActorModel extends SequelizeModel<ActorModel> {
     }
   }
 
-  toFormattedJSON (this: MActorFormattable) {
+  toFormattedJSON (this: MActorFormattable, includeBanner = true) {
     return {
       ...this.toFormattedSummaryJSON(),
 
@@ -552,7 +557,9 @@ export class ActorModel extends SequelizeModel<ActorModel> {
       followersCount: this.followersCount,
       createdAt: this.getCreatedAt(),
 
-      banners: (this.Banners || []).map(b => b.toFormattedJSON())
+      banners: includeBanner
+        ? (this.Banners || []).map(b => b.toFormattedJSON())
+        : undefined
     }
   }
 

@@ -11,6 +11,7 @@ import {
   MCommentOwnerVideo,
   MPlugin,
   MVideoAccountLight,
+  MVideoCaptionVideo,
   MVideoFullLight
 } from '../../types/models/index.js'
 import { JobQueue } from '../job-queue/index.js'
@@ -41,7 +42,8 @@ import {
   OwnedPublicationAfterTranscoding,
   RegistrationRequestForModerators,
   StudioEditionFinishedForOwner,
-  UnblacklistForOwner
+  UnblacklistForOwner,
+  VideoTranscriptionGeneratedForOwner
 } from './shared/index.js'
 
 const lTags = loggerTagsFactory('notifier')
@@ -54,6 +56,7 @@ class Notifier {
     publicationAfterScheduleUpdate: [ OwnedPublicationAfterScheduleUpdate ],
     publicationAfterAutoUnblacklist: [ OwnedPublicationAfterAutoUnblacklist ],
     newComment: [ CommentMention, NewCommentForVideoOwner ],
+    commentApproval: [ CommentMention ],
     newAbuse: [ NewAbuseForModerators ],
     newBlacklist: [ NewBlacklistForOwner ],
     unblacklist: [ UnblacklistForOwner ],
@@ -68,7 +71,8 @@ class Notifier {
     newAbuseMessage: [ NewAbuseMessageForReporter, NewAbuseMessageForModerators ],
     newPeertubeVersion: [ NewPeerTubeVersionForAdmins ],
     newPluginVersion: [ NewPluginVersionForAdmins ],
-    videoStudioEditionFinished: [ StudioEditionFinishedForOwner ]
+    videoStudioEditionFinished: [ StudioEditionFinishedForOwner ],
+    videoTranscriptionGenerated: [ VideoTranscriptionGeneratedForOwner ]
   }
 
   private static instance: Notifier
@@ -121,6 +125,15 @@ class Notifier {
 
     this.sendNotifications(models, comment)
       .catch(err => logger.error('Cannot notify of new comment %s.', comment.url, { err }))
+  }
+
+  notifyOnNewCommentApproval (comment: MCommentOwnerVideo): void {
+    const models = this.notificationModels.commentApproval
+
+    logger.debug('Notify on comment approval', { comment: comment.url, ...lTags() })
+
+    this.sendNotifications(models, comment)
+      .catch(err => logger.error('Cannot notify on comment approval %s.', comment.url, { err }))
   }
 
   notifyOnNewAbuse (payload: NewAbusePayload): void {
@@ -263,6 +276,16 @@ class Notifier {
 
     this.sendNotifications(models, video)
       .catch(err => logger.error('Cannot notify on finished studio edition %s.', video.url, { err }))
+  }
+
+  notifyOfGeneratedVideoTranscription (caption: MVideoCaptionVideo) {
+    const models = this.notificationModels.videoTranscriptionGenerated
+    const video = caption.Video
+
+    logger.debug('Notify on generated video transcription', { language: caption.language, video: video.url, ...lTags() })
+
+    this.sendNotifications(models, caption)
+      .catch(err => logger.error('Cannot notify on generated video transcription %s of video %s.', caption.language, video.url, { err }))
   }
 
   private async notify <T> (object: AbstractNotification<T>) {

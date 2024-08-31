@@ -1,4 +1,4 @@
-import * as debug from 'debug'
+import debug from 'debug'
 import { merge, Observable, of, ReplaySubject, Subject } from 'rxjs'
 import { catchError, filter, map, share, switchMap, tap } from 'rxjs/operators'
 import { HttpClient, HttpContext, HttpParams } from '@angular/common/http'
@@ -58,7 +58,7 @@ export class VideoPlaylistService {
   ) {
     this.videoExistsInPlaylistObservable = merge(
       buildBulkObservable({
-        time: 500,
+        time: 200,
         bulkGet: (videoIds: number[]) => {
           // We added a delay to the request, so ensure the user is still logged in
           if (this.auth.isLoggedIn()) {

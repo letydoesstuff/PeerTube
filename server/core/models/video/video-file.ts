@@ -270,7 +270,7 @@ export class VideoFileModel extends SequelizeModel<VideoFileModel> {
   static doesInfohashExist (infoHash: string) {
     const query = 'SELECT 1 FROM "videoFile" WHERE "infoHash" = $infoHash LIMIT 1'
 
-    return doesExist(this.sequelize, query, { infoHash })
+    return doesExist({ sequelize: this.sequelize, query, bind: { infoHash } })
   }
 
   static async doesVideoExistForVideoFile (id: number, videoIdOrUUID: number | string) {
@@ -286,14 +286,14 @@ export class VideoFileModel extends SequelizeModel<VideoFileModel> {
                   'LEFT JOIN "video" "hlsVideo" ON "hlsVideo"."id" = "videoStreamingPlaylist"."videoId" AND "hlsVideo"."remote" IS FALSE ' +
                   'WHERE "torrentFilename" = $filename AND ("hlsVideo"."id" IS NOT NULL OR "webvideo"."id" IS NOT NULL) LIMIT 1'
 
-    return doesExist(this.sequelize, query, { filename })
+    return doesExist({ sequelize: this.sequelize, query, bind: { filename } })
   }
 
-  static async doesOwnedWebVideoFileExist (filename: string) {
+  static async doesOwnedFileExist (filename: string, storage: FileStorageType) {
     const query = 'SELECT 1 FROM "videoFile" INNER JOIN "video" ON "video"."id" = "videoFile"."videoId" AND "video"."remote" IS FALSE ' +
-                  `WHERE "filename" = $filename AND "storage" = ${FileStorage.FILE_SYSTEM} LIMIT 1`
+      `WHERE "filename" = $filename AND "storage" = $storage LIMIT 1`
 
-    return doesExist(this.sequelize, query, { filename })
+    return doesExist({ sequelize: this.sequelize, query, bind: { filename, storage } })
   }
 
   static loadByFilename (filename: string) {
@@ -352,6 +352,8 @@ export class VideoFileModel extends SequelizeModel<VideoFileModel> {
     return VideoFileModel.scope({ method: [ ScopeNames.WITH_VIDEO_OR_PLAYLIST, whereVideo ] })
       .findOne(options)
       .then(file => {
+        if (!file) return null
+
         // We used `required: false` so check we have at least a video or a streaming playlist
         if (!file.Video && !file.VideoStreamingPlaylist) return null
 

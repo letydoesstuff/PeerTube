@@ -1,14 +1,14 @@
 import { HybridLoaderSettings } from '@peertube/p2p-media-loader-core'
-import { HlsJsEngineSettings } from '@peertube/p2p-media-loader-hlsjs'
-import { logger } from '@root-helpers/logger'
+import { Engine, HlsJsEngineSettings } from '@peertube/p2p-media-loader-hlsjs'
 import { LiveVideoLatencyMode } from '@peertube/peertube-models'
+import { logger } from '@root-helpers/logger'
+import { peertubeLocalStorage } from '@root-helpers/peertube-web-storage'
 import { getAverageBandwidthInStore } from '../../peertube-player-local-storage'
 import { P2PMediaLoader, P2PMediaLoaderPluginOptions, PeerTubePlayerContructorOptions, PeerTubePlayerLoadOptions } from '../../types'
 import { getRtcConfig, isSameOrigin } from '../common'
 import { RedundancyUrlManager } from '../p2p-media-loader/redundancy-url-manager'
 import { segmentUrlBuilderFactory } from '../p2p-media-loader/segment-url-builder'
 import { SegmentValidator } from '../p2p-media-loader/segment-validator'
-import { peertubeLocalStorage } from '@root-helpers/peertube-web-storage'
 
 type ConstructorOptions =
   Pick<PeerTubePlayerContructorOptions, 'pluginsManager' | 'serverUrl' | 'authorizationHeader'> &
@@ -17,35 +17,43 @@ type ConstructorOptions =
 
 export class HLSOptionsBuilder {
 
-  constructor (
-    private options: ConstructorOptions,
-    private p2pMediaLoaderModule?: any
-  ) {
+  constructor (private options: ConstructorOptions) {
 
   }
 
   async getPluginOptions () {
-    const redundancyUrlManager = new RedundancyUrlManager(this.options.hls.redundancyBaseUrls)
-    const segmentValidator = new SegmentValidator({
-      segmentsSha256Url: this.options.hls.segmentsSha256Url,
-      authorizationHeader: this.options.authorizationHeader,
-      requiresUserAuth: this.options.requiresUserAuth,
-      serverUrl: this.options.serverUrl,
-      requiresPassword: this.options.requiresPassword,
-      videoPassword: this.options.videoPassword
-    })
+    const segmentsSha256Url = this.options.hls.segmentsSha256Url
+
+    if (!segmentsSha256Url) {
+      logger.info('No segmentsSha256Url found. Disabling P2P & redundancy.')
+    }
+
+    const redundancyUrlManager = segmentsSha256Url
+      ? new RedundancyUrlManager(this.options.hls.redundancyBaseUrls)
+      : null
+
+    const segmentValidator = segmentsSha256Url
+      ? new SegmentValidator({
+        segmentsSha256Url,
+        authorizationHeader: this.options.authorizationHeader,
+        requiresUserAuth: this.options.requiresUserAuth,
+        serverUrl: this.options.serverUrl,
+        requiresPassword: this.options.requiresPassword,
+        videoPassword: this.options.videoPassword
+      })
+      : null
 
     const p2pMediaLoaderConfig = await this.options.pluginsManager.runHook(
       'filter:internal.player.p2p-media-loader.options.result',
       this.getP2PMediaLoaderOptions({ redundancyUrlManager, segmentValidator })
     )
-    const loader = new this.p2pMediaLoaderModule.Engine(p2pMediaLoaderConfig).createLoaderClass() as P2PMediaLoader
+    const loader = new Engine(p2pMediaLoaderConfig).createLoaderClass() as unknown as P2PMediaLoader
 
     const p2pMediaLoader: P2PMediaLoaderPluginOptions = {
       requiresUserAuth: this.options.requiresUserAuth,
       videoFileToken: this.options.videoFileToken,
 
-      p2pEnabled: this.options.p2pEnabled,
+      p2pEnabled: segmentsSha256Url && this.options.p2pEnabled,
 
       redundancyUrlManager,
       type: 'application/x-mpegURL',
@@ -77,8 +85,8 @@ export class HLSOptionsBuilder {
   // ---------------------------------------------------------------------------
 
   private getP2PMediaLoaderOptions (options: {
-    redundancyUrlManager: RedundancyUrlManager
-    segmentValidator: SegmentValidator
+    redundancyUrlManager: RedundancyUrlManager | null
+    segmentValidator: SegmentValidator | null
   }): HlsJsEngineSettings {
     const { redundancyUrlManager, segmentValidator } = options
 
@@ -117,7 +125,9 @@ export class HLSOptionsBuilder {
           else xhr.setRequestHeader('Authorization', this.options.authorizationHeader())
         },
 
-        segmentValidator: segmentValidator.validate.bind(segmentValidator),
+        segmentValidator: segmentValidator
+          ? segmentValidator.validate.bind(segmentValidator)
+          : null,
 
         segmentUrlBuilder: segmentUrlBuilderFactory(redundancyUrlManager),
 
@@ -199,7 +209,8 @@ export class HLSOptionsBuilder {
       backBufferLength: 90,
       startLevel: -1,
       testBandwidth: false,
-      debug: false
+      debug: false,
+      enableWorker: false
     }
   }
 

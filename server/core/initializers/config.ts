@@ -5,6 +5,7 @@ import { dirname, join } from 'path'
 import {
   BroadcastMessageLevel,
   NSFWPolicyType,
+  VideoCommentPolicyType,
   VideoPrivacyType,
   VideoRedundancyConfigFilter,
   VideosRedundancyStrategy
@@ -12,6 +13,7 @@ import {
 import { decacheModule } from '@server/helpers/decache.js'
 import { buildPath, root } from '@peertube/peertube-node-utils'
 import { parseBytes, parseDurationToMs } from '../helpers/core-utils.js'
+import { TranscriptionEngineName, WhisperBuiltinModelName } from '@peertube/peertube-transcription'
 
 const require = createRequire(import.meta.url)
 let config: IConfig = require('config')
@@ -92,7 +94,7 @@ const CONFIG = {
   DEFAULTS: {
     PUBLISH: {
       DOWNLOAD_ENABLED: config.get<boolean>('defaults.publish.download_enabled'),
-      COMMENTS_ENABLED: config.get<boolean>('defaults.publish.comments_enabled'),
+      COMMENTS_POLICY: config.get<VideoCommentPolicyType>('defaults.publish.comments_policy'),
       PRIVACY: config.get<VideoPrivacyType>('defaults.publish.privacy'),
       LICENCE: config.get<number>('defaults.publish.licence')
     },
@@ -132,6 +134,7 @@ const CONFIG = {
   OBJECT_STORAGE: {
     ENABLED: config.get<boolean>('object_storage.enabled'),
     MAX_UPLOAD_PART: bytes.parse(config.get<string>('object_storage.max_upload_part')),
+    MAX_REQUEST_ATTEMPTS: config.get<number>('object_storage.max_request_attempts'),
     ENDPOINT: config.get<string>('object_storage.endpoint'),
     REGION: config.get<string>('object_storage.region'),
     UPLOAD_ACL: {
@@ -370,7 +373,8 @@ const CONFIG = {
   THUMBNAILS: {
     GENERATION_FROM_VIDEO: {
       FRAMES_TO_ANALYZE: config.get<number>('thumbnails.generation_from_video.frames_to_analyze')
-    }
+    },
+    SIZES: config.get<{ width: number, height: number }[]>('thumbnails.sizes')
   },
   STATS: {
     REGISTRATION_REQUESTS: {
@@ -510,6 +514,16 @@ const CONFIG = {
   VIDEO_FILE: {
     UPDATE: {
       get ENABLED () { return config.get<boolean>('video_file.update.enabled') }
+    }
+  },
+  VIDEO_TRANSCRIPTION: {
+    get ENABLED () { return config.get<boolean>('video_transcription.enabled') },
+    get ENGINE () { return config.get<TranscriptionEngineName>('video_transcription.engine') },
+    get ENGINE_PATH () { return config.get<string>('video_transcription.engine_path') },
+    get MODEL () { return config.get<WhisperBuiltinModelName>('video_transcription.model') },
+    get MODEL_PATH () { return config.get<string>('video_transcription.model_path') },
+    REMOTE_RUNNERS: {
+      get ENABLED () { return config.get<boolean>('video_transcription.remote_runners.enabled') }
     }
   },
   IMPORT: {

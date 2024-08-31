@@ -8,7 +8,7 @@
   [rowsPerPageOptions]="rowsPerPageOptions" [sortField]="sort.field" [sortOrder]="sort.order" dataKey="id" [resizableColumns]="true"
   [(selection)]="selectedRows" [lazy]="true" (onLazyLoad)="loadLazy($event)" [lazyLoadOnInit]="false" [selectionPageOnly]="true"
   [showCurrentPageReport]="true" [currentPageReportTemplate]="getPaginationTemplate()"
-  [expandedRowKeys]="expandedRows" [ngClass]="{ loading: loading }"
+  [expandedRowKeys]="expandedRows" [ngClass]="{ loading: loading }" (onRowExpand)="onVideoPanelOpened($event)"
 >
   <ng-template pTemplate="caption">
     <div class="caption">
@@ -49,7 +49,7 @@
 
   <ng-template pTemplate="body" let-expanded="expanded" let-video>
 
-    <tr [pSelectableRow]="video">
+    <tr [pSelectableRow]="video" (onRowExpand)="onVideoPanelOpened(video)">
       <td class="checkbox-cell">
         <p-tableCheckbox [value]="video" ariaLabel="Select this row" i18n-ariaLabel></p-tableCheckbox>
       </td>
@@ -70,22 +70,34 @@
       </td>
 
       <td>
-        @if (video.isLocal) {
-          <span class="pt-badge badge-blue" i18n>Local</span>
-        } @else {
-          <span class="pt-badge badge-purple" i18n>Remote</span>
-        }
+        <div>
+          @if (video.isLocal) {
+            <span class="pt-badge badge-blue" i18n>Local</span>
+          } @else {
+            <span class="pt-badge badge-purple" i18n>Remote</span>
+          }
 
-        <span [ngClass]="getPrivacyBadgeClass(video)" class="pt-badge">{{ video.privacy.label }}</span>
+          <span [ngClass]="getPrivacyBadgeClass(video)" class="pt-badge">{{ video.privacy.label }}</span>
 
-        <span *ngIf="video.nsfw" class="pt-badge badge-red" i18n>NSFW</span>
+          <span *ngIf="video.nsfw" class="pt-badge badge-red" i18n>NSFW</span>
 
-        <span *ngIf="isUnpublished(video)" class="pt-badge badge-yellow">{{ video.state.label }}</span>
+          <span *ngIf="isUnpublished(video)" class="pt-badge badge-yellow">{{ video.state.label }}</span>
 
-        <span *ngIf="isAccountBlocked(video)" class="pt-badge badge-red" i18n>Account muted</span>
-        <span *ngIf="isServerBlocked(video)" class="pt-badge badge-red" i18n>Server muted</span>
+          <span *ngIf="isAccountBlocked(video)" class="pt-badge badge-red" i18n>Account muted</span>
+          <span *ngIf="isServerBlocked(video)" class="pt-badge badge-red" i18n>Server muted</span>
 
-        <span *ngIf="isVideoBlocked(video)" class="pt-badge badge-red" i18n>Blocked</span>
+          <span *ngIf="isVideoBlocked(video)" class="pt-badge badge-red" i18n>Blocked</span>
+        </div>
+
+        <div>
+          @for (tag of video.automaticTags; track tag) {
+            <a
+              i18n-title title="Only display videos with this tag"
+              class="pt-badge badge-secondary me-1"
+              [routerLink]="[ '.' ]" [queryParams]="{ 'search': buildSearchAutoTag(tag) }"
+            >{{ tag }}</a>
+          }
+        </div>
       </td>
 
       <td>
@@ -114,7 +126,7 @@
 
             <ul>
               <li>
-                {{ video.videoSource.inputFilename }}: {{ video.videoSource.size | bytes: 1 }}
+                <a title="Download this file" i18n-title [href]="getDownloadUrl(video, video.videoSource.fileDownloadUrl)">{{ video.videoSource.inputFilename }}</a>: {{ video.videoSource.size | bytes: 1 }}
 
                 <button
                   *ngIf="canRemoveOneFile(video)" class="border-0 p-0"
@@ -132,7 +144,7 @@
 
             <ul>
               <li *ngFor="let file of video.files">
-                <a target="_blank" rel="noopener noreferrer" [href]="file.fileUrl">{{ file.resolution.label }}</a>: {{ file.size | bytes: 1 }}
+                <a title="Download this file" i18n-title [href]="getDownloadUrl(video, file.fileDownloadUrl)">{{ file.resolution.label }}</a>: {{ file.size | bytes: 1 }}
 
                 <button
                   *ngIf="canRemoveOneFile(video)" class="border-0 p-0"
@@ -150,7 +162,7 @@
 
             <ul>
               <li *ngFor="let file of video.streamingPlaylists[0].files">
-                <a target="_blank" rel="noopener noreferrer" [href]="file.fileUrl">{{ file.resolution.label }}</a>: {{ file.size | bytes: 1 }}
+                <a title="Download this file" i18n-title [href]="getDownloadUrl(video, file.fileDownloadUrl)">{{ file.resolution.label }}</a>: {{ file.size | bytes: 1 }}
 
                 <button
                   *ngIf="canRemoveOneFile(video)" class="border-0 p-0"

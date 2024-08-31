@@ -161,18 +161,24 @@
       },
       "architect": {
         "build": {
-          "builder": "@angular-devkit/build-angular:browser",
+          "builder": "@angular-devkit/build-angular:application",
           "options": {
+            "i18nMissingTranslation": "ignore",
             "localize": true,
-            "outputPath": "dist",
+            "outputPath": {
+              "base": "dist"
+            },
             "index": "src/index.html",
-            "main": "src/main.ts",
             "tsConfig": "tsconfig.json",
-            "polyfills": "src/polyfills.ts",
+            "polyfills": [
+              "src/polyfills.ts",
+              "@angular/localize/init"
+            ],
             "baseHref": "/",
             "stylePreprocessorOptions": {
               "includePaths": [
-                "src/sass/include"
+                "src/sass/include",
+                "."
               ]
             },
             "assets": [
@@ -209,12 +215,14 @@
               "@formatjs/intl-pluralrules/should-polyfill"
             ],
             "scripts": [],
-            "vendorChunk": true,
             "extractLicenses": false,
-            "buildOptimizer": false,
             "sourceMap": true,
             "optimization": false,
-            "namedChunks": true
+            "namedChunks": true,
+            "browser": "src/main.ts",
+            "loader": {
+              ".svg": "text"
+            }
           },
           "configurations": {
             "production": {
@@ -223,10 +231,7 @@
               "sourceMap": false,
               "namedChunks": false,
               "extractLicenses": true,
-              "vendorChunk": false,
-              "buildOptimizer": true,
-              "serviceWorker": true,
-              "ngswConfigPath": "src/ngsw-config.json",
+              "serviceWorker": "src/ngsw-config.json",
               "budgets": [
                 {
                   "type": "initial",
@@ -287,9 +292,6 @@
             "buildTarget": "PeerTube:build"
           },
           "configurations": {
-            "production": {
-              "buildTarget": "PeerTube:build:production"
-            },
             "hmr": {
               "buildTarget": "PeerTube:build:hmr"
             },
@@ -299,10 +301,7 @@
           }
         },
         "extract-i18n": {
-          "builder": "@angular-devkit/build-angular:extract-i18n",
-          "options": {
-            "buildTarget": "PeerTube:build"
-          }
+          "builder": "@angular-devkit/build-angular:extract-i18n"
         },
         "lint": {
           "builder": "@angular-eslint/builder:lint",

@@ -1,4 +1,4 @@
-import '@peertube/videojs-contextmenu'
+import './shared/context-menu'
 import './shared/upnext/end-card'
 import './shared/upnext/upnext-plugin'
 import './shared/stats/stats-card'
@@ -15,6 +15,7 @@ import './shared/control-bar/p2p-info-button'
 import './shared/control-bar/peertube-link-button'
 import './shared/control-bar/theater-button'
 import './shared/control-bar/peertube-live-display'
+import './shared/settings/menu-focus-fixed'
 import './shared/settings/resolution-menu-button'
 import './shared/settings/resolution-menu-item'
 import './shared/settings/settings-dialog'
@@ -27,6 +28,9 @@ import './shared/mobile/peertube-mobile-plugin'
 import './shared/mobile/peertube-mobile-buttons'
 import './shared/hotkeys/peertube-hotkeys-plugin'
 import './shared/metrics/metrics-plugin'
+import './shared/p2p-media-loader/hls-plugin'
+import './shared/p2p-media-loader/p2p-media-loader-plugin'
+import './shared/web-video/web-video-plugin'
 import videojs, { VideoJsPlayer } from 'video.js'
 import { logger } from '@root-helpers/logger'
 import { PluginsManager } from '@root-helpers/plugins-manager'
@@ -61,16 +65,9 @@ export class PeerTubePlayer {
 
   private videojsDecodeErrors = 0
 
-  private p2pMediaLoaderModule: any
-
   private player: VideoJsPlayer
 
   private currentLoadOptions: PeerTubePlayerLoadOptions
-
-  private moduleLoaded = {
-    webVideo: false,
-    p2pMediaLoader: false
-  }
 
   constructor (private options: PeerTubePlayerContructorOptions) {
     this.pluginsManager = options.pluginsManager
@@ -91,7 +88,6 @@ export class PeerTubePlayer {
 
     this.disposeDynamicPluginsIfNeeded()
 
-    await this.lazyLoadModulesIfNeeded()
     await this.buildPlayerIfNeeded()
 
     if (this.currentLoadOptions.mode === 'p2p-media-loader') {
@@ -168,7 +164,7 @@ export class PeerTubePlayer {
         'liveOptions',
         'hls'
       ])
-    }, this.p2pMediaLoaderModule)
+    })
 
     const { hlsjs, p2pMediaLoader } = await hlsOptionsBuilder.getPluginOptions()
 
@@ -225,7 +221,7 @@ export class PeerTubePlayer {
         saveAverageBandwidth(data.bandwidthEstimate)
       })
 
-      this.player.contextmenuUI(this.getContextMenuOptions())
+      this.player.contextMenu(this.getContextMenuOptions())
 
       this.displayNotificationWhenOffline()
     })
@@ -297,22 +293,6 @@ export class PeerTubePlayer {
     }
   }
 
-  private async lazyLoadModulesIfNeeded () {
-    if (this.currentLoadOptions.mode === 'web-video' && this.moduleLoaded.webVideo !== true) {
-      await import('./shared/web-video/web-video-plugin')
-    }
-
-    if (this.currentLoadOptions.mode === 'p2p-media-loader' && this.moduleLoaded.p2pMediaLoader !== true) {
-      const [ p2pMediaLoaderModule ] = await Promise.all([
-        import('@peertube/p2p-media-loader-hlsjs'),
-        import('./shared/p2p-media-loader/hls-plugin'),
-        import('./shared/p2p-media-loader/p2p-media-loader-plugin')
-      ])
-
-      this.p2pMediaLoaderModule = p2pMediaLoaderModule
-    }
-  }
-
   private async tryToRecoverHLSError (err: any) {
     if (err.code === MediaError.MEDIA_ERR_DECODE) {
 
@@ -326,7 +306,12 @@ export class PeerTubePlayer {
         return
       }
 
-      logger.info('Fast forwarding HLS to recover from an error.')
+      logger.info('Fast forwarding HLS to recover from an error.', {
+        err,
+        videoShortUUID: this.currentLoadOptions.videoShortUUID,
+        currentTime: this.player.currentTime(),
+        resolution: this.player.videoHeight()
+      })
 
       this.videojsDecodeErrors++
 

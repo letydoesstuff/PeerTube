@@ -1,3 +1,4 @@
+import { MutexInterface } from 'async-mutex'
 import { FfprobeData } from 'fluent-ffmpeg'
 import { FFmpegCommandWrapper, FFmpegCommandWrapperOptions } from './ffmpeg-command-wrapper.js'
 import { getVideoStreamDuration } from './ffprobe.js'
@@ -100,6 +101,9 @@ export class FFmpegImage {
     path: string
     destination: string
 
+    // Will be released after the ffmpeg started
+    inputFileMutexReleaser: MutexInterface.Releaser
+
     sprites: {
       size: {
         width: number
@@ -120,7 +124,7 @@ export class FFmpegImage {
 
     const filter = [
       // Fix "t" variable with some videos
-      `setpts=N/round(FRAME_RATE)/TB`,
+      `setpts='N/FRAME_RATE/TB'`,
       // First frame or the time difference between the last and the current frame is enough for our sprite interval
       `select='isnan(prev_selected_t)+gte(t-prev_selected_t,${options.sprites.duration})'`,
       `scale=${sprites.size.width}:${sprites.size.height}`,

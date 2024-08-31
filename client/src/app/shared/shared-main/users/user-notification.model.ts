@@ -11,6 +11,7 @@ import {
   UserNotificationType,
   UserNotificationType_Type,
   UserRight,
+  VideoConstant,
   VideoInfo
 } from '@peertube/peertube-models'
 import { logger } from '@root-helpers/logger'
@@ -36,6 +37,7 @@ export class UserNotification implements UserNotificationServer {
   comment?: {
     id: number
     threadId: number
+    heldForReview: boolean
     account: ActorInfo & { avatarUrl?: string }
     video: VideoInfo
   }
@@ -89,12 +91,21 @@ export class UserNotification implements UserNotificationServer {
     username: string
   }
 
+  videoCaption?: {
+    id: number
+    language: VideoConstant<string>
+    video: VideoInfo
+  }
+
   createdAt: string
   updatedAt: string
 
   // Additional fields
   videoUrl?: string
   commentUrl?: any[]
+
+  commentReviewUrl?: string
+  commentReviewQueryParams?: { [id: string]: string } = {}
 
   abuseUrl?: string
   abuseQueryParams?: { [id: string]: string } = {}
@@ -145,6 +156,8 @@ export class UserNotification implements UserNotificationServer {
       this.peertube = hash.peertube
       this.registration = hash.registration
 
+      this.videoCaption = hash.videoCaption
+
       this.createdAt = hash.createdAt
       this.updatedAt = hash.updatedAt
 
@@ -163,6 +176,9 @@ export class UserNotification implements UserNotificationServer {
           if (!this.comment) break
           this.accountUrl = this.buildAccountUrl(this.comment.account)
           this.commentUrl = this.buildCommentUrl(this.comment)
+
+          this.commentReviewUrl = '/my-account/videos/comments'
+          this.commentReviewQueryParams.search = 'heldForReview:true'
           break
 
         case UserNotificationType.NEW_ABUSE_FOR_MODERATORS:
@@ -241,6 +257,10 @@ export class UserNotification implements UserNotificationServer {
         case UserNotificationType.NEW_PLUGIN_VERSION:
           this.pluginUrl = `/admin/plugins/list-installed`
           this.pluginQueryParams.pluginType = this.plugin.type + ''
+          break
+
+        case UserNotificationType.MY_VIDEO_TRANSCRIPTION_GENERATED:
+          this.videoUrl = this.buildVideoUrl(this.videoCaption.video)
           break
 
         case UserNotificationType.MY_VIDEO_STUDIO_EDITION_FINISHED:

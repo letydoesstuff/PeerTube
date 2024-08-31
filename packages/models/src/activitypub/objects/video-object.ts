@@ -1,4 +1,4 @@
-import { LiveVideoLatencyModeType, VideoStateType } from '../../videos/index.js'
+import { LiveVideoLatencyModeType, VideoCommentPolicyType, VideoStateType } from '../../videos/index.js'
 import {
   ActivityIconObject,
   ActivityIdentifierObject,
@@ -6,6 +6,7 @@ import {
   ActivityTagObject,
   ActivityUrlObject
 } from './common-objects.js'
+import { VideoCaptionObject } from './video-caption-object.js'
 import { VideoChapterObject } from './video-chapters-object.js'
 
 export interface VideoObject {
@@ -18,7 +19,7 @@ export interface VideoObject {
   category: ActivityIdentifierObject
   licence: ActivityIdentifierObject
   language: ActivityIdentifierObject
-  subtitleLanguage: ActivityIdentifierObject[]
+  subtitleLanguage: VideoCaptionObject[]
 
   views: number
 
@@ -29,7 +30,10 @@ export interface VideoObject {
   permanentLive: boolean
   latencyMode: LiveVideoLatencyModeType
 
-  commentsEnabled: boolean
+  commentsEnabled?: boolean
+  commentsPolicy: VideoCommentPolicyType
+  canReply: 'as:Public' | 'https://www.w3.org/ns/activitystreams#Public'
+
   downloadEnabled: boolean
   waitTranscoding: boolean
   state: VideoStateType

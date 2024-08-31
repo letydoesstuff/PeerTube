@@ -11,6 +11,7 @@ import {
   DropdownButtonSize,
   DropdownDirection
 } from '../shared-main/buttons/action-dropdown.component'
+import { VideoCaptionService } from '../shared-main/video-caption/video-caption.service'
 import { RedundancyService } from '../shared-main/video/redundancy.service'
 import { VideoDetails } from '../shared-main/video/video-details.model'
 import { Video } from '../shared-main/video/video.model'
@@ -37,6 +38,7 @@ export type VideoActionsDisplayType = {
   transcoding?: boolean
   studio?: boolean
   stats?: boolean
+  generateTranscription?: boolean
 }
 
 @Component({
@@ -84,7 +86,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
     studio: true,
     stats: true
   }
-  @Input() placement = 'left'
+  @Input() placement = 'left auto'
   @Input() moreActions: DropdownAction<{ video: Video }>[][] = []
   @Input({ transform: booleanAttribute }) actionAvailabilityHint = false
 
@@ -115,6 +117,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
     private videoBlocklistService: VideoBlockService,
     private screenService: ScreenService,
     private videoService: VideoService,
+    private videoCaptionService: VideoCaptionService,
     private redundancyService: RedundancyService,
     private serverService: ServerService
   ) { }
@@ -187,7 +190,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
   }
 
   isVideoStatsAvailable () {
-    return this.video.isOwnerOrHasSeeAllVideosRight(this.user)
+    return this.video.isLocal && this.video.isOwnerOrHasSeeAllVideosRight(this.user)
   }
 
   isVideoRemovable () {
@@ -206,6 +209,12 @@ export class VideoActionsDropdownComponent implements OnChanges {
     return this.video.isLiveInfoAvailableBy(this.user)
   }
 
+  canGenerateTranscription () {
+    return this.video.canGenerateTranscription(this.user, this.serverService.getHTMLConfig().videoTranscription.enabled)
+  }
+
+  // ---------------------------------------------------------------------------
+
   isVideoDownloadableByAnonymous () {
     return (
       this.video &&
@@ -214,6 +223,16 @@ export class VideoActionsDropdownComponent implements OnChanges {
       this.video.downloadEnabled
     )
   }
+
+  isVideoDownloadableByUser () {
+    return (
+      this.video &&
+      this.video.isLive !== true &&
+      this.video.isOwnerOrHasSeeAllVideosRight(this.user)
+    )
+  }
+
+  // ---------------------------------------------------------------------------
 
   canVideoBeDuplicated () {
     return !this.video.isLive && this.video.canBeDuplicatedBy(this.user)
@@ -227,8 +246,8 @@ export class VideoActionsDropdownComponent implements OnChanges {
     return this.video.canRemoveFiles(this.user)
   }
 
-  canRunForcedTranscoding () {
-    return this.video.canRunForcedTranscoding(this.user)
+  canRunTranscoding () {
+    return this.video.canRunTranscoding(this.user)
   }
 
   /* Action handlers */
@@ -335,11 +354,24 @@ export class VideoActionsDropdownComponent implements OnChanges {
   }
 
   runTranscoding (video: Video, type: 'hls' | 'web-video') {
-    this.videoService.runTranscoding({ videoIds: [ video.id ], type, askForForceTranscodingIfNeeded: true })
+    this.videoService.runTranscoding({ videos: [ video ], type })
       .subscribe({
         next: () => {
-          this.notifier.success($localize`Transcoding jobs created for "${video.name}".`)
+          this.notifier.success($localize`Transcoding job created for "${video.name}".`)
           this.transcodingCreated.emit()
+        },
+
+        error: err => this.notifier.error(err.message)
+      })
+  }
+
+  generateCaption (video: Video) {
+    this.videoCaptionService.generateCaption({ videos: [ video ] })
+      .subscribe({
+        next: result => {
+          if (result.success) this.notifier.success($localize`Transcription job created for "${video.name}".`)
+          else if (result.alreadyBeingTranscribed) this.notifier.info($localize`This video is already being transcribed.`)
+          else if (result.alreadyHasCaptions) this.notifier.info($localize`This video already has captions.`)
         },
 
         error: err => this.notifier.error(err.message)
@@ -375,7 +407,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           isDisplayed: () => {
             if (!this.displayOptions.download) return false
 
-            return this.isVideoDownloadableByAnonymous() || this.video.isOwnerOrHasSeeAllVideosRight(this.user)
+            return this.isVideoDownloadableByAnonymous() || this.isVideoDownloadableByUser()
           },
           iconName: 'download',
           ownerOrModeratorPrivilege: () => {
@@ -444,13 +476,13 @@ export class VideoActionsDropdownComponent implements OnChanges {
         {
           label: $localize`Run HLS transcoding`,
           handler: ({ video }) => this.runTranscoding(video, 'hls'),
-          isDisplayed: () => this.displayOptions.transcoding && this.canRunForcedTranscoding(),
+          isDisplayed: () => this.displayOptions.transcoding && this.canRunTranscoding(),
           iconName: 'cog'
         },
         {
           label: $localize`Run Web Video transcoding`,
           handler: ({ video }) => this.runTranscoding(video, 'web-video'),
-          isDisplayed: () => this.displayOptions.transcoding && this.canRunForcedTranscoding(),
+          isDisplayed: () => this.displayOptions.transcoding && this.canRunTranscoding(),
           iconName: 'cog'
         },
         {
@@ -464,6 +496,14 @@ export class VideoActionsDropdownComponent implements OnChanges {
           handler: ({ video }) => this.removeVideoFiles(video, 'web-videos'),
           isDisplayed: () => this.displayOptions.removeFiles && this.canRemoveVideoFiles(),
           iconName: 'delete'
+        }
+      ],
+      [
+        {
+          label: $localize`Generate caption`,
+          handler: ({ video }) => this.generateCaption(video),
+          isDisplayed: () => this.displayOptions.generateTranscription && this.canGenerateTranscription(),
+          iconName: 'video-lang'
         }
       ],
       [ // actions regarding the account/its server

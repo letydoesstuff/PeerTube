@@ -83,10 +83,6 @@ export class PeerTubeEmbed {
     await embed.init()
   }
 
-  getPlayerElement () {
-    return this.playerHTML.getPlayerElement()
-  }
-
   getScope () {
     return this.playerOptionsBuilder.getScope()
   }
@@ -420,8 +416,8 @@ export class PeerTubeEmbed {
     playerElement.className = 'video-js vjs-peertube-skin'
     playerElement.setAttribute('playsinline', 'true')
 
-    this.playerHTML.setPlayerElement(playerElement)
-    this.playerHTML.addPlayerElementToDOM()
+    this.playerHTML.setInitVideoEl(playerElement)
+    this.playerHTML.addInitVideoElToDOM()
 
     const [ { PeerTubePlayer } ] = await Promise.all([
       this.PeerTubePlayerManagerModulePromise,
@@ -435,6 +431,19 @@ export class PeerTubeEmbed {
     this.peertubePlayer = new PeerTubePlayer(constructorOptions)
 
     this.player = this.peertubePlayer.getPlayer()
+  }
+
+  getImageDataUrl (): string {
+    const canvas = document.createElement('canvas')
+
+    canvas.width = this.player.videoWidth()
+    canvas.height = this.player.videoHeight()
+
+    const videoEl = this.player.tech(true).el() as HTMLVideoElement
+
+    canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height)
+
+    return canvas.toDataURL('image/jpeg')
   }
 }
 

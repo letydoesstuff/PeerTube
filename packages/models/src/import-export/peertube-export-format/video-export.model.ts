@@ -1,5 +1,6 @@
 import {
   LiveVideoLatencyModeType,
+  VideoCommentPolicyType,
   VideoFileMetadata,
   VideoPrivacyType,
   VideoStateType,
@@ -53,7 +54,10 @@ export interface VideoExportJSON {
 
     nsfw: boolean
 
-    commentsEnabled: boolean
+    // TODO: remove, deprecated in 6.2
+    commentsEnabled?: boolean
+    commentsPolicy: VideoCommentPolicyType
+
     downloadEnabled: boolean
 
     channel: {
@@ -69,6 +73,7 @@ export interface VideoExportJSON {
       language: string
       filename: string
       fileUrl: string
+      automaticallyGenerated: boolean
     }[]
 
     chapters: {

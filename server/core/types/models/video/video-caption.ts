@@ -12,11 +12,12 @@ export type MVideoCaption = Omit<VideoCaptionModel, 'Video'>
 
 export type MVideoCaptionLanguage = Pick<MVideoCaption, 'language'>
 export type MVideoCaptionLanguageUrl =
-  Pick<MVideoCaption, 'language' | 'fileUrl' | 'filename' | 'getFileUrl' | 'getCaptionStaticPath' | 'toActivityPubObject'>
+  Pick<MVideoCaption, 'language' | 'fileUrl' | 'filename' | 'automaticallyGenerated' | 'getFileUrl' | 'getCaptionStaticPath' |
+  'toActivityPubObject'>
 
 export type MVideoCaptionVideo =
   MVideoCaption &
-  Use<'Video', Pick<MVideo, 'id' | 'remote' | 'uuid'>>
+  Use<'Video', Pick<MVideo, 'id' | 'name' | 'remote' | 'uuid' | 'url' | 'getWatchStaticPath'>>
 
 // ############################################################################
 

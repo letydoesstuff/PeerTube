@@ -80,7 +80,9 @@ const playerKeys = {
   'Autoplay is suspended': 'Autoplay is suspended',
   '{1} (from edge: {2})': '{1} (from edge: {2})',
   'Disable subtitles': 'Disable subtitles',
-  'Enable {1} subtitle': 'Enable {1} subtitle'
+  'Enable {1} subtitle': 'Enable {1} subtitle',
+  '{1} (auto-generated)': '{1} (auto-generated)',
+  'Go back': 'Go back'
 }
 Object.assign(playerKeys, videojs)
 

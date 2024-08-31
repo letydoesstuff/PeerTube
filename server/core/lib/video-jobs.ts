@@ -3,6 +3,7 @@ import { CONFIG } from '@server/initializers/config.js'
 import { VideoJobInfoModel } from '@server/models/video/video-job-info.js'
 import { MVideo, MVideoFile, MVideoFullLight, MVideoUUID } from '@server/types/models/index.js'
 import { CreateJobArgument, CreateJobOptions, JobQueue } from './job-queue/job-queue.js'
+import { createTranscriptionTaskIfNeeded } from './video-captions.js'
 import { moveFilesIfPrivacyChanged } from './video-privacy.js'
 
 export async function buildMoveJob (options: {
@@ -57,8 +58,9 @@ export function buildStoryboardJobIfNeeded (options: {
 export async function addVideoJobsAfterCreation (options: {
   video: MVideo
   videoFile: MVideoFile
+  generateTranscription: boolean
 }) {
-  const { video, videoFile } = options
+  const { video, videoFile, generateTranscription } = options
 
   const jobs: (CreateJobArgument & CreateJobOptions)[] = [
     {
@@ -105,7 +107,11 @@ export async function addVideoJobsAfterCreation (options: {
     })
   }
 
-  return JobQueue.Instance.createSequentialJobFlow(...jobs)
+  await JobQueue.Instance.createSequentialJobFlow(...jobs)
+
+  if (generateTranscription === true) {
+    await createTranscriptionTaskIfNeeded(video)
+  }
 }
 
 export async function addVideoJobsAfterUpdate (options: {
@@ -119,6 +125,12 @@ export async function addVideoJobsAfterUpdate (options: {
   const jobs: CreateJobArgument[] = []
 
   const filePathChanged = await moveFilesIfPrivacyChanged(video, oldPrivacy)
+  const hls = video.getHLSPlaylist()
+
+  if (filePathChanged && hls) {
+    hls.assignP2PMediaLoaderInfoHashes(video, hls.VideoFiles)
+    await hls.save()
+  }
 
   if (!video.isLive && (nameChanged || filePathChanged)) {
     for (const file of (video.VideoFiles || [])) {

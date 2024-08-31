@@ -24,12 +24,8 @@ jobs:
         with:
           node-version: '18.x'
 
-      - name: Angular bundlewatch
-        uses: jackyef/bundlewatch-gh-action@master
-        with:
-          build-script: npm run build -- --analyze-bundle
-          branch-base: develop
-          bundlewatch-github-token: ${{ secrets.BUNDLEWATCH_GITHUB_TOKEN }}
+      - name: Build
+        run: npm run build -- --analyze-bundle
 
       - name: PeerTube code stats
         if: github.event_name != 'pull_request'
@@ -41,7 +37,7 @@ jobs:
       - name: PeerTube client stats
         if: github.event_name != 'pull_request'
         run: |
-          npm run client:build-stats > client-build-stats.json
+          npm run -s client:build-stats > client-build-stats.json
 
       - name: PeerTube client lighthouse report
         if: github.event_name != 'pull_request'

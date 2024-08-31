@@ -88,18 +88,10 @@ export class FFmpegVOD {
 
     this.commandWrapper.debugLog('Will run transcode.', { options })
 
-    const command = this.commandWrapper.buildCommand(options.inputPath)
+    this.commandWrapper.buildCommand(options.inputPath, options.inputFileMutexReleaser)
       .output(options.outputPath)
 
     await builders[options.type](options)
-
-    command.on('start', () => {
-      setTimeout(() => {
-        if (options.inputFileMutexReleaser) {
-          options.inputFileMutexReleaser()
-        }
-      }, 1000)
-    })
 
     await this.commandWrapper.runCommand()
 
@@ -112,8 +104,8 @@ export class FFmpegVOD {
     return this.ended
   }
 
-  private async buildWebVideoCommand (options: TranscodeVODOptions) {
-    const { resolution, fps, inputPath } = options
+  private async buildWebVideoCommand (options: TranscodeVODOptions & { canCopyAudio?: boolean, canCopyVideo?: boolean }) {
+    const { resolution, fps, inputPath, canCopyAudio = true, canCopyVideo = true } = options
 
     if (resolution === VideoResolution.H_NOVIDEO) {
       presetOnlyAudio(this.commandWrapper)
@@ -136,8 +128,8 @@ export class FFmpegVOD {
 
       resolution,
       input: inputPath,
-      canCopyAudio: true,
-      canCopyVideo: true,
+      canCopyAudio,
+      canCopyVideo,
       fps,
       scaleFilterValue
     })
@@ -193,9 +185,15 @@ export class FFmpegVOD {
 
     const videoPath = this.getHLSVideoPath(options)
 
-    if (options.copyCodecs) presetCopy(this.commandWrapper)
-    else if (options.resolution === VideoResolution.H_NOVIDEO) presetOnlyAudio(this.commandWrapper)
-    else await this.buildWebVideoCommand(options)
+    if (options.copyCodecs) {
+      presetCopy(this.commandWrapper)
+    } else if (options.resolution === VideoResolution.H_NOVIDEO) {
+      presetOnlyAudio(this.commandWrapper)
+    } else {
+      // If we cannot copy codecs, we do not copy them at all to prevent issues like audio desync
+      // See for example https://github.com/Chocobozzz/PeerTube/issues/6438
+      await this.buildWebVideoCommand({ ...options, canCopyAudio: false, canCopyVideo: false })
+    }
 
     this.addCommonHLSVODCommandOptions(command, videoPath)
   }

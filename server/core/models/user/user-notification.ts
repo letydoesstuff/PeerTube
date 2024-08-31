@@ -13,6 +13,7 @@ import { ApplicationModel } from '../application/application.js'
 import { PluginModel } from '../server/plugin.js'
 import { SequelizeModel, throwIfNotValid } from '../shared/index.js'
 import { VideoBlacklistModel } from '../video/video-blacklist.js'
+import { VideoCaptionModel } from '../video/video-caption.js'
 import { VideoCommentModel } from '../video/video-comment.js'
 import { VideoImportModel } from '../video/video-import.js'
 import { VideoModel } from '../video/video.js'
@@ -260,6 +261,18 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
   })
   UserRegistration: Awaited<UserRegistrationModel>
 
+  @ForeignKey(() => VideoCaptionModel)
+  @Column
+  videoCaptionId: number
+
+  @BelongsTo(() => VideoCaptionModel, {
+    foreignKey: {
+      allowNull: true
+    },
+    onDelete: 'cascade'
+  })
+  VideoCaption: Awaited<VideoCaptionModel>
+
   static listForApi (userId: number, start: number, count: number, sort: string, unread?: boolean) {
     const where = { userId }
 
@@ -290,7 +303,8 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
         userId,
         id: {
           [Op.in]: notificationIds
-        }
+        },
+        read: false
       }
     }
 
@@ -298,7 +312,7 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
   }
 
   static markAllAsRead (userId: number) {
-    const query = { where: { userId } }
+    const query = { where: { userId, read: false } }
 
     return UserNotificationModel.update({ read: true }, query)
   }
@@ -382,7 +396,8 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
         id: this.VideoComment.id,
         threadId: this.VideoComment.getThreadId(),
         account: this.formatActor(this.VideoComment.Account),
-        video: this.formatVideo(this.VideoComment.Video)
+        video: this.formatVideo(this.VideoComment.Video),
+        heldForReview: this.VideoComment.heldForReview
       }
       : undefined
 
@@ -439,6 +454,17 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
       ? { id: this.UserRegistration.id, username: this.UserRegistration.username }
       : undefined
 
+    const videoCaption = this.VideoCaption
+      ? {
+        id: this.VideoCaption.id,
+        language: {
+          id: this.VideoCaption.language,
+          label: VideoCaptionModel.getLanguageLabel(this.VideoCaption.language)
+        },
+        video: this.formatVideo(this.VideoCaption.Video)
+      }
+      : undefined
+
     return {
       id: this.id,
       type: this.type,
@@ -453,6 +479,7 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
       plugin,
       peertube,
       registration,
+      videoCaption,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString()
     }
@@ -524,6 +551,13 @@ export class UserNotificationModel extends SequelizeModel<UserNotificationModel>
   }
 
   formatAvatar (a: UserNotificationIncludes.ActorImageInclude) {
+    return {
+      path: a.getStaticPath(),
+      width: a.width
+    }
+  }
+
+  formatVideoCaption (a: UserNotificationIncludes.ActorImageInclude) {
     return {
       path: a.getStaticPath(),
       width: a.width

@@ -114,6 +114,8 @@ export class Video implements VideoServerModel {
 
   videoSource?: VideoSource
 
+  automaticTags?: string[]
+
   static buildWatchUrl (video: Partial<Pick<Video, 'uuid' | 'shortUUID'>>) {
     return buildVideoWatchPath({ shortUUID: video.shortUUID || video.uuid })
   }
@@ -205,6 +207,8 @@ export class Video implements VideoServerModel {
     this.pluginData = hash.pluginData
 
     this.aspectRatio = hash.aspectRatio
+
+    this.automaticTags = hash.automaticTags
   }
 
   isVideoNSFWForUser (user: User, serverConfig: HTMLServerConfig) {
@@ -247,7 +251,7 @@ export class Video implements VideoServerModel {
   }
 
   hasSeeAllVideosRight (user: AuthUser) {
-    return user && user.hasRight(UserRight.SEE_ALL_VIDEOS)
+    return user?.hasRight(UserRight.SEE_ALL_VIDEOS)
   }
 
   isOwnerOrHasSeeAllVideosRight (user: AuthUser) {
@@ -269,14 +273,35 @@ export class Video implements VideoServerModel {
       this.hasWebVideos()
   }
 
+  // ---------------------------------------------------------------------------
+
   canRunTranscoding (user: AuthUser) {
-    return this.canRunForcedTranscoding(user) && this.state.id !== VideoState.TO_TRANSCODE
+    return this.isLocal &&
+    !this.isLive &&
+    user?.hasRight(UserRight.RUN_VIDEO_TRANSCODING) &&
+    this.state?.id &&
+    !this.transcodingAndTranscriptionIncompatibleStates().has(this.state.id)
   }
 
-  canRunForcedTranscoding (user: AuthUser) {
-    return this.isLocal &&
-      user && user.hasRight(UserRight.RUN_VIDEO_TRANSCODING)
+  canGenerateTranscription (user: AuthUser, transcriptionEnabled: boolean) {
+    return transcriptionEnabled &&
+      this.isLocal &&
+      !this.isLive &&
+      user.hasRight(UserRight.UPDATE_ANY_VIDEO) &&
+      this.state?.id &&
+      !this.transcodingAndTranscriptionIncompatibleStates().has(this.state.id)
   }
+
+  private transcodingAndTranscriptionIncompatibleStates () {
+    return new Set<VideoStateType>([
+      VideoState.TO_IMPORT,
+      VideoState.TO_EDIT,
+      VideoState.TO_MOVE_TO_EXTERNAL_STORAGE,
+      VideoState.TO_MOVE_TO_FILE_SYSTEM
+    ])
+  }
+
+  // ---------------------------------------------------------------------------
 
   hasHLS () {
     return this.streamingPlaylists?.some(p => p.type === VideoStreamingPlaylistType.HLS)

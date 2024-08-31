@@ -242,7 +242,7 @@ Otherwise, `resolutionId` should be the ID of an object returned by `getResoluti
 
 Get the available playback rates, where `1` represents normal speed, `0.5` is half speed, `2` is double speed, etc.
 
-### `getPlaybackRates() : Promise<number>`
+### `getPlaybackRate() : Promise<number>`
 
 Get the current playback rate. See `getPlaybackRates()` for more information.
 
@@ -285,6 +285,13 @@ Get current position in playlist (starts from 1).
 
 Set the video password so the user doesn't have to manually fill it.
 `waitPasswordFromEmbedAPI=1` is required in embed URL.
+
+
+### `getImageDataUrl(): Promise<string>`
+
+**PeerTube >= 6.2**
+
+Get the current frame as JPEG image data URL.
 
 
 ## Embed events
