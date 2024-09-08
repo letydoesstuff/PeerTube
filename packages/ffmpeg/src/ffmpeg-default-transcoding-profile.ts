@@ -40,7 +40,7 @@ const defaultX264LiveOptionsBuilder: EncoderOptionsBuilder = (options: EncoderOp
   }
 }
 
-const defaultAACOptionsBuilder: EncoderOptionsBuilder = async ({ input, streamNum, canCopyAudio, inputProbe }) => {
+const defaultAACOptionsBuilder: EncoderOptionsBuilder = async ({ input, streamNum, inputProbe }) => {
 
   const parsedAudio = await getAudioStream(input, inputProbe)
 
