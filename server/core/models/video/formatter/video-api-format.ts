@@ -1,3 +1,4 @@
+import { getResolutionLabel } from '@peertube/peertube-core-utils'
 import {
   Video,
   VideoAdditionalAttributes,
@@ -230,7 +231,12 @@ export function videoFilesModelToFormattedJSON (
 
         resolution: {
           id: videoFile.resolution,
-          label: getResolutionLabel(videoFile.resolution)
+
+          label: getResolutionLabel({
+            resolution: videoFile.resolution,
+            height: videoFile.height,
+            width: videoFile.width
+          })
         },
 
         width: videoFile.width,
@@ -249,7 +255,14 @@ export function videoFilesModelToFormattedJSON (
         fileUrl: videoFile.getFileUrl(video),
         fileDownloadUrl: videoFile.getFileDownloadUrl(video),
 
-        metadataUrl: videoFile.metadataUrl ?? getLocalVideoFileMetadataUrl(video, videoFile)
+        metadataUrl: videoFile.metadataUrl ?? getLocalVideoFileMetadataUrl(video, videoFile),
+
+        hasAudio: videoFile.hasAudio(),
+        hasVideo: videoFile.hasVideo(),
+
+        storage: video.remote
+          ? null
+          : videoFile.storage
       }
     })
 }
@@ -274,12 +287,6 @@ export function getPrivacyLabel (id: number) {
 
 export function getStateLabel (id: number) {
   return VIDEO_STATES[id] || 'Unknown'
-}
-
-export function getResolutionLabel (resolution: number) {
-  if (resolution === 0) return 'Audio'
-
-  return `${resolution}p`
 }
 
 // ---------------------------------------------------------------------------

@@ -54,6 +54,11 @@ rates_limit:
     # 500 attempts in 10 seconds (to not break crawlers)
     window: 10 seconds
     max: 500
+  download_generate_video: # A light FFmpeg process is used to generate videos (to merge audio and video streams for example)
+    # 5 attempts in 5 seconds
+    window: 5 seconds
+    max: 5
+
 
 oauth2:
   token_lifetime:
@@ -426,6 +431,13 @@ plugins:
     url: 'https://packages.joinpeertube.org'
 
 federation:
+  # Enable ActivityPub endpoints (inbox/outbox)
+  enabled: true
+
+  # Prevent SSRF requests (requests to your internal network for example) by checking the request IP address
+  # More information about SSRF: https://portswigger.net/web-security/ssrf
+  prevent_ssrf: true
+
   # Some federated software such as Mastodon may require an HTTP signature to access content
   sign_federated_fetches: true
 
@@ -598,7 +610,7 @@ transcoding:
   profile: 'default'
 
   resolutions: # Only created if the original video has a higher resolution, uses more storage!
-    0p: false # audio-only (creates mp4 without video stream, always created when enabled)
+    0p: false # audio-only (creates mp4 without video stream)
     144p: false
     240p: false
     360p: false
@@ -610,6 +622,11 @@ transcoding:
 
   # Transcode and keep original resolution, even if it's above your maximum enabled resolution
   always_transcode_original_resolution: true
+
+  fps:
+    # Cap transcoded video FPS
+    # Max resolution file still keeps the original FPS
+    max: 60
 
   # Generate videos in a web compatible format
   # If you also enabled the hls format, it will multiply videos storage by 2
@@ -625,6 +642,11 @@ transcoding:
   # If you also enabled the web videos format, it will multiply videos storage by 2
   hls:
     enabled: true
+
+    # Store the audio stream in a separate file from the video
+    # This option adds the ability for the HLS player to propose the "Audio only" quality to users
+    # It also saves disk space by not duplicating the audio stream in each resolution file
+    split_audio_and_video: false
 
 live:
   enabled: false
@@ -703,6 +725,7 @@ live:
     profile: 'default'
 
     resolutions:
+      0p: false # Audio only
       144p: false
       240p: false
       360p: false
@@ -714,6 +737,11 @@ live:
 
     # Also transcode original resolution, even if it's above your maximum enabled resolution
     always_transcode_original_resolution: true
+
+    fps:
+      # Cap transcoded live FPS
+      # Max resolution stream still keeps the original FPS
+      max: 60
 
 video_studio:
   # Enable video edition by users (cut, add intro/outro, add watermark etc)
@@ -777,20 +805,34 @@ import:
       youtube_dl_release:
         # Direct download URL to youtube-dl binary
         # Github releases API is also supported
-        # Examples:
+        #
+        # Platform-independent examples:
         #   * https://api.github.com/repos/ytdl-org/youtube-dl/releases
         #   * https://api.github.com/repos/yt-dlp/yt-dlp/releases
         #   * https://yt-dl.org/downloads/latest/youtube-dl
+        #
+        # You can also use a youtube-dl standalone binary (requires python_path: null)
+        # GNU/Linux binaries with support for impersonating browser requests (required by some platforms such as Vimeo) examples:
+        #   * https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux (x64)
+        #   * https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_armv7l (ARMv7)
+        #   * https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_armv7l (ARMv8/AArch64/ARM64)
         url: 'https://api.github.com/repos/yt-dlp/yt-dlp/releases'
 
         # Release binary name: 'yt-dlp' or 'youtube-dl'
         name: 'yt-dlp'
 
         # Path to the python binary to execute for youtube-dl or yt-dlp
+        # Set to null if you use a youtube-dl executable
         python_path: '/usr/bin/python3'
 
       # IPv6 is very strongly rate-limited on most sites supported by youtube-dl
       force_ipv4: false
+
+      # By default PeerTube uses HTTP_PROXY and HTTPS_PROXY environment variables
+      # But you can specify custom proxies for youtube-dl because remote websites (like YouTube) may block your server IP address
+      # PeerTube will randomly select a proxy from the following list
+      proxies:
+#        - "https://username:password@example.com:8888"
 
     # Magnet URI or torrent file (use classic TCP/UDP/WebSeed to download the file)
     torrent:
@@ -863,17 +905,19 @@ instance:
   # Example: '2 vCore, 2GB RAM...'
   hardware_information: '' # Supports Markdown
 
-  # What are the main languages of your instance? To interact with your users for example
+  # Describe the languages spoken on your instance, to interact with your users for example
   # Uncomment or add the languages you want
   # List of supported languages: https://peertube.cpy.re/api/v1/videos/languages
+  # PeerTube plugins can add additional languages to the official list of supported languages
   languages:
 #    - en
 #    - es
 #    - fr
 
-  # You can specify the main categories of your instance (dedicated to music, gaming or politics etc)
-  # Uncomment or add the category ids you want
+  # Describe the main categories of your instance (to explain for example that your instance is dedicated to music, gaming, etc.)
+  # Uncomment categories you want
   # List of supported categories: https://peertube.cpy.re/api/v1/videos/categories
+  # PeerTube plugins can add additional categories to the official list of supported categories
   categories:
 #    - 1  # Music
 #    - 2  # Films

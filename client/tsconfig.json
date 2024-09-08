@@ -15,6 +15,7 @@
     "importHelpers": true,
     "strictBindCallApply": true,
     "target": "ES2022",
+    "isolatedModules": true,
     "typeRoots": [
       "node_modules/@types"
     ],
@@ -28,9 +29,6 @@
     ],
     "baseUrl": "./",
     "paths": {
-      "hls.js": [
-        "node_modules/hls.js/dist/hls.light"
-      ],
       "video.js": [
         "node_modules/video.js/core"
       ],
@@ -46,8 +44,7 @@
       "crypto": [
         "src/shims/noop.ts"
       ]
-    },
-    "useDefineForClassFields": false
+    }
   },
   "references": [
     { "path": "../packages/core-utils" },

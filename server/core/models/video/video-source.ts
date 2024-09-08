@@ -1,11 +1,12 @@
-import { type FileStorageType, type VideoSource } from '@peertube/peertube-models'
-import { STATIC_DOWNLOAD_PATHS, WEBSERVER } from '@server/initializers/constants.js'
+import { getResolutionLabel } from '@peertube/peertube-core-utils'
+import { ActivityVideoUrlObject, type FileStorageType, type VideoSource } from '@peertube/peertube-models'
+import { DOWNLOAD_PATHS, WEBSERVER } from '@server/initializers/constants.js'
+import { getVideoFileMimeType } from '@server/lib/video-file.js'
 import { MVideoSource } from '@server/types/models/video/video-source.js'
-import { join } from 'path'
+import { extname, join } from 'path'
 import { Transaction } from 'sequelize'
 import { AllowNull, BelongsTo, Column, CreatedAt, DataType, ForeignKey, Table, UpdatedAt } from 'sequelize-typescript'
 import { SequelizeModel, doesExist, getSort } from '../shared/index.js'
-import { getResolutionLabel } from './formatter/video-api-format.js'
 import { VideoModel } from './video.js'
 
 @Table({
@@ -118,10 +119,25 @@ export class VideoSourceModel extends SequelizeModel<VideoSourceModel> {
   getFileDownloadUrl () {
     if (!this.keptOriginalFilename) return null
 
-    return WEBSERVER.URL + join(STATIC_DOWNLOAD_PATHS.ORIGINAL_VIDEO_FILE, this.keptOriginalFilename)
+    return WEBSERVER.URL + join(DOWNLOAD_PATHS.ORIGINAL_VIDEO_FILE, this.keptOriginalFilename)
   }
 
-  toFormattedJSON (): VideoSource {
+  toActivityPubObject (this: MVideoSource): ActivityVideoUrlObject {
+    const mimeType = getVideoFileMimeType(extname(this.inputFilename), false)
+
+    return {
+      type: 'Link',
+      mediaType: mimeType as ActivityVideoUrlObject['mediaType'],
+      href: null,
+      height: this.height || this.resolution,
+      width: this.width,
+      size: this.size,
+      fps: this.fps,
+      attachment: []
+    }
+  }
+
+  toFormattedJSON (this: MVideoSource): VideoSource {
     return {
       filename: this.inputFilename,
       inputFilename: this.inputFilename,
@@ -132,7 +148,7 @@ export class VideoSourceModel extends SequelizeModel<VideoSourceModel> {
       resolution: {
         id: this.resolution,
         label: this.resolution !== null
-          ? getResolutionLabel(this.resolution)
+          ? getResolutionLabel({ resolution: this.resolution, height: this.height, width: this.width })
           : null
       },
       size: this.size,

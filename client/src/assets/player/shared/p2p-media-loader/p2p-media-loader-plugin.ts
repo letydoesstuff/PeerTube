@@ -2,36 +2,55 @@ import { Events, Segment } from '@peertube/p2p-media-loader-core'
 import { Engine, initHlsJsPlayer } from '@peertube/p2p-media-loader-hlsjs'
 import { addQueryParams } from '@peertube/peertube-core-utils'
 import { logger } from '@root-helpers/logger'
+import debug from 'debug'
 import Hlsjs from 'hls.js'
 import videojs from 'video.js'
 import { P2PMediaLoaderPluginOptions, PlayerNetworkInfo } from '../../types'
 import { SettingsButton } from '../settings/settings-menu-button'
 
+const debugLogger = debug('peertube:player:p2p-media-loader')
+
 const Plugin = videojs.getPlugin('plugin')
 class P2pMediaLoaderPlugin extends Plugin {
-  private readonly options: P2PMediaLoaderPluginOptions
+  declare private readonly options: P2PMediaLoaderPluginOptions
 
-  private hlsjs: Hlsjs
-  private p2pEngine: Engine
-  private statsP2PBytes = {
-    pendingDownload: [] as number[],
-    pendingUpload: [] as number[],
-    peersWithWebSeed: 0,
-    peersP2POnly: 0,
-    totalDownload: 0,
-    totalUpload: 0
+  declare private hlsjs: Hlsjs
+  declare private p2pEngine: Engine
+  declare private statsP2PBytes: {
+    pendingDownload: number[]
+    pendingUpload: number[]
+    peersWithWebSeed: number
+    peersP2POnly: number
+    totalDownload: number
+    totalUpload: number
   }
-  private statsHTTPBytes = {
-    pendingDownload: [] as number[],
-    totalDownload: 0
+  declare private statsHTTPBytes: {
+    pendingDownload: number[]
+    totalDownload: number
   }
 
-  private networkInfoInterval: any
+  declare private networkInfoInterval: any
+
+  declare private liveEnded: boolean
 
   constructor (player: videojs.Player, options?: P2PMediaLoaderPluginOptions) {
     super(player)
 
     this.options = options
+
+    this.statsP2PBytes = {
+      pendingDownload: [] as number[],
+      pendingUpload: [] as number[],
+      peersWithWebSeed: 0,
+      peersP2POnly: 0,
+      totalDownload: 0,
+      totalUpload: 0
+    }
+    this.statsHTTPBytes = {
+      pendingDownload: [] as number[],
+      totalDownload: 0
+    }
+    this.liveEnded = false
 
     // FIXME: typings https://github.com/Microsoft/TypeScript/issues/14080
     if (!(videojs as any).Html5Hlsjs) {
@@ -56,18 +75,43 @@ class P2pMediaLoaderPlugin extends Plugin {
       return
     }
 
-    // FIXME: typings https://github.com/Microsoft/TypeScript/issues/14080
-    (videojs as any).Html5Hlsjs.addHook('beforeinitialize', (_videojsPlayer: any, hlsjs: any) => {
-      this.hlsjs = hlsjs
-    })
+    {
+      const onHLSJSInitialized = (_: any, { hlsjs, engine }: { hlsjs: Hlsjs, engine: Engine }) => {
+        this.p2pEngine?.removeAllListeners()
+        this.p2pEngine?.destroy()
+        clearInterval(this.networkInfoInterval)
+
+        this.hlsjs = hlsjs
+        this.p2pEngine = engine
+
+        debugLogger('hls.js initialized, initializing p2p-media-loader plugin', { hlsjs, engine })
+
+        player.ready(() => this.initializePlugin())
+      }
+
+      player.on('hlsjs-initialized', onHLSJSInitialized)
+
+      // ---------------------------------------------------------------------------
+
+      const onHLSJSLiveEnded = () => {
+        debugLogger('hls.js says the live is ended')
+
+        this.liveEnded = true
+      }
+
+      player.on('hlsjs-live-ended', onHLSJSLiveEnded)
+
+      // ---------------------------------------------------------------------------
+
+      this.on('dispose', () => {
+        this.player.off('hlsjs-initialized', onHLSJSInitialized)
+        this.player.off('hlsjs-live-ended', onHLSJSLiveEnded)
+      })
+    }
 
     player.src({
       type: options.type,
       src: options.src
-    })
-
-    player.ready(() => {
-      this.initializePlugin()
     })
   }
 
@@ -76,9 +120,7 @@ class P2pMediaLoaderPlugin extends Plugin {
     this.p2pEngine?.destroy()
 
     this.hlsjs?.destroy()
-    this.options.segmentValidator?.destroy();
-
-    (videojs as any).Html5Hlsjs?.removeAllHooks()
+    this.options.segmentValidator?.destroy()
 
     clearInterval(this.networkInfoInterval)
 
@@ -112,12 +154,10 @@ class P2pMediaLoaderPlugin extends Plugin {
   private initializePlugin () {
     initHlsJsPlayer(this.player, this.hlsjs)
 
-    this.p2pEngine = this.options.loader.getEngine()
-
     this.p2pEngine.on(Events.SegmentError, (segment: Segment, err) => {
-      if (navigator.onLine === false) return
+      if (navigator.onLine === false || this.liveEnded) return
 
-      logger.error(`Segment ${segment.id} error.`, err)
+      logger.clientError(`Segment ${segment.id} error.`, err)
 
       if (this.options.redundancyUrlManager) {
         this.options.redundancyUrlManager.removeBySegmentUrl(segment.requestUrl)
@@ -146,6 +186,15 @@ class P2pMediaLoaderPlugin extends Plugin {
         const level = data.levels[0]
 
         this.player.trigger('video-ratio-changed', { ratio: level.width / level.height })
+      }
+    })
+
+    // Track buffer issues
+    this.hlsjs.on(Hlsjs.Events.ERROR, (_event, errorData) => {
+      if (errorData.type !== Hlsjs.ErrorTypes.MEDIA_ERROR) return
+
+      if (errorData.details === Hlsjs.ErrorDetails.BUFFER_STALLED_ERROR) {
+        this.player.trigger('buffer-stalled')
       }
     })
   }

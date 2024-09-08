@@ -1,6 +1,7 @@
 import { arrayify } from '@peertube/peertube-core-utils'
 import { EmailPayload, SendEmailDefaultOptions, UserExportState, UserRegistrationState } from '@peertube/peertube-models'
 import { isTestOrDevInstance, root } from '@peertube/peertube-node-utils'
+import { UserModel } from '@server/models/user/user.js'
 import { readFileSync } from 'fs'
 import merge from 'lodash-es/merge.js'
 import { Transporter, createTransport } from 'nodemailer'
@@ -10,7 +11,6 @@ import { CONFIG, isEmailEnabled } from '../initializers/config.js'
 import { WEBSERVER } from '../initializers/constants.js'
 import { MRegistration, MUser, MUserExport, MUserImport } from '../types/models/index.js'
 import { JobQueue } from './job-queue/index.js'
-import { UserModel } from '@server/models/user/user.js'
 
 class Emailer {
 
@@ -253,6 +253,7 @@ class Emailer {
 
     const email = new EmailTemplates({
       send: true,
+      juice: false,
       htmlToText: {
         selectors: [
           { selector: 'img', format: 'skip' },
@@ -270,6 +271,8 @@ class Emailer {
     })
 
     const toEmails = arrayify(options.to)
+
+    const errors: Error[] = []
 
     for (const to of toEmails) {
       const baseOptions: SendEmailDefaultOptions = {
@@ -292,9 +295,22 @@ class Emailer {
       // overridden/new variables given for a specific template in the payload
       const sendOptions = merge(baseOptions, options)
 
-      await email.send(sendOptions)
-        .then(res => logger.debug('Sent email.', { res }))
-        .catch(err => logger.error('Error in email sender.', { err }))
+      try {
+        const res = await email.send(sendOptions)
+
+        logger.debug('Sent email.', { res })
+      } catch (err) {
+        errors.push(err)
+
+        logger.error('Error in email sender.', { err })
+      }
+    }
+
+    if (errors.length !== 0) {
+      const err = new Error('Some errors when sent emails') as Error & { errors: Error[] }
+      err.errors = errors
+
+      throw err
     }
   }
 

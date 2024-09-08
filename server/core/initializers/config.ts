@@ -222,6 +222,10 @@ const CONFIG = {
     CLIENT: {
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.client.window')),
       MAX: config.get<number>('rates_limit.client.max')
+    },
+    DOWNLOAD_GENERATE_VIDEO: {
+      WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.download_generate_video.window')),
+      MAX: config.get<number>('rates_limit.download_generate_video.max')
     }
   },
   TRUST_PROXY: config.get<string[]>('trust_proxy'),
@@ -337,6 +341,8 @@ const CONFIG = {
     }
   },
   FEDERATION: {
+    ENABLED: config.get<boolean>('federation.enabled'),
+    PREVENT_SSRF: config.get<boolean>('federation.prevent_ssrf'),
     VIDEOS: {
       FEDERATE_UNLISTED: config.get<boolean>('federation.videos.federate_unlisted'),
       CLEANUP_REMOTE_INTERACTIONS: config.get<boolean>('federation.videos.cleanup_remote_interactions')
@@ -444,8 +450,12 @@ const CONFIG = {
       get '1440p' () { return config.get<boolean>('transcoding.resolutions.1440p') },
       get '2160p' () { return config.get<boolean>('transcoding.resolutions.2160p') }
     },
+    FPS: {
+      get MAX () { return config.get<number>('transcoding.fps.max') }
+    },
     HLS: {
-      get ENABLED () { return config.get<boolean>('transcoding.hls.enabled') }
+      get ENABLED () { return config.get<boolean>('transcoding.hls.enabled') },
+      get SPLIT_AUDIO_AND_VIDEO () { return config.get<boolean>('transcoding.hls.split_audio_and_video') }
     },
     WEB_VIDEOS: {
       get ENABLED () { return config.get<boolean>('transcoding.web_videos.enabled') }
@@ -491,6 +501,7 @@ const CONFIG = {
       get ALWAYS_TRANSCODE_ORIGINAL_RESOLUTION () { return config.get<boolean>('live.transcoding.always_transcode_original_resolution') },
 
       RESOLUTIONS: {
+        get '0p' () { return config.get<boolean>('live.transcoding.resolutions.0p') },
         get '144p' () { return config.get<boolean>('live.transcoding.resolutions.144p') },
         get '240p' () { return config.get<boolean>('live.transcoding.resolutions.240p') },
         get '360p' () { return config.get<boolean>('live.transcoding.resolutions.360p') },
@@ -500,6 +511,11 @@ const CONFIG = {
         get '1440p' () { return config.get<boolean>('live.transcoding.resolutions.1440p') },
         get '2160p' () { return config.get<boolean>('live.transcoding.resolutions.2160p') }
       },
+
+      FPS: {
+        get MAX () { return config.get<number>('live.transcoding.fps.max') }
+      },
+
       REMOTE_RUNNERS: {
         get ENABLED () { return config.get<boolean>('live.transcoding.remote_runners.enabled') }
       }
@@ -540,7 +556,9 @@ const CONFIG = {
           get PYTHON_PATH () { return config.get<string>('import.videos.http.youtube_dl_release.python_path') }
         },
 
-        get FORCE_IPV4 () { return config.get<boolean>('import.videos.http.force_ipv4') }
+        get FORCE_IPV4 () { return config.get<boolean>('import.videos.http.force_ipv4') },
+
+        get PROXIES () { return config.get<string[]>('import.videos.http.proxies') }
       },
       TORRENT: {
         get ENABLED () { return config.get<boolean>('import.videos.torrent.enabled') }

@@ -9,30 +9,44 @@ const debugLogger = debug('peertube:player:metrics')
 const Plugin = videojs.getPlugin('plugin')
 
 class MetricsPlugin extends Plugin {
-  options_: MetricsPluginOptions
+  declare options_: MetricsPluginOptions
 
-  private downloadedBytesP2P = 0
-  private downloadedBytesHTTP = 0
-  private uploadedBytesP2P = 0
+  declare private downloadedBytesP2P: number
+  declare private downloadedBytesHTTP: number
+  declare private uploadedBytesP2P: number
 
-  private resolutionChanges = 0
-  private errors = 0
+  declare private resolutionChanges: number
+  declare private errors: number
 
-  private p2pEnabled: boolean
-  private p2pPeers = 0
+  declare private bufferStalled: number
 
-  private lastPlayerNetworkInfo: PlayerNetworkInfo
+  declare private p2pEnabled: boolean
+  declare private p2pPeers: number
 
-  private metricsInterval: any
+  declare private lastPlayerNetworkInfo: PlayerNetworkInfo
+
+  declare private metricsInterval: any
 
   constructor (player: videojs.Player, options: MetricsPluginOptions) {
     super(player)
 
     this.options_ = options
 
+    this.downloadedBytesP2P = 0
+    this.downloadedBytesHTTP = 0
+    this.uploadedBytesP2P = 0
+
+    this.resolutionChanges = 0
+    this.errors = 0
+
+    this.bufferStalled = 0
+
+    this.p2pPeers = 0
+
     this.trackBytes()
     this.trackResolutionChange()
     this.trackErrors()
+    this.trackBufferStalled()
 
     this.one('play', () => {
       this.player.on('video-change', () => {
@@ -56,6 +70,7 @@ class MetricsPlugin extends Plugin {
 
     this.resolutionChanges = 0
     this.errors = 0
+    this.bufferStalled = 0
 
     this.lastPlayerNetworkInfo = undefined
 
@@ -107,6 +122,7 @@ class MetricsPlugin extends Plugin {
         resolutionChanges: this.resolutionChanges,
 
         errors: this.errors,
+        bufferStalled: this.bufferStalled,
 
         downloadedBytesHTTP: this.downloadedBytesHTTP,
 
@@ -128,10 +144,12 @@ class MetricsPlugin extends Plugin {
 
       this.errors = 0
 
+      this.bufferStalled = 0
+
       const headers = new Headers({ 'Content-type': 'application/json; charset=UTF-8' })
 
       return fetch(this.options_.metricsUrl(), { method: 'POST', body: JSON.stringify(body), headers })
-        .catch(err => logger.warn('Cannot send metrics to the server.', err))
+        .catch(err => logger.clientWarn('Cannot send metrics to the server.', err))
     }, this.options_.metricsInterval())
   }
 
@@ -161,7 +179,17 @@ class MetricsPlugin extends Plugin {
 
   private trackErrors () {
     this.player.on('error', () => {
+      debugLogger('Adding player error')
+
       this.errors++
+    })
+  }
+
+  private trackBufferStalled () {
+    this.player.on('buffer-stalled', () => {
+      debugLogger('Adding buffer stalled')
+
+      this.bufferStalled++
     })
   }
 }

@@ -2,8 +2,9 @@
 @use '_mixins' as *;
 
 #search-video {
-  @include peertube-input-text($search-input-width, 14px);
+  text-overflow: ellipsis;
 
+  @include peertube-input-text($search-input-width, 14px);
   @include padding-left(10px);
   @include padding-right(40px); // For the search icon
 
@@ -26,7 +27,9 @@
   my-global-icon {
     @include icon(18px);
 
-    display: inline-flex;
+    & {
+      display: inline-flex;
+    }
   }
 }
 
@@ -67,10 +70,10 @@
     margin-bottom: .5rem;
 
     em {
-      @include margin-right(0.2rem);
-
       font-weight: 600;
       font-style: normal;
+
+      @include margin-right(0.2rem);
     }
   }
 }

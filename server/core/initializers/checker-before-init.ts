@@ -37,11 +37,13 @@ function checkMissedConfig () {
     'transcoding.resolutions.0p', 'transcoding.resolutions.144p', 'transcoding.resolutions.240p', 'transcoding.resolutions.360p',
     'transcoding.resolutions.480p', 'transcoding.resolutions.720p', 'transcoding.resolutions.1080p', 'transcoding.resolutions.1440p',
     'transcoding.resolutions.2160p', 'transcoding.always_transcode_original_resolution', 'transcoding.remote_runners.enabled',
+    'transcoding.fps.max',
     'video_studio.enabled', 'video_studio.remote_runners.enabled',
     'video_file.update.enabled',
     'remote_runners.stalled_jobs.vod', 'remote_runners.stalled_jobs.live',
     'thumbnails.generation_from_video.frames_to_analyze', 'thumbnails.sizes',
     'import.videos.http.enabled', 'import.videos.torrent.enabled', 'import.videos.concurrency', 'import.videos.timeout',
+    'import.videos.http.force_ipv4', 'import.videos.http.proxies',
     'import.video_channel_synchronization.enabled', 'import.video_channel_synchronization.max_per_user',
     'import.video_channel_synchronization.check_interval', 'import.video_channel_synchronization.videos_limit_per_synchronization',
     'import.video_channel_synchronization.full_sync_videos_limit',
@@ -72,7 +74,7 @@ function checkMissedConfig () {
     'feeds.videos.count', 'feeds.comments.count',
     'geo_ip.enabled', 'geo_ip.country.database_url', 'geo_ip.city.database_url',
     'remote_redundancy.videos.accept_from',
-    'federation.videos.federate_unlisted', 'federation.videos.cleanup_remote_interactions',
+    'federation.enabled', 'federation.prevent_ssrf', 'federation.videos.federate_unlisted', 'federation.videos.cleanup_remote_interactions',
     'peertube.check_latest_version.enabled', 'peertube.check_latest_version.url',
     'search.remote_uri.users', 'search.remote_uri.anonymous', 'search.search_index.enabled', 'search.search_index.url',
     'search.search_index.disable_local_search', 'search.search_index.is_default_search',
@@ -85,7 +87,7 @@ function checkMissedConfig () {
     'live.transcoding.resolutions.144p', 'live.transcoding.resolutions.240p', 'live.transcoding.resolutions.360p',
     'live.transcoding.resolutions.480p', 'live.transcoding.resolutions.720p', 'live.transcoding.resolutions.1080p',
     'live.transcoding.resolutions.1440p', 'live.transcoding.resolutions.2160p', 'live.transcoding.always_transcode_original_resolution',
-    'live.transcoding.remote_runners.enabled',
+    'live.transcoding.fps.max', 'live.transcoding.remote_runners.enabled',
     'storyboards.enabled'
   ]
 
@@ -135,11 +137,11 @@ async function checkFFmpeg (CONFIG: { TRANSCODING: { ENABLED: boolean } }) {
 
   for (const codec of canEncode) {
     if (codecs[codec] === undefined) {
-      throw new Error('Unknown codec ' + codec + ' in FFmpeg.')
+      throw new Error(`Codec ${codec} not found in FFmpeg.`)
     }
 
     if (codecs[codec].canEncode !== true) {
-      throw new Error('Unavailable encode codec ' + codec + ' in FFmpeg')
+      throw new Error(`Unavailable encode codec ${codec} in FFmpeg`)
     }
   }
 }

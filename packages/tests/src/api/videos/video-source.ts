@@ -142,7 +142,7 @@ describe('Test video source management', function () {
       expect(source.height).to.equal(0)
       expect(source.width).to.equal(0)
       expect(source.resolution.id).to.equal(0)
-      expect(source.resolution.label).to.equal('Audio')
+      expect(source.resolution.label).to.equal('Audio only')
       expect(source.size).to.equal(105243)
 
       expect(source.metadata?.format).to.exist
@@ -247,7 +247,7 @@ describe('Test video source management', function () {
 
         const previousPaths: string[] = []
 
-        await servers[0].config.enableTranscoding({ hls: true, webVideo: true, with0p: true, keepOriginal: true })
+        await servers[0].config.enableTranscoding({ hls: true, webVideo: true, with0p: true, keepOriginal: true, resolutions: 'max' })
 
         const uploadFixture = 'video_short_720p.mp4'
         const { uuid: videoUUID } = await servers[0].videos.quickUpload({ name: 'fs with transcoding', fixture: uploadFixture })
@@ -527,7 +527,7 @@ describe('Test video source management', function () {
 
         const previousPaths: string[] = []
 
-        await servers[0].config.enableTranscoding({ hls: true, webVideo: true, with0p: true, keepOriginal: true })
+        await servers[0].config.enableTranscoding({ hls: true, webVideo: true, with0p: true, keepOriginal: true, resolutions: 'max' })
 
         const fixture1 = 'video_short_360p.mp4'
         const { uuid: videoUUID } = await servers[0].videos.quickUpload({

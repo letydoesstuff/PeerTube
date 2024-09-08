@@ -289,6 +289,8 @@ tags:
     description: Video statistics
   - name: Video Feeds
     description: Server syndication feeds of videos
+  - name: Video Download
+    description: Download video files
   - name: Search
     description: |
       The search helps to find _videos_ or _channels_ from within the instance and beyond.
@@ -318,6 +320,9 @@ x-tagGroups:
   - name: Static endpoints
     tags:
       - Static Video Files
+  - name: Download
+    tags:
+      - Video Download
   - name: Feeds
     tags:
       - Video Feeds
@@ -449,6 +454,32 @@ paths:
         '404':
           description: not found
 
+  '/download/videos/generate/:videoId':
+    get:
+      tags:
+        - Video Download
+      summary: Download video file
+      description: Generate a mp4 container that contains at most 1 video stream and at most 1 audio stream.
+        Mainly used to merge the HLS audio only video file and the HLS video only resolution file.
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          description: The video id
+          schema:
+            $ref: '#/components/schemas/Video/properties/id'
+        - name: videoFileIds
+          in: query
+          required: true
+          description: streams of video files to mux in the output
+          schema:
+            type: array
+            items:
+              type: integer
+        - $ref: '#/components/parameters/videoFileToken'
+      responses:
+        '200':
+          description: successful operation
 
   '/feeds/video-comments.{format}':
     get:
@@ -8157,6 +8188,15 @@ components:
           type: string
           format: url
           description: URL dereferencing the output of ffprobe on the file
+        hasAudio:
+          type: boolean
+          description: "**PeerTube >= 6.2** The file container has an audio stream"
+        hasVideo:
+          type: boolean
+          description: "**PeerTube >= 6.2** The file container has a video stream"
+        storage:
+          $ref: '#/components/schemas/FileStorage'
+
     VideoStreamingPlaylists:
       allOf:
         - type: object
@@ -9541,6 +9581,8 @@ components:
               description: HLS specific settings
               properties:
                 enabled:
+                  type: boolean
+                splitAudioAndVideo:
                   type: boolean
         import:
           type: object
@@ -10954,6 +10996,9 @@ components:
         resolutionChanges:
           type: number
           description: How many resolution changes occurred since the last metric creation
+        bufferStalled:
+          type: number
+          description: How many times buffer has been stalled since the last metric creation
         errors:
           type: number
           description: How many errors occurred since the last metric creation
@@ -11212,6 +11257,16 @@ components:
       items:
         $ref: "#/components/schemas/VideoPassword/properties/password"
       uniqueItems: true
+
+    FileStorage:
+      type: integer
+      enum:
+        - 0
+        - 1
+      description: >
+        The file storage type:
+          - `0` File system
+          - `1` Object storage
   callbacks:
     searchIndex:
       'https://search.example.org/api/v1/search/videos':

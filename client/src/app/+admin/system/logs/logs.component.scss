@@ -9,6 +9,10 @@
   background: rgba(0, 0, 0, 0.03);
   padding: 20px;
 
+  > div {
+    position: relative;
+  }
+
   .log-row {
     margin-top: 1px;
     word-break: break-word;
@@ -19,9 +23,9 @@
   }
 
   .log-level {
-    @include margin-right(5px);
-
     font-weight: $font-semibold;
+
+    @include margin-right(5px);
   }
 
   .log-by {
@@ -81,7 +85,12 @@
   &.error {
     color: rgb(250, 5, 5);
   }
+}
 
+my-copy-button {
+  position: absolute;
+  right: 5px;
+  background: pvar(--mainBackgroundHoverColor);
 }
 
 @include on-small-main-col {
@@ -91,10 +100,10 @@
     .peertube-select-container,
     ng-select,
     my-button {
-      @include margin-left(0 !important);
-
       width: 100% !important;
       margin-bottom: 10px !important;
+
+      @include margin-left(0 !important);
     }
 
     my-button {

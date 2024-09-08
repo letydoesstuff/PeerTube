@@ -81,8 +81,10 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.transcoding.resolutions['1440p']).to.be.true
   expect(data.transcoding.resolutions['2160p']).to.be.true
   expect(data.transcoding.alwaysTranscodeOriginalResolution).to.be.true
+  expect(data.transcoding.fps.max).to.equal(60)
   expect(data.transcoding.webVideos.enabled).to.be.true
   expect(data.transcoding.hls.enabled).to.be.true
+  expect(data.transcoding.hls.splitAudioAndVideo).to.be.false
   expect(data.transcoding.originalFile.keep).to.be.false
 
   expect(data.live.enabled).to.be.false
@@ -95,6 +97,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.live.transcoding.remoteRunners.enabled).to.be.false
   expect(data.live.transcoding.threads).to.equal(2)
   expect(data.live.transcoding.profile).to.equal('default')
+  expect(data.live.transcoding.resolutions['0p']).to.be.false
   expect(data.live.transcoding.resolutions['144p']).to.be.false
   expect(data.live.transcoding.resolutions['240p']).to.be.false
   expect(data.live.transcoding.resolutions['360p']).to.be.false
@@ -104,6 +107,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.live.transcoding.resolutions['1440p']).to.be.false
   expect(data.live.transcoding.resolutions['2160p']).to.be.false
   expect(data.live.transcoding.alwaysTranscodeOriginalResolution).to.be.true
+  expect(data.live.transcoding.fps.max).to.equal(60)
 
   expect(data.videoStudio.enabled).to.be.false
   expect(data.videoStudio.remoteRunners.enabled).to.be.false
@@ -253,11 +257,15 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
         '2160p': false
       },
       alwaysTranscodeOriginalResolution: false,
+      fps: {
+        max: 120
+      },
       webVideos: {
         enabled: true
       },
       hls: {
-        enabled: false
+        enabled: false,
+        splitAudioAndVideo: true
       }
     },
     live: {
@@ -277,6 +285,7 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
         threads: 4,
         profile: 'live_profile',
         resolutions: {
+          '0p': true,
           '144p': true,
           '240p': true,
           '360p': true,
@@ -286,7 +295,10 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
           '1440p': true,
           '2160p': true
         },
-        alwaysTranscodeOriginalResolution: false
+        alwaysTranscodeOriginalResolution: false,
+        fps: {
+          max: 144
+        }
       }
     },
     videoStudio: {

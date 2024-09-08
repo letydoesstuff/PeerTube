@@ -58,8 +58,10 @@ import { PluginsCommand } from './plugins-command.js'
 import { RedundancyCommand } from './redundancy-command.js'
 import { ServersCommand } from './servers-command.js'
 import { StatsCommand } from './stats-command.js'
+import merge from 'lodash-es/merge.js'
 
 export type RunServerOptions = {
+  autoEnableImportProxy?: boolean
   hideLogs?: boolean
   nodeArgs?: string[]
   peertubeArgs?: string[]
@@ -240,10 +242,10 @@ export class PeerTubeServer {
 
     await this.assignCustomConfigFile()
 
-    const configOverride = this.buildConfigOverride()
+    let configOverride = this.buildConfigOverride(options)
 
     if (configOverrideArg !== undefined) {
-      Object.assign(configOverride, configOverrideArg)
+      configOverride = merge(configOverride, configOverrideArg)
     }
 
     // Share the environment
@@ -362,10 +364,16 @@ export class PeerTubeServer {
     this.customConfigFile = tmpConfigFile
   }
 
-  private buildConfigOverride () {
-    if (!this.parallel) return {}
+  private buildConfigOverride (options: RunServerOptions) {
+    const base = options.autoEnableImportProxy !== false && process.env.YOUTUBE_DL_PROXY
+      ? { import: { videos: { http: { proxies: [ process.env.YOUTUBE_DL_PROXY ] } } } }
+      : {}
+
+    if (!this.parallel) return base
 
     return {
+      ...base,
+
       listen: {
         port: this.port
       },

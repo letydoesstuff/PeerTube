@@ -1,5 +1,11 @@
 import { wait } from '@peertube/peertube-core-utils'
-import { ffprobePromise, getVideoStreamBitrate, getVideoStreamDimensionsInfo, hasAudioStream } from '@peertube/peertube-ffmpeg'
+import {
+  ffprobePromise,
+  getVideoStreamBitrate,
+  getVideoStreamDimensionsInfo,
+  hasAudioStream,
+  hasVideoStream
+} from '@peertube/peertube-ffmpeg'
 import {
   LiveRTMPHLSTranscodingSuccess,
   LiveRTMPHLSTranscodingUpdatePayload,
@@ -57,6 +63,7 @@ export class ProcessLiveRTMPHLSTranscoding {
         logger.info({ probe }, `Probed ${payload.input.rtmpUrl}`)
 
         const hasAudio = await hasAudioStream(payload.input.rtmpUrl, probe)
+        const hasVideo = await hasVideoStream(payload.input.rtmpUrl, probe)
         const bitrate = await getVideoStreamBitrate(payload.input.rtmpUrl, probe)
         const { ratio } = await getVideoStreamDimensionsInfo(payload.input.rtmpUrl, probe)
 
@@ -109,11 +116,13 @@ export class ProcessLiveRTMPHLSTranscoding {
           segmentDuration: payload.output.segmentDuration,
 
           toTranscode: payload.output.toTranscode,
+          splitAudioAndVideo: true,
 
           bitrate,
           ratio,
 
           hasAudio,
+          hasVideo,
           probe
         })
 
