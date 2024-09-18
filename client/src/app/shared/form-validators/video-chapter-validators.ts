@@ -2,7 +2,7 @@ import { AbstractControl, ValidationErrors, ValidatorFn, Validators } from '@ang
 import { BuildFormValidator } from './form-validator.model'
 
 export const VIDEO_CHAPTER_TITLE_VALIDATOR: BuildFormValidator = {
-  VALIDATORS: [ Validators.minLength(2), Validators.maxLength(100) ], // Required is set dynamically
+  VALIDATORS: [ Validators.minLength(0), Validators.maxLength(100) ], // Required is set dynamically
   MESSAGES: {
     required: $localize`A chapter title is required.`,
     minlength: $localize`A chapter title should be more than 2 characters long.`,
