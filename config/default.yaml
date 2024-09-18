@@ -636,6 +636,7 @@ transcoding:
     # Store the audio stream in a separate file from the video
     # This option adds the ability for the HLS player to propose the "Audio only" quality to users
     # It also saves disk space by not duplicating the audio stream in each resolution file
+    # /!\ If enabled, remote PeerTube instances < 6.3.0 won't be able to play these videos
     split_audio_and_video: false
 
 live:
@@ -821,6 +822,7 @@ import:
       # By default PeerTube uses HTTP_PROXY and HTTPS_PROXY environment variables
       # But you can specify custom proxies for youtube-dl because remote websites (like YouTube) may block your server IP address
       # PeerTube will randomly select a proxy from the following list
+      # You may need to use a standalone youtube-dl binary (see `url` key comment above) to use this feature
       proxies:
 #        - "https://username:password@example.com:8888"
 
