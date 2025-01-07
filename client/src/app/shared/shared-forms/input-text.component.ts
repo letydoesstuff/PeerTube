@@ -22,7 +22,8 @@ import { NgClass, NgIf } from '@angular/common'
 export class InputTextComponent implements ControlValueAccessor, AfterViewInit {
   @ViewChild('input') inputElement: ElementRef
 
-  @Input() inputId = Math.random().toString(11).slice(2, 8) // id cannot be left empty or undefined
+  @Input({ required: true }) inputId: string
+
   @Input() value = ''
   @Input() autocomplete = 'off'
   @Input() placeholder = ''
@@ -33,6 +34,7 @@ export class InputTextComponent implements ControlValueAccessor, AfterViewInit {
   @Input() show = false
   @Input() formError: string | FormReactiveErrors | FormReactiveErrors[]
   @Input() autofocus = false
+  @Input() ariaLabel: string
 
   get inputType () {
     return this.show

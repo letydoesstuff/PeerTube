@@ -1,5 +1,5 @@
 import { Account } from '@app/shared/shared-main/account/account.model'
-import { VideoChannel } from '@app/shared/shared-main/video-channel/video-channel.model'
+import { VideoChannel } from '@app/shared/shared-main/channel/video-channel.model'
 import {
   VideoCommentPolicyType,
   VideoConstant,
@@ -15,7 +15,6 @@ export class VideoDetails extends Video implements VideoDetailsServerModel {
   declare channel: VideoChannel
   declare account: Account
 
-  descriptionPath: string
   support: string
   tags: string[]
   downloadEnabled: boolean
@@ -39,7 +38,6 @@ export class VideoDetails extends Video implements VideoDetailsServerModel {
   constructor (hash: VideoDetailsServerModel, translations = {}) {
     super(hash, translations)
 
-    this.descriptionPath = hash.descriptionPath
     this.channel = new VideoChannel(hash.channel)
     this.account = new Account(hash.account)
     this.tags = hash.tags

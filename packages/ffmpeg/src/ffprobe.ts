@@ -1,6 +1,6 @@
-import ffmpeg, { FfprobeData } from 'fluent-ffmpeg'
 import { buildAspectRatio, forceNumber } from '@peertube/peertube-core-utils'
 import { VideoResolution } from '@peertube/peertube-models'
+import ffmpeg, { FfprobeData } from 'fluent-ffmpeg'
 
 /**
  *
@@ -44,9 +44,6 @@ async function hasAudioStream (path: string, existingProbe?: FfprobeData) {
 }
 
 async function getAudioStream (videoPath: string, existingProbe?: FfprobeData) {
-  // without position, ffprobe considers the last input only
-  // we make it consider the first input only
-  // if you pass a file path to pos, then ffprobe acts on that file directly
   const data = existingProbe || await ffprobePromise(videoPath)
 
   if (Array.isArray(data.streams)) {
@@ -114,7 +111,11 @@ async function getVideoStreamDimensionsInfo (path: string, existingProbe?: Ffpro
     }
   }
 
-  if (videoStream.rotation === '90' || videoStream.rotation === '-90') {
+  const rotation = videoStream.rotation
+    ? videoStream.rotation + ''
+    : undefined
+
+  if (rotation === '90' || rotation === '-90') {
     const width = videoStream.width
     videoStream.width = videoStream.height
     videoStream.height = width
@@ -205,16 +206,19 @@ async function getChaptersFromContainer (options: {
 // ---------------------------------------------------------------------------
 
 export {
-  getVideoStreamDimensionsInfo,
-  getChaptersFromContainer,
-  getMaxAudioBitrate,
-  getVideoStream,
-  getVideoStreamDuration,
-  getAudioStream,
-  getVideoStreamFPS,
-  isAudioFile,
   ffprobePromise,
+  getAudioStream,
+  getChaptersFromContainer,
+
+  getMaxAudioBitrate,
+
+  getVideoStream,
   getVideoStreamBitrate,
+  getVideoStreamDimensionsInfo,
+  getVideoStreamDuration,
+  getVideoStreamFPS,
   hasAudioStream,
-  hasVideoStream
+
+  hasVideoStream,
+  isAudioFile
 }

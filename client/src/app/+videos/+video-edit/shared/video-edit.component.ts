@@ -1,4 +1,4 @@
-import { DatePipe, NgClass, NgFor, NgIf, NgTemplateOutlet } from '@angular/common'
+import { NgClass, NgFor, NgIf, NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectorRef,
   Component,
@@ -12,7 +12,8 @@ import {
   booleanAttribute
 } from '@angular/core'
 import { AbstractControl, FormArray, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms'
-import { HooksService, PluginService, ServerService } from '@app/core'
+import { RouterLink } from '@angular/router'
+import { ConfirmService, HooksService, PluginService, ServerService } from '@app/core'
 import { removeElementFromArray } from '@app/helpers'
 import { BuildFormArgument, BuildFormValidator } from '@app/shared/form-validators/form-validator.model'
 import { VIDEO_CHAPTERS_ARRAY_VALIDATOR, VIDEO_CHAPTER_TITLE_VALIDATOR } from '@app/shared/form-validators/video-chapter-validators'
@@ -32,6 +33,8 @@ import {
 } from '@app/shared/form-validators/video-validators'
 import { FormReactiveErrors, FormReactiveValidationMessages } from '@app/shared/shared-forms/form-reactive.service'
 import { FormValidatorService } from '@app/shared/shared-forms/form-validator.service'
+import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
+import { PTDatePipe } from '@app/shared/shared-main/common/date.pipe'
 import { InstanceService } from '@app/shared/shared-main/instance/instance.service'
 import { VideoCaptionEdit, VideoCaptionWithPathEdit } from '@app/shared/shared-main/video-caption/video-caption-edit.model'
 import { VideoChaptersEdit } from '@app/shared/shared-main/video/video-chapters-edit.model'
@@ -62,24 +65,24 @@ import { DynamicFormFieldComponent } from '../../../shared/shared-forms/dynamic-
 import { InputTextComponent } from '../../../shared/shared-forms/input-text.component'
 import { MarkdownTextareaComponent } from '../../../shared/shared-forms/markdown-textarea.component'
 import { PeertubeCheckboxComponent } from '../../../shared/shared-forms/peertube-checkbox.component'
-import { PreviewUploadComponent } from '../../../shared/shared-forms/preview-upload.component'
 import { SelectChannelComponent } from '../../../shared/shared-forms/select/select-channel.component'
 import { SelectOptionsComponent } from '../../../shared/shared-forms/select/select-options.component'
 import { SelectTagsComponent } from '../../../shared/shared-forms/select/select-tags.component'
 import { TimestampInputComponent } from '../../../shared/shared-forms/timestamp-input.component'
 import { GlobalIconComponent } from '../../../shared/shared-icons/global-icon.component'
-import { PeerTubeTemplateDirective } from '../../../shared/shared-main/angular/peertube-template.directive'
+import { ButtonComponent } from '../../../shared/shared-main/buttons/button.component'
 import { DeleteButtonComponent } from '../../../shared/shared-main/buttons/delete-button.component'
-import { HelpComponent } from '../../../shared/shared-main/misc/help.component'
+import { EditButtonComponent } from '../../../shared/shared-main/buttons/edit-button.component'
+import { HelpComponent } from '../../../shared/shared-main/buttons/help.component'
+import { PeerTubeTemplateDirective } from '../../../shared/shared-main/common/peertube-template.directive'
 import { EmbedComponent } from '../../../shared/shared-main/video/embed.component'
 import { LiveDocumentationLinkComponent } from '../../../shared/shared-video-live/live-documentation-link.component'
+import { VideoCaptionAddModalComponent } from './caption/video-caption-add-modal.component'
+import { VideoCaptionEditModalContentComponent } from './caption/video-caption-edit-modal-content.component'
 import { I18nPrimengCalendarService } from './i18n-primeng-calendar.service'
 import { ThumbnailManagerComponent } from './thumbnail-manager/thumbnail-manager.component'
-import { VideoCaptionAddModalComponent } from './video-caption-add-modal.component'
-import { VideoCaptionEditModalContentComponent } from './video-caption-edit-modal-content/video-caption-edit-modal-content.component'
 import { VideoEditType } from './video-edit.type'
 
-type VideoLanguages = VideoConstant<string> & { group?: string }
 type PluginField = {
   pluginInfo: PluginInfo
   commonOptions: RegisterClientFormFieldOptions
@@ -92,6 +95,7 @@ type PluginField = {
   templateUrl: './video-edit.component.html',
   standalone: true,
   imports: [
+    RouterLink,
     FormsModule,
     ReactiveFormsModule,
     NgbNav,
@@ -118,11 +122,13 @@ type PluginField = {
     DeleteButtonComponent,
     EmbedComponent,
     LiveDocumentationLinkComponent,
-    PreviewUploadComponent,
     NgbNavOutlet,
     VideoCaptionAddModalComponent,
-    DatePipe,
-    ThumbnailManagerComponent
+    PTDatePipe,
+    ThumbnailManagerComponent,
+    EditButtonComponent,
+    ButtonComponent,
+    AlertComponent
   ]
 })
 export class VideoEditComponent implements OnInit, OnDestroy {
@@ -161,7 +167,7 @@ export class VideoEditComponent implements OnInit, OnDestroy {
   videoCategories: VideoConstant<number>[] = []
   videoLicences: VideoConstant<number>[] = []
   commentPolicies: VideoConstant<VideoCommentPolicyType>[] = []
-  videoLanguages: VideoLanguages[] = []
+  videoLanguages: VideoConstant<string>[] = []
   latencyModes: SelectOptionsItem[] = [
     {
       id: LiveVideoLatencyMode.SMALL_LATENCY,
@@ -210,7 +216,8 @@ export class VideoEditComponent implements OnInit, OnDestroy {
     private ngZone: NgZone,
     private hooks: HooksService,
     private cd: ChangeDetectorRef,
-    private modalService: NgbModal
+    private modalService: NgbModal,
+    private confirmService: ConfirmService
   ) {
     this.calendarTimezone = this.i18nPrimengCalendarService.getTimezone()
     this.calendarDateFormat = this.i18nPrimengCalendarService.getDateFormat()
@@ -296,16 +303,14 @@ export class VideoEditComponent implements OnInit, OnDestroy {
       this.instanceService.getAbout(),
       this.serverService.getVideoLanguages()
     ]).pipe(map(([ about, languages ]) => ({ about, languages })))
-      .subscribe(res => {
-        this.videoLanguages = res.languages
-          .map(l => {
-            if (l.id === 'zxx') return { ...l, group: $localize`Other`, groupOrder: 1 }
+      .subscribe(({ about, languages }) => {
+        this.videoLanguages = [
+          ...languages.filter(l => about.instance.languages.includes(l.id)),
 
-            return res.about.instance.languages.includes(l.id)
-              ? { ...l, group: $localize`Instance languages`, groupOrder: 0 }
-              : { ...l, group: $localize`All languages`, groupOrder: 2 }
-          })
-          .sort((a, b) => a.groupOrder - b.groupOrder)
+          languages.find(l => l.id === 'zxx'),
+
+          ...languages.filter(l => !about.instance.languages.includes(l.id) && l.id !== 'zxx')
+        ]
       })
 
     this.serverService.getVideoPrivacies()
@@ -398,9 +403,21 @@ export class VideoEditComponent implements OnInit, OnDestroy {
   }
 
   openEditCaptionModal (videoCaption: VideoCaptionWithPathEdit) {
-    const modalRef = this.modalService.open(VideoCaptionEditModalContentComponent, { centered: true, keyboard: false })
+    const modalRef = this.modalService.open(VideoCaptionEditModalContentComponent, {
+      centered: true,
+      size: 'xl',
+
+      beforeDismiss: () => {
+        return this.confirmService.confirm(
+          $localize`Are you sure you want to close this modal without saving your changes?`,
+          $localize`Closing caption edition modal`
+        )
+      }
+    })
+
     modalRef.componentInstance.videoCaption = videoCaption
     modalRef.componentInstance.serverConfig = this.serverConfig
+    modalRef.componentInstance.publishedVideo = this.publishedVideo
     modalRef.componentInstance.captionEdited.subscribe(this.onCaptionEdited.bind(this))
   }
 

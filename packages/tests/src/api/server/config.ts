@@ -34,7 +34,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.instance.languages).to.have.lengthOf(0)
   expect(data.instance.categories).to.have.lengthOf(0)
 
-  expect(data.instance.defaultClientRoute).to.equal('/videos/trending')
+  expect(data.instance.defaultClientRoute).to.equal('/videos/browse')
   expect(data.instance.isNSFW).to.be.false
   expect(data.instance.defaultNSFWPolicy).to.equal('display')
   expect(data.instance.customizations.css).to.be.empty
@@ -444,6 +444,11 @@ describe('Test config', function () {
 
       expect(data.views.videos.watchingInterval.anonymous).to.equal(5000)
       expect(data.views.videos.watchingInterval.users).to.equal(5000)
+
+      expect(data.webrtc.stunServers).to.have.members([
+        'stun:stunserver2024.stunprotocol.org',
+        'stun:stun.framasoft.org'
+      ])
     })
 
     it('Should have a correct config on a server with registration enabled', async function () {

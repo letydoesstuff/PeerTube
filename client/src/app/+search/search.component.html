@@ -11,21 +11,23 @@
       </div>
 
       <button
-        class="results-filter-button button-unstyle ms-auto" (click)="isSearchFilterCollapsed = !isSearchFilterCollapsed"
-        [attr.aria-expanded]="!isSearchFilterCollapsed" aria-controls="search-results-filter"
+        class="filter-button peertube-button tertiary-button ms-auto" (click)="isSearchFilterCollapsed = !isSearchFilterCollapsed"
+        [attr.aria-expanded]="!isSearchFilterCollapsed" aria-controls="search-results-filter" [title]="getFilterButtonTitle()"
       >
-        <span class="icon icon-filter"></span>
+        <my-global-icon iconName="filter"></my-global-icon>
+
         <ng-container i18n>
           Filters
-          <span *ngIf="numberOfFilters() > 0" class="pt-badge badge-secondary">{{ numberOfFilters() }}</span>
         </ng-container>
+
+        <span *ngIf="numberOfFilters() > 0" class="pt-badge badge-secondary">{{ numberOfFilters() }}</span>
       </button>
     </div>
 
     <div id="search-results-filter" class="results-filter" [ngbCollapse]="isSearchFilterCollapsed" [animation]="true">
       <my-search-filters [advancedSearch]="advancedSearch" (filtered)="onFiltered()"></my-search-filters>
 
-      <div *ngIf="error" class="alert alert-danger">{{ error }}</div>
+      <my-alert *ngIf="error" type="danger">{{ error }}</my-alert>
     </div>
   </div>
 

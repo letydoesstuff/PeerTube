@@ -83,7 +83,7 @@ export const videosAddLegacyValidator = getCommonVideoEditAttributes().concat([
     if (
       !await commonVideoChecksPass({ req, res, user, videoFileSize: videoFile.size, files: req.files }) ||
       !isValidPasswordProtectedPrivacy(req, res) ||
-      !await addDurationToVideoFileIfNeeded({ videoFile, res, middlewareName: 'videosAddvideosAddLegacyValidatorResumableValidator' }) ||
+      !await addDurationToVideoFileIfNeeded({ videoFile, res, middlewareName: 'videosAddLegacyValidator' }) ||
       !await isVideoFileAccepted({ req, res, videoFile, hook: 'filter:api.video.upload.accept.result' })
     ) {
       return cleanUpReqFiles(req)
@@ -100,7 +100,12 @@ export const videosAddResumableValidator = [
   async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = res.locals.oauth.token.User
     const file = buildUploadXFile(req.body as express.CustomUploadXFile<express.UploadNewVideoXFileMetadata>)
-    const cleanup = () => safeUploadXCleanup(file)
+    const cleanup = () => {
+      safeUploadXCleanup(file)
+
+      Redis.Instance.deleteUploadSession(req.query.upload_id)
+        .catch(err => logger.error('Cannot delete upload session', { err }))
+    }
 
     const uploadId = req.query.upload_id
     const sessionExists = await Redis.Instance.doesUploadSessionExist(uploadId)
@@ -467,10 +472,6 @@ export const commonVideosFiltersValidator = [
     .optional()
     .customSanitizer(toBooleanOrNull)
     .custom(isBooleanValid).withMessage('Should have a valid hasHLSFiles boolean'),
-  query('hasWebtorrentFiles') // TODO: remove in v7
-    .optional()
-    .customSanitizer(toBooleanOrNull)
-    .custom(isBooleanValid).withMessage('Should have a valid hasWebtorrentFiles boolean'),
   query('hasWebVideoFiles')
     .optional()
     .customSanitizer(toBooleanOrNull)

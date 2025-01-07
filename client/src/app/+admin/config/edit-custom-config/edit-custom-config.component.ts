@@ -16,6 +16,7 @@ import {
   INSTANCE_SHORT_DESCRIPTION_VALIDATOR,
   MAX_INSTANCE_LIVES_VALIDATOR,
   MAX_LIVE_DURATION_VALIDATOR,
+  MAX_SYNC_PER_USER,
   MAX_USER_LIVES_VALIDATOR,
   MAX_VIDEO_CHANNELS_PER_USER_VALIDATOR,
   SEARCH_INDEX_URL_VALIDATOR,
@@ -28,6 +29,7 @@ import {
 import { USER_VIDEO_QUOTA_DAILY_VALIDATOR, USER_VIDEO_QUOTA_VALIDATOR } from '@app/shared/form-validators/user-validators'
 import { FormReactive } from '@app/shared/shared-forms/form-reactive'
 import { FormReactiveService } from '@app/shared/shared-forms/form-reactive.service'
+import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
 import { CustomPageService } from '@app/shared/shared-main/custom-page/custom-page.service'
 import { NgbNav, NgbNavContent, NgbNavItem, NgbNavLink, NgbNavLinkBase, NgbNavOutlet } from '@ng-bootstrap/ng-bootstrap'
 import { CustomConfig, CustomPage, HTMLServerConfig } from '@peertube/peertube-models'
@@ -68,7 +70,8 @@ type ComponentCustomConfig = CustomConfig & {
     EditLiveConfigurationComponent,
     EditAdvancedConfigurationComponent,
     NgbNavOutlet,
-    NgFor
+    NgFor,
+    AlertComponent
   ]
 })
 export class EditCustomConfigComponent extends FormReactive implements OnInit {
@@ -180,7 +183,9 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
           }
         },
         videoChannelSynchronization: {
-          enabled: null
+          enabled: null,
+          maxPerUser: MAX_SYNC_PER_USER
+
         },
         users: {
           enabled: null
@@ -477,7 +482,7 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
     ]).subscribe({
       next: ([ languages, categories ]) => {
         this.languageItems = languages.map(l => ({ label: l.label, id: l.id }))
-        this.categoryItems = categories.map(l => ({ label: l.label, id: l.id + '' }))
+        this.categoryItems = categories.map(l => ({ label: l.label, id: l.id }))
       },
 
       error: err => this.notifier.error(err.message)

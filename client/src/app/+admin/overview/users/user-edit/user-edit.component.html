@@ -1,15 +1,15 @@
 <nav aria-label="breadcrumb">
   <ol class="pt-breadcrumb">
     <li class="breadcrumb-item">
-      <a routerLink="/admin/users" i18n>Users</a>
+      <a routerLink="/admin/overview/users" i18n>Users</a>
     </li>
 
     @if (isCreation()) {
-      <li class="breadcrumb-item active" i18n>Create</li>
+      <li class="breadcrumb-item" i18n>Create</li>
     } @else {
-      <li class="breadcrumb-item active" i18n>Edit</li>
+      <li class="breadcrumb-item" i18n>Edit</li>
 
-      <li class="breadcrumb-item active" aria-current="page">
+      <li class="breadcrumb-item" aria-current="page">
         <a *ngIf="user" [routerLink]="[ '/a', user?.username ]">{{ user?.username }}</a>
       </li>
     }
@@ -57,7 +57,7 @@
   </div>
 </ng-template>
 
-<div *ngIf="error" class="alert alert-danger">{{ error }}</div>
+<my-alert *ngIf="error" type="danger">{{ error }}</my-alert>
 
 <div class="pt-two-cols d-xxl-none"> <!-- hidden on large screens, as it is then displayed on the right side of the form -->
   <div class="col-0 col-xl-3"></div>
@@ -85,7 +85,7 @@
 
   <div class="content-col">
     <div class="row">
-      <form class="col" role="form" (ngSubmit)="formValidated()" [formGroup]="form">
+      <form class="col" (ngSubmit)="formValidated()" [formGroup]="form">
         <div class="form-group" *ngIf="isCreation()">
           <label i18n for="username">Username</label>
           <input
@@ -150,10 +150,11 @@
         </div>
 
         <div class="form-group">
-          <label i18n for="videoQuota">Video quota</label>
+          <label i18n id="videoQuotaLabel" for="videoQuota">Video quota</label>
 
           <my-select-custom-value
-            id="videoQuota"
+            labelId="videoQuotaLabel"
+            inputId="videoQuota"
             [items]="videoQuotaOptions"
             formControlName="videoQuota"
             i18n-inputSuffix inputSuffix="bytes" inputType="number"
@@ -168,10 +169,11 @@
         </div>
 
         <div class="form-group">
-          <label i18n for="videoQuotaDaily">Daily video quota</label>
+          <label i18n id="videoQuotaDailyLabel" for="videoQuotaDaily">Daily video quota</label>
 
           <my-select-custom-value
-            id="videoQuotaDaily"
+            labelId="videoQuotaDailyLabel"
+            inputId="videoQuotaDaily"
             [items]="videoQuotaDailyOptions"
             formControlName="videoQuotaDaily"
             i18n-inputSuffix inputSuffix="bytes" inputType="number"
@@ -205,7 +207,7 @@
           </my-peertube-checkbox>
         </div>
 
-        <input class="peertube-button orange-button" type="submit" value="{{ getFormButtonTitle() }}" [disabled]="!form.valid">
+        <input class="peertube-button primary-button" type="submit" value="{{ getFormButtonTitle() }}" [disabled]="!form.valid">
       </form>
 
       <div class="d-none d-xxl-block col-7">
@@ -225,9 +227,9 @@
   <div class="content-col">
 
     <div class="danger-zone">
-      <div class="form-group">
+    <div class="form-group">
         <div class="mb-1 fw-bold" i18n>Send a link to reset the password by email to the user</div>
-        <button class="peertube-button" (click)="resetPassword()" i18n>Ask for new password</button>
+        <button class="peertube-button danger-button" (click)="resetPassword()" i18n>Ask for new password</button>
       </div>
 
       <div class="form-group">
@@ -237,7 +239,7 @@
 
       <div *ngIf="user.twoFactorEnabled" class="form-group">
         <div class="mb-1 fw-bold" i18n>This user has two factor authentication enabled</div>
-        <button class="peertube-button" (click)="disableTwoFactorAuth()" i18n>Disable two factor authentication</button>
+        <button class="peertube-button danger-button" (click)="disableTwoFactorAuth()" i18n>Disable two factor authentication</button>
       </div>
     </div>
 

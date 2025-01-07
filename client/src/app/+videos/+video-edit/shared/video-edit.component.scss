@@ -1,5 +1,6 @@
 @use '_variables' as *;
 @use '_mixins' as *;
+@use '_form-mixins' as *;
 
 .peertube-select-container {
   @include peertube-select-container(auto);
@@ -8,6 +9,10 @@
 my-peertube-checkbox {
   display: block;
   margin-bottom: 1rem;
+}
+
+my-timestamp-input {
+  width: 100px;
 }
 
 .nav-tabs {
@@ -27,11 +32,12 @@ my-peertube-checkbox {
 
 .caption-entry {
   display: flex;
-  height: 40px;
+  min-height: 40px;
   align-items: center;
+  flex-wrap: wrap;
 
   a.caption-entry-label {
-    color: pvar(--mainForegroundColor);
+    color: pvar(--fg);
 
     @include disable-default-a-behaviour;
 
@@ -51,23 +57,6 @@ my-peertube-checkbox {
     min-width: 250px;
 
     @include margin-right(15px);
-
-    &.caption-entry-state-create {
-      color: $green;
-    }
-
-    &.caption-entry-state-delete {
-      color: $red;
-    }
-  }
-
-  .caption-entry-edit {
-    @include peertube-button;
-  }
-
-  .caption-entry-delete {
-    @include peertube-button;
-    @include grey-button;
   }
 }
 
@@ -80,7 +69,7 @@ my-peertube-checkbox {
 
   .message-submit {
     display: inline-block;
-    color: pvar(--greyForegroundColor);
+    color: pvar(--fg-300);
 
     @include margin-right(25px);
   }
@@ -93,12 +82,6 @@ p-calendar {
     .p-calendar {
       width: 100%;
     }
-
-    .p-inputtext {
-      color: #000;
-
-      @include peertube-input-text(100%);
-    }
   }
 }
 
@@ -109,9 +92,9 @@ p-calendar {
   grid-gap: 30px;
 }
 
-.button-file {
-  @include peertube-button-file(max-content);
-  @include orange-button;
+.col-video-edit {
+  max-width: 100%;
+  min-width: 1px;
 }
 
 .hide-chapter-label {
@@ -126,7 +109,7 @@ p-calendar {
   column-gap: 1rem;
 
   .position {
-    height: 31px;
+    height: 38px;
     min-width: 16px;
     display: flex;
     align-items: center;

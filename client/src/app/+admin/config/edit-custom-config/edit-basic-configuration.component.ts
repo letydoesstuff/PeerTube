@@ -1,19 +1,19 @@
-import { pairwise } from 'rxjs/operators'
-import { SelectOptionsItem } from 'src/types/select-options-item.model'
+import { NgClass, NgFor, NgIf } from '@angular/common'
 import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core'
 import { FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms'
-import { MenuService, ThemeService } from '@app/core'
+import { RouterLink } from '@angular/router'
+import { ThemeService } from '@app/core'
+import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
 import { HTMLServerConfig } from '@peertube/peertube-models'
-import { ConfigService } from '../shared/config.service'
-import { PeerTubeTemplateDirective } from '../../../shared/shared-main/angular/peertube-template.directive'
-import { SelectOptionsComponent } from '../../../shared/shared-forms/select/select-options.component'
-import { UserRealQuotaInfoComponent } from '../../shared/user-real-quota-info.component'
+import { pairwise } from 'rxjs/operators'
+import { SelectOptionsItem } from 'src/types/select-options-item.model'
 import { MarkdownTextareaComponent } from '../../../shared/shared-forms/markdown-textarea.component'
-import { HelpComponent } from '../../../shared/shared-main/misc/help.component'
 import { PeertubeCheckboxComponent } from '../../../shared/shared-forms/peertube-checkbox.component'
 import { SelectCustomValueComponent } from '../../../shared/shared-forms/select/select-custom-value.component'
-import { NgFor, NgIf, NgClass } from '@angular/common'
-import { RouterLink } from '@angular/router'
+import { SelectOptionsComponent } from '../../../shared/shared-forms/select/select-options.component'
+import { HelpComponent } from '../../../shared/shared-main/buttons/help.component'
+import { UserRealQuotaInfoComponent } from '../../shared/user-real-quota-info.component'
+import { ConfigService } from '../shared/config.service'
 
 @Component({
   selector: 'my-edit-basic-configuration',
@@ -33,7 +33,7 @@ import { RouterLink } from '@angular/router'
     NgClass,
     UserRealQuotaInfoComponent,
     SelectOptionsComponent,
-    PeerTubeTemplateDirective
+    AlertComponent
   ]
 })
 export class EditBasicConfigurationComponent implements OnInit, OnChanges {
@@ -51,7 +51,6 @@ export class EditBasicConfigurationComponent implements OnInit, OnChanges {
 
   constructor (
     private configService: ConfigService,
-    private menuService: MenuService,
     private themeService: ThemeService
   ) {}
 
@@ -60,7 +59,11 @@ export class EditBasicConfigurationComponent implements OnInit, OnChanges {
     this.checkSignupField()
     this.checkImportSyncField()
 
-    this.availableThemes = this.themeService.buildAvailableThemes()
+    this.availableThemes = [
+      this.themeService.getDefaultThemeItem(),
+
+      ...this.themeService.buildAvailableThemes()
+    ]
 
     this.exportExpirationOptions = [
       { id: 1000 * 3600 * 24, label: $localize`1 day` },
@@ -154,17 +157,23 @@ export class EditBasicConfigurationComponent implements OnInit, OnChanges {
   }
 
   buildLandingPageOptions () {
-    this.defaultLandingPageOptions = this.menuService.buildCommonLinks(this.serverConfig)
-      .links
-      .map(o => ({
-        id: o.path,
-        label: o.label,
-        description: o.path
-      }))
-  }
+    let links: { label: string, path: string }[] = []
 
-  getDefaultThemeLabel () {
-    return this.themeService.getDefaultThemeLabel()
+    if (this.serverConfig.homepage.enabled) {
+      links.push({ label: $localize`Home`, path: '/home' })
+    }
+
+    links = links.concat([
+      { label: $localize`Discover`, path: '/videos/overview' },
+      { label: $localize`Browse all videos`, path: '/videos/browse' },
+      { label: $localize`Browse local videos`, path: '/videos/browse?scope=local' }
+    ])
+
+    this.defaultLandingPageOptions = links.map(o => ({
+      id: o.path,
+      label: o.label,
+      description: o.path
+    }))
   }
 
   private checkImportSyncField () {

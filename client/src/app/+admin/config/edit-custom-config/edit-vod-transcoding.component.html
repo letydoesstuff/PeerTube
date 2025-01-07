@@ -4,7 +4,7 @@
     <div class="title-col"></div>
     <div class="content-col">
 
-      <div class="callout callout-orange">
+      <div class="callout callout-primary">
         <span i18n>
           Estimating a server's capacity to transcode and stream videos isn't easy and we can't tune PeerTube automatically.
         </span>
@@ -12,7 +12,7 @@
         <br />
 
         <span i18n>
-          However, you may want to read <a class="link-orange" target="_blank" rel="noopener noreferrer" href="https://docs.joinpeertube.org/admin/configuration#vod-transcoding">our guidelines</a> before tweaking the following values.
+          However, you may want to read <a class="link-primary" target="_blank" rel="noopener noreferrer" href="https://docs.joinpeertube.org/admin/configuration#vod-transcoding">our guidelines</a> before tweaking the following values.
         </span>
       </div>
     </div>
@@ -192,7 +192,7 @@
           >
             <ng-container ngProjectAs="description">
               <span i18n>
-                Use <a routerLink="/admin/system/runners/runners-list">remote runners</a> to process VOD transcoding.
+                Use <a routerLink="/admin/settings/system/runners/runners-list">remote runners</a> to process VOD transcoding.
                 Remote runners has to register on your instance first.
               </span>
             </ng-container>
@@ -200,7 +200,7 @@
         </div>
 
         <div class="form-group mt-4" [ngClass]="getLocalTranscodingDisabledClass()">
-          <label i18n for="transcodingThreads">Transcoding threads</label>
+          <label i18n id="transcodingThreadsLabel" for="transcodingThreads">Transcoding threads</label>
 
           <span class="small muted ms-1">
             <ng-container *ngIf="getTotalTranscodingThreads().atMost" i18n>
@@ -213,7 +213,8 @@
           </span>
 
           <my-select-custom-value
-            id="transcodingThreads"
+            labelId="transcodingThreadsLabel"
+            inputId="transcodingThreads"
             [items]="transcodingThreadOptions"
             formControlName="threads"
             [clearable]="false"
@@ -227,7 +228,7 @@
           <span class="small muted ms-1" i18n>allows to transcode multiple files in parallel. ⚠️ Requires a PeerTube restart</span>
 
           <div class="number-with-unit">
-            <input type="number" name="transcodingConcurrency" formControlName="concurrency" />
+            <input type="number" id="transcodingConcurrency" formControlName="concurrency" />
             <span i18n>jobs in parallel</span>
           </div>
 
@@ -238,12 +239,7 @@
           <label i18n for="transcodingProfile">Transcoding profile</label>
           <span class="small muted ms-1" i18n>new transcoding profiles can be added by PeerTube plugins</span>
 
-          <my-select-options
-            id="transcodingProfile"
-            formControlName="profile"
-            [items]="transcodingProfiles"
-            [clearable]="false"
-          ></my-select-options>
+          <my-select-options inputId="transcodingProfile" formControlName="profile" [items]="transcodingProfiles"></my-select-options>
 
           <div *ngIf="formErrors.transcoding.profile" class="form-error" role="alert">{{ formErrors.transcoding.profile }}</div>
         </div>
@@ -282,7 +278,7 @@
           >
             <ng-container ngProjectAs="description">
               <span i18n>
-                Use <a routerLink="/admin/system/runners/runners-list">remote runners</a> to process studio transcoding tasks.
+                Use <a routerLink="/admin/settings/system/runners/runners-list">remote runners</a> to process studio transcoding tasks.
                 Remote runners has to register on your instance first.
               </span>
             </ng-container>

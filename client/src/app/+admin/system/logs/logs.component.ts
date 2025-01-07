@@ -1,8 +1,10 @@
-import { DatePipe, NgClass, NgFor, NgIf } from '@angular/common'
+import { NgClass, NgFor, NgIf } from '@angular/common'
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { LocalStorageService, Notifier } from '@app/core'
-import { NgSelectModule } from '@ng-select/ng-select'
+import { SelectOptionsComponent } from '@app/shared/shared-forms/select/select-options.component'
+import { PTDatePipe } from '@app/shared/shared-main/common/date.pipe'
+import { PeerTubeTemplateDirective } from '@app/shared/shared-main/common/peertube-template.directive'
 import { ServerLogLevel } from '@peertube/peertube-models'
 import { SelectTagsComponent } from '../../../shared/shared-forms/select/select-tags.component'
 import { ButtonComponent } from '../../../shared/shared-main/buttons/button.component'
@@ -17,17 +19,18 @@ import { LogsService } from './logs.service'
   imports: [
     FormsModule,
     NgFor,
-    NgSelectModule,
     NgIf,
     NgClass,
     SelectTagsComponent,
     ButtonComponent,
-    DatePipe,
-    CopyButtonComponent
+    PTDatePipe,
+    CopyButtonComponent,
+    SelectOptionsComponent,
+    PeerTubeTemplateDirective
   ]
 })
 export class LogsComponent implements OnInit {
-  private static LOCAL_STORAGE_LOG_TYPE_CHOICE_KEY = 'admin-logs-log-type-choice'
+  private static LS_LOG_TYPE_CHOICE_KEY = 'admin-logs-log-type-choice'
 
   @ViewChild('logsElement', { static: true }) logsElement: ElementRef<HTMLElement>
   @ViewChild('logsContent', { static: true }) logsContent: ElementRef<HTMLElement>
@@ -65,7 +68,7 @@ export class LogsComponent implements OnInit {
   refresh () {
     this.logs = []
 
-    this.localStorage.setItem(LogsComponent.LOCAL_STORAGE_LOG_TYPE_CHOICE_KEY, this.logType)
+    this.localStorage.setItem(LogsComponent.LS_LOG_TYPE_CHOICE_KEY, this.logType)
 
     this.load()
   }
@@ -171,7 +174,7 @@ export class LogsComponent implements OnInit {
   }
 
   private loadPreviousChoices () {
-    this.logType = this.localStorage.getItem(LogsComponent.LOCAL_STORAGE_LOG_TYPE_CHOICE_KEY)
+    this.logType = this.localStorage.getItem(LogsComponent.LS_LOG_TYPE_CHOICE_KEY)
 
     if (this.logType !== 'standard' && this.logType !== 'audit') this.logType = 'audit'
   }

@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: PeerTube
-  version: 6.3.0
+  version: 7.0.0
   contact:
     name: PeerTube Community
     url: https://joinpeertube.org
@@ -541,31 +541,31 @@ paths:
                 $ref: '#/components/schemas/VideoCommentsForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/video-comments.xml?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/video-comments.xml?scope=local
             application/rss+xml:
               schema:
                 $ref: '#/components/schemas/VideoCommentsForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/video-comments.rss?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/video-comments.rss?scope=local
             text/xml:
               schema:
                 $ref: '#/components/schemas/VideoCommentsForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/video-comments.xml?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/video-comments.xml?scope=local
             application/atom+xml:
               schema:
                 $ref: '#/components/schemas/VideoCommentsForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/video-comments.atom?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/video-comments.atom?scope=local
             application/json:
               schema:
                 type: object
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/video-comments.json?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/video-comments.json?scope=local
         '400':
           x-summary: field inconsistencies
           description: >
@@ -638,31 +638,31 @@ paths:
                 $ref: '#/components/schemas/VideosForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/videos.xml?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/videos.xml?scope=local
             application/rss+xml:
               schema:
                 $ref: '#/components/schemas/VideosForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/videos.rss?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/videos.rss?scope=local
             text/xml:
               schema:
                 $ref: '#/components/schemas/VideosForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/videos.xml?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/videos.xml?scope=local
             application/atom+xml:
               schema:
                 $ref: '#/components/schemas/VideosForXML'
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/videos.atom?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/videos.atom?scope=local
             application/json:
               schema:
                 type: object
               examples:
                 nightly:
-                  externalValue: https://peertube2.cpy.re/feeds/videos.json?filter=local
+                  externalValue: https://peertube2.cpy.re/feeds/videos.json?scope=local
         '404':
           description: video channel or account not found
         '406':
@@ -804,6 +804,7 @@ paths:
         - $ref: '#/components/parameters/count'
         - $ref: '#/components/parameters/videosSort'
         - $ref: '#/components/parameters/excludeAlreadyWatched'
+        - $ref: '#/components/parameters/search'
       responses:
         '200':
           description: successful operation
@@ -2267,6 +2268,7 @@ paths:
         - $ref: '#/components/parameters/count'
         - $ref: '#/components/parameters/videosSort'
         - $ref: '#/components/parameters/excludeAlreadyWatched'
+        - $ref: '#/components/parameters/search'
       responses:
         '200':
           description: successful operation
@@ -2813,6 +2815,7 @@ paths:
         - $ref: '#/components/parameters/count'
         - $ref: '#/components/parameters/videosSort'
         - $ref: '#/components/parameters/excludeAlreadyWatched'
+        - $ref: '#/components/parameters/search'
       responses:
         '200':
           description: successful operation
@@ -4506,6 +4509,7 @@ paths:
         - $ref: '#/components/parameters/count'
         - $ref: '#/components/parameters/videosSort'
         - $ref: '#/components/parameters/excludeAlreadyWatched'
+        - $ref: '#/components/parameters/search'
       responses:
         '200':
           description: successful operation
@@ -6418,6 +6422,11 @@ paths:
               properties:
                 runnerToken:
                   type: string
+                jobTypes:
+                  type: array
+                  description: Filter jobs depending on their types
+                  items:
+                    type: string
               required:
                 - runnerToken
       responses:

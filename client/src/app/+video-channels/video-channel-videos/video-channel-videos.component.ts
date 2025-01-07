@@ -1,8 +1,8 @@
 import { NgIf } from '@angular/common'
 import { AfterViewInit, Component, OnDestroy, OnInit, ViewChild } from '@angular/core'
 import { ComponentPaginationLight, DisableForReuseHook, HooksService, ScreenService } from '@app/core'
-import { VideoChannel } from '@app/shared/shared-main/video-channel/video-channel.model'
-import { VideoChannelService } from '@app/shared/shared-main/video-channel/video-channel.service'
+import { VideoChannel } from '@app/shared/shared-main/channel/video-channel.model'
+import { VideoChannelService } from '@app/shared/shared-main/channel/video-channel.service'
 import { VideoService } from '@app/shared/shared-main/video/video.service'
 import { VideoFilters } from '@app/shared/shared-video-miniature/video-filters.model'
 import { MiniatureDisplayOptions } from '@app/shared/shared-video-miniature/video-miniature.component'
@@ -22,7 +22,6 @@ export class VideoChannelVideosComponent implements OnInit, AfterViewInit, OnDes
   getVideosObservableFunction = this.getVideosObservable.bind(this)
   getSyndicationItemsFunction = this.getSyndicationItems.bind(this)
 
-  title = $localize`Videos`
   defaultSort = '-publishedAt' as VideoSortField
 
   displayOptions: MiniatureDisplayOptions = {

@@ -20,7 +20,10 @@ describe('Test index HTML generation', function () {
   let privatePlaylistId: string
   let unlistedPlaylistId: string
 
-  let instanceDescription: string
+  let instanceConfig: {
+    name: string
+    shortDescription: string
+  }
 
   before(async function () {
     this.timeout(120000);
@@ -36,7 +39,7 @@ describe('Test index HTML generation', function () {
       unlistedVideoId,
       privatePlaylistId,
       unlistedPlaylistId,
-      instanceDescription
+      instanceConfig
     } = await prepareClientTests())
   })
 
@@ -44,9 +47,9 @@ describe('Test index HTML generation', function () {
 
     it('Should have valid index html tags (title, description...)', async function () {
       const config = await servers[0].config.getConfig()
-      const res = await makeHTMLRequest(servers[0].url, '/videos/trending')
+      const res = await makeHTMLRequest(servers[0].url, '/videos/browse')
 
-      checkIndexTags(res.text, 'PeerTube', instanceDescription, '', config)
+      checkIndexTags(res.text, instanceConfig.name, instanceConfig.shortDescription, '', config)
     })
 
     it('Should update the customized configuration and have the correct index html tags', async function () {
@@ -68,14 +71,14 @@ describe('Test index HTML generation', function () {
       })
 
       const config = await servers[0].config.getConfig()
-      const res = await makeHTMLRequest(servers[0].url, '/videos/trending')
+      const res = await makeHTMLRequest(servers[0].url, '/videos/browse')
 
       checkIndexTags(res.text, 'PeerTube updated', 'my short description', 'body { background-color: red; }', config)
     })
 
     it('Should have valid index html updated tags (title, description...)', async function () {
       const config = await servers[0].config.getConfig()
-      const res = await makeHTMLRequest(servers[0].url, '/videos/trending')
+      const res = await makeHTMLRequest(servers[0].url, '/videos/browse')
 
       checkIndexTags(res.text, 'PeerTube updated', 'my short description', 'body { background-color: red; }', config)
     })

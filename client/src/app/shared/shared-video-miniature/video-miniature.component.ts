@@ -1,4 +1,4 @@
-import { switchMap } from 'rxjs/operators'
+import { NgClass, NgFor, NgIf } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -9,22 +9,23 @@ import {
   LOCALE_ID,
   OnInit,
   Output,
+  booleanAttribute,
   numberAttribute
 } from '@angular/core'
+import { RouterLink } from '@angular/router'
 import { AuthService, ScreenService, ServerService, User } from '@app/core'
 import { HTMLServerConfig, VideoExistInPlaylist, VideoPlaylistType, VideoPrivacy, VideoState } from '@peertube/peertube-models'
+import { switchMap } from 'rxjs/operators'
 import { LinkType } from '../../../types/link.type'
-import { VideoActionsDisplayType, VideoActionsDropdownComponent } from './video-actions-dropdown.component'
-import { RouterLink } from '@angular/router'
-import { VideoViewsCounterComponent } from '../shared-video/video-views-counter.component'
-import { DateToggleComponent } from '../shared-main/date/date-toggle.component'
-import { LinkComponent } from '../shared-main/angular/link.component'
 import { ActorAvatarComponent } from '../shared-actor-image/actor-avatar.component'
-import { VideoThumbnailComponent } from '../shared-thumbnail/video-thumbnail.component'
-import { NgClass, NgIf, NgFor } from '@angular/common'
+import { LinkComponent } from '../shared-main/common/link.component'
+import { DateToggleComponent } from '../shared-main/date/date-toggle.component'
 import { Video } from '../shared-main/video/video.model'
 import { VideoService } from '../shared-main/video/video.service'
+import { VideoThumbnailComponent } from '../shared-thumbnail/video-thumbnail.component'
 import { VideoPlaylistService } from '../shared-video-playlist/video-playlist.service'
+import { VideoViewsCounterComponent } from '../shared-video/video-views-counter.component'
+import { VideoActionsDisplayType, VideoActionsDropdownComponent } from './video-actions-dropdown.component'
 
 export type MiniatureDisplayOptions = {
   date?: boolean
@@ -67,7 +68,7 @@ export class VideoMiniatureComponent implements OnInit {
     date: true,
     views: true,
     by: true,
-    avatar: false,
+    avatar: true,
     privacyLabel: false,
     privacyText: false,
     state: false,
@@ -89,9 +90,9 @@ export class VideoMiniatureComponent implements OnInit {
     stats: false
   }
 
-  @Input({ transform: numberAttribute }) actorImageSize = 40
+  @Input({ transform: numberAttribute }) actorImageSize = 34
 
-  @Input() displayAsRow = false
+  @Input({ transform: booleanAttribute }) displayAsRow = false
 
   @Input() videoLinkType: LinkType = 'internal'
 
@@ -118,6 +119,7 @@ export class VideoMiniatureComponent implements OnInit {
   videoTarget: string
 
   private ownerDisplayType: 'account' | 'videoChannel'
+  private actionsLoaded = false
 
   constructor (
     private screenService: ScreenService,
@@ -244,9 +246,12 @@ export class VideoMiniatureComponent implements OnInit {
   }
 
   loadActions () {
+    if (this.actionsLoaded) return
     if (this.displayVideoActions) this.showActions = true
 
     this.loadWatchLater()
+
+    this.actionsLoaded = true
   }
 
   onVideoBlocked () {
@@ -295,12 +300,16 @@ export class VideoMiniatureComponent implements OnInit {
   }
 
   isWatchLaterPlaylistDisplayed () {
-    return this.displayVideoActions && this.isUserLoggedIn() && this.inWatchLaterPlaylist !== undefined
+    return !this.screenService.isInTouchScreen() &&
+      this.displayVideoActions &&
+      this.isUserLoggedIn() &&
+      this.inWatchLaterPlaylist !== undefined
   }
 
   getClasses () {
     return {
-      'display-as-row': this.displayAsRow
+      'display-as-row': this.displayAsRow,
+      'has-avatar': this.displayOptions.avatar
     }
   }
 
@@ -314,7 +323,7 @@ export class VideoMiniatureComponent implements OnInit {
   }
 
   private loadWatchLater () {
-    if (!this.isUserLoggedIn() || this.inWatchLaterPlaylist !== undefined) return
+    if (this.screenService.isInTouchScreen() || !this.displayVideoActions || !this.isUserLoggedIn()) return
 
     this.authService.userInformationLoaded
         .pipe(switchMap(() => this.videoPlaylistService.listenToVideoPlaylistChange(this.video.id)))

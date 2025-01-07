@@ -845,9 +845,6 @@ export const USER_EXPORT_FILE_PREFIX = 'user-export-'
 
 // Express static paths (router)
 export const STATIC_PATHS = {
-  // TODO: deprecated in v6, to remove
-  THUMBNAILS: '/static/thumbnails/',
-
   // Need to keep this legacy path for previously generated torrents
   LEGACY_WEB_VIDEOS: '/static/webseed/',
   WEB_VIDEOS: '/static/web-videos/',
@@ -1336,6 +1333,7 @@ function buildVideoMimetypeExt () {
 
         // Developed by Apple
         'video/quicktime': [ '.mov', '.qt', '.mqv' ], // often used as output format by editing software
+        'video/mov': '.mov', // Windows: https://github.com/Chocobozzz/PeerTube/issues/6669
         'video/x-m4v': '.m4v',
         'video/m4v': '.m4v',
 

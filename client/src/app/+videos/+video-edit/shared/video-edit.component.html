@@ -34,7 +34,7 @@
                 </ng-template>
               </my-help>
 
-              <my-select-tags labelForId="label-tags" formControlName="tags"></my-select-tags>
+              <my-select-tags inputId="label-tags" formControlName="tags" class="d-block w-100"></my-select-tags>
               <div *ngIf="formErrors.tags" class="form-error" role="alert">
                 {{ formErrors.tags }}
               </div>
@@ -54,6 +54,7 @@
               </my-help>
 
               <my-markdown-textarea
+                inputId="description"
                 formControlName="description" [markdownVideo]="publishedVideo"
                 [formError]="formErrors.description" truncateTo3Lines="true" withEmoji="true"
               ></my-markdown-textarea>
@@ -63,14 +64,12 @@
           <div class="col-video-edit">
             <div class="form-group">
               <label i18n for="channel">Channel</label>
-              <my-select-channel labelForId="channel" [items]="userVideoChannels" formControlName="channelId"></my-select-channel>
+              <my-select-channel class="d-block" inputId="channel" [items]="userVideoChannels" formControlName="channelId"></my-select-channel>
             </div>
 
             <div class="form-group">
               <label i18n for="category">Category</label>
-              <my-select-options
-                labelForId="category" [items]="videoCategories" formControlName="category" [clearable]="true"
-              ></my-select-options>
+              <my-select-options inputId="category" [items]="videoCategories" formControlName="category" clearable="true"></my-select-options>
 
               <div *ngIf="formErrors.category" class="form-error" role="alert">
                 {{ formErrors.category }}
@@ -88,9 +87,7 @@
                 </ng-template>
               </my-help>
 
-              <my-select-options
-                labelForId="licence" [items]="videoLicences" formControlName="licence" [clearable]="true"
-              ></my-select-options>
+              <my-select-options inputId="licence" [items]="videoLicences" formControlName="licence" clearable="true"></my-select-options>
 
               <div *ngIf="formErrors.licence" class="form-error" role="alert">
                 {{ formErrors.licence }}
@@ -100,8 +97,8 @@
             <div class="form-group">
               <label i18n for="language">Language</label>
               <my-select-options
-                labelForId="language" [items]="videoLanguages" formControlName="language"
-                [clearable]="true" [searchable]="true" [groupBy]="'group'"
+                inputId="language" [items]="videoLanguages" formControlName="language"
+                clearable="true" filter="true" virtualScroll="true"
               ></my-select-options>
 
               <div *ngIf="formErrors.language" class="form-error" role="alert">
@@ -111,9 +108,7 @@
 
             <div class="form-group">
               <label i18n for="privacy">Privacy</label>
-              <my-select-options
-                labelForId="privacy" [items]="videoPrivacies" formControlName="privacy" [clearable]="false"
-              ></my-select-options>
+              <my-select-options inputId="privacy" [items]="videoPrivacies" formControlName="privacy"></my-select-options>
 
               <div *ngIf="formErrors.privacy" class="form-error" role="alert">
                 {{ formErrors.privacy }}
@@ -130,6 +125,7 @@
               <p-calendar
                 id="schedulePublicationAt" formControlName="schedulePublicationAt" [dateFormat]="calendarDateFormat"
                 [firstDayOfWeek]="0" [minDate]="minScheduledDate" [showTime]="true" [hideOnDateTimeSelect]="true"
+                baseZIndex="20000"
               >
               </p-calendar>
 
@@ -173,48 +169,54 @@
 
       <ng-template ngbNavContent>
         <div class="captions">
-          <div class="alert pt-alert-primary" *ngIf="displayTranscriptionInfo && isTranscriptionEnabled() && !hasCaptions()" i18n>
-            A subtitle will be automatically generated from your video.
-          </div>
+          <my-alert type="primary" *ngIf="displayTranscriptionInfo && isTranscriptionEnabled() && !hasCaptions()" i18n>
+            Subtitles will be automatically generated from your video.
+          </my-alert>
 
           <div class="form-group" *ngFor="let videoCaption of videoCaptions">
 
             <div class="caption-entry">
-              <ng-container *ngIf="!videoCaption.action">
+
+              @if (videoCaption.action) {
+                <span class="caption-entry-label">{{ getCaptionLabel(videoCaption) }}</span>
+
+                @switch (videoCaption.action) {
+                  @case ('CREATE') {
+                    <div i18n class="caption-entry-state green">Will be created on update</div>
+                  } @case ('UPDATE') {
+                    <div i18n class="caption-entry-state green">Will be edited on update</div>
+                    Will be edited on update
+                  } @case ('REMOVE') {
+                    <div i18n class="caption-entry-state red">Will be deleted on update</div>
+                  }
+                }
+
+                @if (videoCaption.action === 'CREATE' || videoCaption.action === 'UPDATE') {
+                  <my-edit-button class="me-2" i18n-label label="Edit" (click)="openEditCaptionModal(videoCaption)"></my-edit-button>
+                }
+
+                <my-button i18n (click)="deleteCaption(videoCaption)" icon="undo">
+                  @switch (videoCaption.action) {
+                    @case ('CREATE') {
+                      Cancel creation
+                    } @case ('UPDATE') {
+                      Cancel edition
+                    } @case ('REMOVE') {
+                      Cancel deletion
+                    }
+                  }
+                </my-button>
+              } @else {
                 <a
                   i18n-title title="See the subtitle file" class="caption-entry-label" target="_blank" rel="noopener noreferrer"
                   [href]="videoCaption.captionPath"
                 >{{ getCaptionLabel(videoCaption) }}</a>
 
-                <div i18n class="caption-entry-state">Already uploaded on {{ videoCaption.updatedAt | date }}	&#10004;</div>
+                <div i18n class="caption-entry-state">Already uploaded on {{ videoCaption.updatedAt | ptDate }}	&#10004;</div>
 
-                <button i18n class="caption-entry-edit" (click)="openEditCaptionModal(videoCaption)">Edit</button>
-                <button i18n class="caption-entry-delete" (click)="deleteCaption(videoCaption)">Delete</button>
-              </ng-container>
-
-              <ng-container *ngIf="videoCaption.action === 'CREATE'">
-                <span class="caption-entry-label">{{ getCaptionLabel(videoCaption) }}</span>
-
-                <div i18n class="caption-entry-state caption-entry-state-create">Will be created on update</div>
-
-                <button i18n class="caption-entry-delete" (click)="deleteCaption(videoCaption)">Cancel create</button>
-              </ng-container>
-
-              <ng-container *ngIf="videoCaption.action === 'UPDATE'">
-                <span class="caption-entry-label">{{ getCaptionLabel(videoCaption) }}</span>
-
-                <div i18n class="caption-entry-state caption-entry-state-create">Will be edited on update</div>
-
-                <button i18n class="caption-entry-delete" (click)="deleteCaption(videoCaption)">Cancel edition</button>
-              </ng-container>
-
-              <ng-container *ngIf="videoCaption.action === 'REMOVE'">
-                <span class="caption-entry-label">{{ getCaptionLabel(videoCaption) }}</span>
-
-                <div i18n class="caption-entry-state caption-entry-state-delete">Will be deleted on update</div>
-
-                <button i18n class="caption-entry-delete" (click)="deleteCaption(videoCaption)">Cancel deletion</button>
-              </ng-container>
+                <my-edit-button i18n-label label="Edit" class="me-2" (click)="openEditCaptionModal(videoCaption)"></my-edit-button>
+                <my-delete-button label (click)="deleteCaption(videoCaption)"></my-delete-button>
+              }
             </div>
           </div>
 
@@ -239,11 +241,11 @@
       <ng-template ngbNavContent>
         <div class="row mb-5">
           <div class="chapters col-md-12 col-xl-6" formArrayName="chapters">
-            <div i18n class="alert pt-alert-primary">
+            <my-alert type="primary" i18n>
               Chapters can also be set in the video description.
 
-              Check the format <a href="https://docs.joinpeertube.org/use/create-upload-video#chapters" target="_blank">in the PeerTube documentation</a>
-            </div>
+              Check the format <a href="https://docs.joinpeertube.org/use/create-upload-video#chapters" target="_blank" class="alert-link">in the PeerTube documentation</a>
+            </my-alert>
 
             <ng-container *ngFor="let chapterControl of getChaptersFormArray().controls; let i = index">
               <div class="chapter" [formGroupName]="i">
@@ -260,7 +262,7 @@
                 <div class="position">{{ i + 1 }}</div>
 
                 <my-timestamp-input
-                  class="d-block" [disableBorder]="false" [inputName]="'timecode[' + i + ']'"
+                  class="d-block" enableBorder="true" [inputName]="'timecode[' + i + ']'"
                   [maxTimestamp]="publishedVideo?.duration" formControlName="timecode"
                 ></my-timestamp-input>
 
@@ -296,9 +298,9 @@
       <ng-template ngbNavContent>
         <div class="row live-settings">
           <div class="col-md-12">
-            <div class="alert pt-alert-primary">
+            <my-alert type="primary">
               <my-live-documentation-link></my-live-documentation-link>
-            </div>
+            </my-alert>
 
             <div *ngIf="liveVideo.rtmpUrl" class="form-group">
               <label for="liveVideoRTMPUrl" i18n>Live RTMP Url</label>
@@ -351,16 +353,12 @@
 
             <div class="form-group mx-4" *ngIf="isSaveReplayEnabled()">
               <label i18n for="replayPrivacy">Privacy of the new replay</label>
-              <my-select-options
-                labelForId="replayPrivacy" [items]="replayPrivacies" [clearable]="false" formControlName="replayPrivacy"
-              ></my-select-options>
+              <my-select-options inputId="replayPrivacy" [items]="replayPrivacies" formControlName="replayPrivacy"></my-select-options>
             </div>
 
             <div class="form-group" *ngIf="isLatencyModeEnabled()">
               <label i18n for="latencyMode">Latency mode</label>
-              <my-select-options
-                labelForId="latencyMode" [items]="latencyModes" formControlName="latencyMode" [clearable]="true"
-              ></my-select-options>
+              <my-select-options inputId="latencyMode" [items]="latencyModes" formControlName="latencyMode" clearable="true"></my-select-options>
 
               <div *ngIf="formErrors.latencyMode" class="form-error" role="alert">
                 {{ formErrors.latencyMode }}
@@ -389,6 +387,7 @@
 
             <div class="form-group">
               <label i18n for="support">Support</label>
+
               <my-help helpType="markdownEnhanced">
                 <ng-template ptTemplate="preHtml">
                   <ng-container i18n>
@@ -398,7 +397,7 @@
               </my-help>
 
               <my-markdown-textarea
-                id="support" formControlName="support" markdownType="enhanced"
+                inputId="support" formControlName="support" markdownType="enhanced"
                 [formError]="formErrors['support']"
               ></my-markdown-textarea>
             </div>
@@ -422,7 +421,7 @@
 
             <div class="form-group originally-published-at">
               <div class="label-container">
-                <label i18n for="originallyPublishedAt">Original publication date</label>
+                <label i18n class="mb-0" for="originallyPublishedAt">Original publication date</label>
 
                 <button i18n class="reset-button reset-button-small" (click)="resetField('originallyPublishedAt')" *ngIf="hasPublicationDate()">
                   Reset
@@ -434,8 +433,9 @@
               </div>
 
               <p-calendar
-                id="originallyPublishedAt" formControlName="originallyPublishedAt" [dateFormat]="calendarDateFormat" [firstDayOfWeek]="0"
+                inputId="originallyPublishedAt" formControlName="originallyPublishedAt" [dateFormat]="calendarDateFormat" [firstDayOfWeek]="0"
                 [showTime]="true" [hideOnDateTimeSelect]="true" [monthNavigator]="true" [yearNavigator]="true" [yearRange]="myYearRange"
+                baseZIndex="20000"
               >
               </p-calendar>
 
@@ -445,8 +445,13 @@
             </div>
 
             <div class="form-group mb-4">
-              <label i18n for="commentsPolicy">Comments policy</label>
-              <my-select-options labelForId="commentsPolicy" [items]="commentPolicies" formControlName="commentsPolicy" [clearable]="false"></my-select-options>
+              <label i18n class="mb-0" for="commentsPolicy">Comments policy</label>
+
+              <div class="form-group-description" i18n>
+                You can require comments to be approved depending on <a routerLink="/my-account/auto-tag-policies" target="_blank">your auto-tags policies</a>
+              </div>
+
+              <my-select-options inputId="commentsPolicy" [items]="commentPolicies" formControlName="commentsPolicy"></my-select-options>
 
               <div *ngIf="formErrors.commentsPolicy" class="form-error" role="alert">
                 {{ formErrors.commentsPolicy }}

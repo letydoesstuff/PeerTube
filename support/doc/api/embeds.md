@@ -202,20 +202,32 @@ Default: `0`
 
 ### `ready: Promise<void>`
 
-This promise is resolved when the video is loaded an the player is ready.
+This promise is resolved when the video is loaded and the player is ready.
 
 
 ## Embed methods
 
-### `play() : Promise<void>`
+### `isPlaying(): Promise<boolean>`
+
+**PeerTube >= 7.0**
+
+Check if the player is playing the media.
+
+### `play(): Promise<void>`
 
 Starts playback, or resumes playback if it is paused.
 
-### `pause() : Promise<void>`
+### `pause(): Promise<void>`
 
 Pauses playback.
 
-### `seek(positionInSeconds : number)`
+### `getCurrentTime(): Promise<number>`
+
+**PeerTube >= 7.0**
+
+Get player current time in seconds.
+
+### `seek(positionInSeconds : number): Promise<void>`
 
 Seek to the given position, as specified in seconds into the video.
 

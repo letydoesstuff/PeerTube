@@ -1,25 +1,27 @@
-import { forkJoin, Subject, Subscription } from 'rxjs'
-import { LinkType } from 'src/types/link.type'
+import { NgFor, NgIf, NgTemplateOutlet } from '@angular/common'
 import { Component, OnDestroy, OnInit } from '@angular/core'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import { AuthService, HooksService, MetaService, Notifier, ServerService, User, UserService } from '@app/core'
 import { immutableAssign, SimpleMemoize } from '@app/helpers'
 import { validateHost } from '@app/shared/form-validators/host-validators'
-import { HTMLServerConfig, SearchTargetType } from '@peertube/peertube-models'
-import { NumberFormatterPipe } from '../shared/shared-main/angular/number-formatter.pipe'
-import { VideoPlaylistMiniatureComponent } from '../shared/shared-video-playlist/video-playlist-miniature.component'
-import { MiniatureDisplayOptions, VideoMiniatureComponent } from '../shared/shared-video-miniature/video-miniature.component'
-import { SubscribeButtonComponent } from '../shared/shared-user-subscription/subscribe-button.component'
-import { ActorAvatarComponent } from '../shared/shared-actor-image/actor-avatar.component'
-import { SearchFiltersComponent } from './search-filters.component'
-import { NgbCollapse } from '@ng-bootstrap/ng-bootstrap'
-import { NgIf, NgFor, NgTemplateOutlet } from '@angular/common'
-import { InfiniteScrollerDirective } from '../shared/shared-main/angular/infinite-scroller.directive'
-import { VideoChannel } from '@app/shared/shared-main/video-channel/video-channel.model'
+import { GlobalIconComponent } from '@app/shared/shared-icons/global-icon.component'
+import { VideoChannel } from '@app/shared/shared-main/channel/video-channel.model'
+import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
 import { Video } from '@app/shared/shared-main/video/video.model'
-import { VideoPlaylist } from '@app/shared/shared-video-playlist/video-playlist.model'
 import { AdvancedSearch } from '@app/shared/shared-search/advanced-search.model'
 import { SearchService } from '@app/shared/shared-search/search.service'
+import { VideoPlaylist } from '@app/shared/shared-video-playlist/video-playlist.model'
+import { NgbCollapse } from '@ng-bootstrap/ng-bootstrap'
+import { HTMLServerConfig, SearchTargetType } from '@peertube/peertube-models'
+import { forkJoin, Subject, Subscription } from 'rxjs'
+import { LinkType } from 'src/types/link.type'
+import { ActorAvatarComponent } from '../shared/shared-actor-image/actor-avatar.component'
+import { InfiniteScrollerDirective } from '../shared/shared-main/common/infinite-scroller.directive'
+import { NumberFormatterPipe } from '../shared/shared-main/common/number-formatter.pipe'
+import { SubscribeButtonComponent } from '../shared/shared-user-subscription/subscribe-button.component'
+import { MiniatureDisplayOptions, VideoMiniatureComponent } from '../shared/shared-video-miniature/video-miniature.component'
+import { VideoPlaylistMiniatureComponent } from '../shared/shared-video-playlist/video-playlist-miniature.component'
+import { SearchFiltersComponent } from './search-filters.component'
 
 @Component({
   selector: 'my-search',
@@ -38,7 +40,9 @@ import { SearchService } from '@app/shared/shared-search/search.service'
     SubscribeButtonComponent,
     VideoMiniatureComponent,
     VideoPlaylistMiniatureComponent,
-    NumberFormatterPipe
+    NumberFormatterPipe,
+    AlertComponent,
+    GlobalIconComponent
   ]
 })
 export class SearchComponent implements OnInit, OnDestroy {
@@ -50,6 +54,8 @@ export class SearchComponent implements OnInit, OnDestroy {
     currentPage: 1,
     totalItems: null as number
   }
+  deletedVideos = 0
+
   advancedSearch: AdvancedSearch = new AdvancedSearch()
   isSearchFilterCollapsed = true
   currentSearch: string
@@ -58,7 +64,7 @@ export class SearchComponent implements OnInit, OnDestroy {
     date: true,
     views: true,
     by: true,
-    avatar: false,
+    avatar: true,
     privacyLabel: false,
     privacyText: false,
     state: false,
@@ -218,7 +224,10 @@ export class SearchComponent implements OnInit, OnDestroy {
 
   // Add VideoChannel/VideoPlaylist for typings, but the template already checks "video" argument is a video
   removeVideoFromArray (video: Video | VideoChannel | VideoPlaylist) {
+    const previous = this.results
     this.results = this.results.filter(r => !this.isVideo(r) || r.id !== video.id)
+
+    if (previous.length !== this.results.length) this.deletedVideos++
   }
 
   getLinkType (): LinkType {
@@ -270,9 +279,14 @@ export class SearchComponent implements OnInit, OnDestroy {
     return this.lastSearchTarget === 'search-index'
   }
 
+  getFilterButtonTitle () {
+    return $localize`${this.numberOfFilters()} active filters, open the filters panel`
+  }
+
   private resetPagination () {
     this.pagination.currentPage = 1
     this.pagination.totalItems = null
+    this.deletedVideos = 0
 
     this.results = []
   }
@@ -297,7 +311,7 @@ export class SearchComponent implements OnInit, OnDestroy {
   private getVideosObs () {
     const params = {
       search: this.currentSearch,
-      componentPagination: immutableAssign(this.pagination, { itemsPerPage: 10 }),
+      componentPagination: immutableAssign(this.pagination, { itemsPerPage: 10, itemsRemoved: this.deletedVideos }),
       advancedSearch: this.advancedSearch
     }
 

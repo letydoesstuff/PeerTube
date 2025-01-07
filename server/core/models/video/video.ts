@@ -1154,7 +1154,6 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
     hasFiles?: boolean // default false
 
-    hasWebtorrentFiles?: boolean // TODO: remove in v7
     hasWebVideoFiles?: boolean
 
     hasHLSFiles?: boolean
@@ -1223,7 +1222,6 @@ export class VideoModel extends SequelizeModel<VideoModel> {
         'user',
         'historyOfUser',
         'hasHLSFiles',
-        'hasWebtorrentFiles',
         'hasWebVideoFiles',
         'search',
         'excludeAlreadyWatched'
@@ -1258,7 +1256,6 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
     user?: MUserAccountId
 
-    hasWebtorrentFiles?: boolean // TODO: remove in v7
     hasWebVideoFiles?: boolean
 
     hasHLSFiles?: boolean
@@ -1311,7 +1308,6 @@ export class VideoModel extends SequelizeModel<VideoModel> {
         'durationMin',
         'durationMax',
         'hasHLSFiles',
-        'hasWebtorrentFiles',
         'hasWebVideoFiles',
         'uuids',
         'search',
@@ -1742,7 +1738,13 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
   getMaxQualityAudioAndVideoFiles <T extends MVideoWithFile> (this: T) {
     const videoFile = this.getMaxQualityFile(VideoFileStream.VIDEO)
-    if (!videoFile) return { videoFile: undefined }
+
+    if (!videoFile) {
+      const audioOnly = this.getMaxQualityFile(VideoFileStream.AUDIO)
+      if (audioOnly) return { videoFile: audioOnly }
+
+      return { videoFile: undefined }
+    }
 
     // File also has audio, we can return it
     if (videoFile.hasAudio()) return { videoFile }
@@ -1763,7 +1765,7 @@ export class VideoModel extends SequelizeModel<VideoModel> {
   getMaxQualityBytes <T extends MVideoWithFile> (this: T) {
     const { videoFile, separatedAudioFile } = this.getMaxQualityAudioAndVideoFiles()
 
-    let size = videoFile.size
+    let size = videoFile?.size || 0
     if (separatedAudioFile) size += separatedAudioFile.size
 
     return size
@@ -1805,6 +1807,10 @@ export class VideoModel extends SequelizeModel<VideoModel> {
     return !!this.getMaxQualityFile(VideoFileStream.AUDIO)
   }
 
+  hasVideo () {
+    return !!this.getMaxQualityFile(VideoFileStream.VIDEO)
+  }
+
   // ---------------------------------------------------------------------------
 
   getWebVideoFileMinResolution<T extends MVideoWithFile> (this: T, resolution: number): MVideoFileVideo {
@@ -1838,21 +1844,21 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
   // ---------------------------------------------------------------------------
 
-  hasMiniature (this: MVideoThumbnail) {
+  hasMiniature (this: Pick<MVideoThumbnail, 'getMiniature' | 'Thumbnails'>) {
     return !!this.getMiniature()
   }
 
-  getMiniature (this: MVideoThumbnail) {
+  getMiniature (this: Pick<MVideoThumbnail, 'Thumbnails'>) {
     if (Array.isArray(this.Thumbnails) === false) return undefined
 
     return this.Thumbnails.find(t => t.type === ThumbnailType.MINIATURE)
   }
 
-  hasPreview (this: MVideoThumbnail) {
+  hasPreview (this: Pick<MVideoThumbnail, 'getPreview' | 'Thumbnails'>) {
     return !!this.getPreview()
   }
 
-  getPreview (this: MVideoThumbnail) {
+  getPreview (this: Pick<MVideoThumbnail, 'Thumbnails'>) {
     if (Array.isArray(this.Thumbnails) === false) return undefined
 
     return this.Thumbnails.find(t => t.type === ThumbnailType.PREVIEW)
@@ -1872,14 +1878,14 @@ export class VideoModel extends SequelizeModel<VideoModel> {
     return buildVideoEmbedPath(this)
   }
 
-  getMiniatureStaticPath () {
+  getMiniatureStaticPath (this: Pick<MVideoThumbnail, 'getMiniature' | 'Thumbnails'>) {
     const thumbnail = this.getMiniature()
     if (!thumbnail) return null
 
     return thumbnail.getLocalStaticPath()
   }
 
-  getPreviewStaticPath () {
+  getPreviewStaticPath (this: Pick<MVideoThumbnail, 'getPreview' | 'Thumbnails'>) {
     const preview = this.getPreview()
     if (!preview) return null
 
@@ -2133,6 +2139,8 @@ export class VideoModel extends SequelizeModel<VideoModel> {
   }) {
     const { urlParamId, checkBlacklist } = options
 
+    if (checkBlacklist && this.VideoBlacklist) return true
+
     if (this.privacy === VideoPrivacy.PRIVATE || this.privacy === VideoPrivacy.INTERNAL) {
       return true
     }
@@ -2142,8 +2150,6 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
       return false
     }
-
-    if (checkBlacklist && this.VideoBlacklist) return true
 
     if (this.privacy === VideoPrivacy.PUBLIC || this.privacy === VideoPrivacy.PASSWORD_PROTECTED) {
       return false

@@ -77,8 +77,7 @@ const CONFIG = {
   CLIENT: {
     VIDEOS: {
       MINIATURE: {
-        get PREFER_AUTHOR_DISPLAY_NAME () { return config.get<boolean>('client.videos.miniature.prefer_author_display_name') },
-        get DISPLAY_AUTHOR_AVATAR () { return config.get<boolean>('client.videos.miniature.display_author_avatar') }
+        get PREFER_AUTHOR_DISPLAY_NAME () { return config.get<boolean>('client.videos.miniature.prefer_author_display_name') }
       },
       RESUMABLE_UPLOAD: {
         get MAX_CHUNK_SIZE () { return parseBytes(config.get<number>('client.videos.resumable_upload.max_chunk_size') || 0) }
@@ -395,6 +394,9 @@ const CONFIG = {
     TOTAL_ADMINS: {
       ENABLED: config.get<boolean>('stats.total_admins.enabled')
     }
+  },
+  WEBRTC: {
+    STUN_SERVERS: config.get<string[]>('webrtc.stun_servers')
   },
   ADMIN: {
     get EMAIL () { return config.get<string>('admin.email') }
