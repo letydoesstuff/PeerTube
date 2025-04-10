@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common'
-import { Component, OnDestroy, OnInit } from '@angular/core'
+import { Component, OnDestroy, OnInit, inject } from '@angular/core'
 import { Params, RouterLink, RouterLinkActive } from '@angular/router'
 import {
   AuthService,
@@ -25,7 +25,8 @@ type MenuLink = {
 
   label: string
 
-  path: string
+  path?: string
+  url?: string
   query?: Params
 
   isPrimaryButton?: boolean // default false
@@ -45,7 +46,6 @@ const debugLogger = debug('peertube:menu:MenuComponent')
   selector: 'my-menu',
   templateUrl: './menu.component.html',
   styleUrls: [ './menu.component.scss' ],
-  standalone: true,
   imports: [
     CommonModule,
     GlobalIconComponent,
@@ -56,22 +56,21 @@ const debugLogger = debug('peertube:menu:MenuComponent')
   ]
 })
 export class MenuComponent implements OnInit, OnDestroy {
+  private authService = inject(AuthService)
+  private userService = inject(UserService)
+  private serverService = inject(ServerService)
+  private hooks = inject(HooksService)
+  private menu = inject(MenuService)
+  private redirectService = inject(RedirectService)
+
   menuSections: MenuSection[] = []
   loggedIn: boolean
+  moreInfoLabel = $localize`More info`
 
   private user: AuthUser
   private canSeeVideoMakerBlock: boolean
 
   private authSub: Subscription
-
-  constructor (
-    private authService: AuthService,
-    private userService: UserService,
-    private serverService: ServerService,
-    private hooks: HooksService,
-    private menu: MenuService,
-    private redirectService: RedirectService
-  ) { }
 
   get shortDescription () {
     return this.serverService.getHTMLConfig().instance.shortDescription

@@ -4,7 +4,7 @@
 
 Main dependencies supported by PeerTube:
 
- * `node` LTS (>=18.20 or 20.x)
+ * `node` LTS (>= 20.9 or 22.x)
  * `yarn` 1.x (**must not be >=2.x**)
  * `postgres` >=10.x
  * `redis-server` >=6.x
@@ -43,7 +43,7 @@ sudo apt-get install curl sudo unzip vim
 
 2. It would be wise to disable root access and to continue this tutorial with a user with sudoers group access. You can see a guide for how to do this in Debian/Ubuntu [here](https://www.digitalocean.com/community/tutorials/how-to-add-and-delete-users-on-ubuntu-20-04).
 
-3. Install NodeJS 18.x:
+3. Install NodeJS 20.x:
 [https://nodejs.org/en/download/package-manager/all#debian-and-ubuntu-based-linux-distributions](https://nodejs.org/en/download/package-manager/all#debian-and-ubuntu-based-linux-distributions)
 4. Install yarn, and be sure to have [a recent version](https://github.com/yarnpkg/yarn/releases/latest):
 [https://yarnpkg.com/en/docs/install#linux-tab](https://yarnpkg.com/en/docs/install#linux-tab)
@@ -90,7 +90,7 @@ sudo systemctl start redis postgresql
 
 ## CentOS 7
 
-1. Install NodeJS 18.x:
+1. Install NodeJS 20.x:
 [https://nodejs.org/en/download/package-manager/all#centos-fedora-and-red-hat-enterprise-linux](https://nodejs.org/en/download/package-manager/all#centos-fedora-and-red-hat-enterprise-linux)
 
 2. Install yarn:
@@ -110,7 +110,7 @@ sudo yum update
 sudo yum install nginx postgresql postgresql-server postgresql-contrib openssl gcc-c++ make wget redis git devtoolset-7
 ```
 
-5. You need to use a more up to date version of G++ in order to run the yarn install command, hence the installation of devtoolset-7.
+5. You need to use a more up to date version of G++ in order to run the `npm run install-node-dependencies` command, hence the installation of devtoolset-7.
 
 ```sh
 sudo scl enable devtoolset-7 bash
@@ -119,7 +119,7 @@ sudo scl enable devtoolset-7 bash
 Later when you invoke any node command, please prefix them with `CC=/opt/rh/devtoolset-7/root/usr/bin/gcc CXX=/opt/rh/devtoolset-7/root/usr/bin/g++`, such as with:
 
 ```sh
-sudo -H -u peertube CC=/opt/rh/devtoolset-7/root/usr/bin/gcc CXX=/opt/rh/devtoolset-7/root/usr/bin/g++ yarn install --production --pure-lockfile
+sudo -H -u peertube CC=/opt/rh/devtoolset-7/root/usr/bin/gcc CXX=/opt/rh/devtoolset-7/root/usr/bin/g++ npm run install-node-dependencies -- --production
 ```
 
 6. Initialize the PostgreSQL database:
@@ -137,7 +137,7 @@ sudo systemctl enable --now postgresql
 
 ## Centos 8
 
-1. Install NodeJS 18.x:
+1. Install NodeJS 20.x:
 [https://nodejs.org/en/download/package-manager/all#centos-fedora-and-red-hat-enterprise-linux](https://nodejs.org/en/download/package-manager/all#centos-fedora-and-red-hat-enterprise-linux)
 
 2. Install yarn:
@@ -187,9 +187,9 @@ sudo systemctl enable --now postgresql
 sudo dnf update -y
 ```
 
-2. Install NodeJS 18.x:
+2. Install NodeJS 20.x:
 ```sh
-sudo dnf module install -y nodejs:18
+sudo dnf module install -y nodejs:20
 ```
 
 3. Install yarn:
@@ -246,7 +246,7 @@ su my-peertube-user
 3. (Optional) Install certbot (choose instructions for your distribution):
 [https://certbot.eff.org/all-instructions](https://certbot.eff.org/all-instructions)
 
-4. Install NodeJS 18.x:
+4. Install NodeJS 20.x:
 [https://nodejs.org/en/download/package-manager/all#centos-fedora-and-red-hat-enterprise-linux](https://nodejs.org/en/download/package-manager/all#centos-fedora-and-red-hat-enterprise-linux)
 
 5. Install yarn:
@@ -339,7 +339,7 @@ echo fs.inotify.max_user_watches=582222 | sudo tee -a /etc/sysctl.conf && sudo s
 2. Install Node.JS
 
 ```sh
-sudo dnf module install nodejs:18
+sudo dnf module install nodejs:20
 ```
 
 3. Install Yarn

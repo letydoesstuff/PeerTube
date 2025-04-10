@@ -87,6 +87,22 @@ const CONFIG = {
       LOGIN: {
         get REDIRECT_ON_SINGLE_EXTERNAL_AUTH () { return config.get<boolean>('client.menu.login.redirect_on_single_external_auth') }
       }
+    },
+    OPEN_IN_APP: {
+      ANDROID: {
+        INTENT: {
+          get ENABLED () { return config.get<boolean>('client.open_in_app.android.intent.enabled') },
+          get HOST () { return config.get<string>('client.open_in_app.android.intent.host') },
+          get SCHEME () { return config.get<string>('client.open_in_app.android.intent.scheme') },
+          get FALLBACK_URL () { return config.get<string>('client.open_in_app.android.intent.fallback_url') }
+        }
+      },
+      IOS: {
+        get ENABLED () { return config.get<boolean>('client.open_in_app.ios.enabled') },
+        get HOST () { return config.get<string>('client.open_in_app.ios.host') },
+        get SCHEME () { return config.get<string>('client.open_in_app.ios.scheme') },
+        get FALLBACK_URL () { return config.get<string>('client.open_in_app.ios.fallback_url') }
+      }
     }
   },
 
@@ -104,6 +120,9 @@ const CONFIG = {
       EMBED: {
         ENABLED: config.get<boolean>('defaults.p2p.embed.enabled')
       }
+    },
+    PLAYER: {
+      get AUTO_PLAY () { return config.get<boolean>('defaults.player.auto_play') }
     }
   },
 
@@ -167,6 +186,11 @@ const CONFIG = {
       BUCKET_NAME: config.get<string>('object_storage.original_video_files.bucket_name'),
       PREFIX: config.get<string>('object_storage.original_video_files.prefix'),
       BASE_URL: config.get<string>('object_storage.original_video_files.base_url')
+    },
+    CAPTIONS: {
+      BUCKET_NAME: config.get<string>('object_storage.captions.bucket_name'),
+      PREFIX: config.get<string>('object_storage.captions.prefix'),
+      BASE_URL: config.get<string>('object_storage.captions.base_url')
     }
   },
   WEBSERVER: {
@@ -629,6 +653,18 @@ const CONFIG = {
 
     get IS_NSFW () { return config.get<boolean>('instance.is_nsfw') },
     get DEFAULT_NSFW_POLICY () { return config.get<NSFWPolicyType>('instance.default_nsfw_policy') },
+
+    get SERVER_COUNTRY () { return config.get<string>('instance.server_country') },
+
+    SUPPORT: {
+      get TEXT () { return config.get<string>('instance.support.text') }
+    },
+
+    SOCIAL: {
+      get EXTERNAL_LINK () { return config.get<string>('instance.social.external_link') },
+      get MASTODON_LINK () { return config.get<string>('instance.social.mastodon_link') },
+      get BLUESKY () { return config.get<string>('instance.social.bluesky_link') }
+    },
 
     get DEFAULT_CLIENT_ROUTE () { return config.get<string>('instance.default_client_route') },
 

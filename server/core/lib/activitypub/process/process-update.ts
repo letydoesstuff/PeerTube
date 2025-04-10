@@ -113,7 +113,7 @@ async function processUpdateCacheFile (
 }
 
 async function processUpdateActor (actor: MActorFull, actorObject: ActivityPubActor) {
-  logger.debug('Updating remote account "%s".', actorObject.url)
+  logger.debug(`Updating remote account "${actorObject.id}".`)
 
   const updater = new APActorUpdater(actorObject, actor)
   return updater.update()
@@ -127,5 +127,5 @@ async function processUpdatePlaylist (
   const byAccount = byActor.Account
   if (!byAccount) throw new Error('Cannot update video playlist with the non account actor ' + byActor.url)
 
-  await createOrUpdateVideoPlaylist(playlistObject, activity.to)
+  await createOrUpdateVideoPlaylist({ playlistObject, contextUrl: byActor.url, to: activity.to })
 }

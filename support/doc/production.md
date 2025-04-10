@@ -17,7 +17,7 @@ Follow the steps of the [dependencies guide](/support/doc/dependencies.md).
 Create a `peertube` user with `/var/www/peertube` home:
 
 ```bash
-sudo useradd -m -d /var/www/peertube -s /bin/bash -p peertube peertube
+sudo useradd -m -d /var/www/peertube -s /usr/sbin/nologin -p peertube peertube
 ```
 
 Set its password:
@@ -95,7 +95,7 @@ Install Peertube:
 ```bash
 cd /var/www/peertube
 sudo -u peertube ln -s versions/peertube-${VERSION} ./peertube-latest
-cd ./peertube-latest && sudo -H -u peertube yarn install --production --pure-lockfile
+cd ./peertube-latest && sudo -H -u peertube npm run install-node-dependencies -- --production
 ```
 
 ### :wrench: PeerTube configuration
@@ -336,7 +336,7 @@ Install node dependencies:
 
 ```bash
 cd /var/www/peertube/versions/peertube-${VERSION} && \
-    sudo -H -u peertube yarn install --production --pure-lockfile
+    sudo -H -u peertube npm run install-node-dependencies -- --production
 ```
 
 Copy new configuration defaults values and update your configuration file:

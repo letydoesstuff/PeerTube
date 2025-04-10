@@ -1,5 +1,5 @@
 import { NgClass, NgFor, NgIf } from '@angular/common'
-import { Component, EventEmitter, Input, Output } from '@angular/core'
+import { Component, inject, input, output } from '@angular/core'
 import { Router } from '@angular/router'
 import {
   AuthService,
@@ -26,16 +26,23 @@ import { VideoPlaylistElementMiniatureComponent } from '../../../../shared/share
   selector: 'my-video-watch-playlist',
   templateUrl: './video-watch-playlist.component.html',
   styleUrls: [ './player-widget.component.scss', './video-watch-playlist.component.scss' ],
-  standalone: true,
   imports: [ NgIf, InfiniteScrollerDirective, NgClass, NgbTooltip, GlobalIconComponent, NgFor, VideoPlaylistElementMiniatureComponent ]
 })
 export class VideoWatchPlaylistComponent {
+  private hooks = inject(HooksService)
+  private userService = inject(UserService)
+  private auth = inject(AuthService)
+  private notifier = inject(Notifier)
+  private videoPlaylist = inject(VideoPlaylistService)
+  private sessionStorage = inject(SessionStorageService)
+  private router = inject(Router)
+
   static SESSION_STORAGE_LOOP_PLAYLIST = 'loop_playlist'
 
-  @Input() playlist: VideoPlaylist
+  readonly playlist = input<VideoPlaylist>(undefined)
 
-  @Output() videoFound = new EventEmitter<string>()
-  @Output() noVideoFound = new EventEmitter<void>()
+  readonly videoFound = output<string>()
+  readonly noVideoFound = output()
 
   playlistElements: VideoPlaylistElement[] = []
   playlistPagination: ComponentPagination = {
@@ -53,15 +60,7 @@ export class VideoWatchPlaylistComponent {
   noPlaylistVideos = false
   currentPlaylistPosition: number
 
-  constructor (
-    private hooks: HooksService,
-    private userService: UserService,
-    private auth: AuthService,
-    private notifier: Notifier,
-    private videoPlaylist: VideoPlaylistService,
-    private sessionStorage: SessionStorageService,
-    private router: Router
-  ) {
+  constructor () {
     this.userService.getAnonymousOrLoggedUser()
       .subscribe(user => this.autoPlayNextVideoPlaylist = user.autoPlayNextVideoPlaylist)
 
@@ -76,7 +75,7 @@ export class VideoWatchPlaylistComponent {
     if (this.playlistPagination.totalItems <= (this.playlistPagination.currentPage * this.playlistPagination.itemsPerPage)) return
 
     this.playlistPagination.currentPage += 1
-    this.loadPlaylistElements(this.playlist, false, position)
+    this.loadPlaylistElements({ playlist: this.playlist(), redirectToFirst: false, position })
   }
 
   onElementRemoved (playlistElement: VideoPlaylistElement) {
@@ -86,24 +85,32 @@ export class VideoWatchPlaylistComponent {
   }
 
   isPlaylistOwned () {
-    return this.playlist.isLocal === true &&
+    const playlist = this.playlist()
+    return playlist.isLocal === true &&
       this.auth.isLoggedIn() &&
-      this.playlist.ownerAccount.name === this.auth.getUser().username
+      playlist.ownerAccount.name === this.auth.getUser().username
   }
 
   isUnlistedPlaylist () {
-    return this.playlist.privacy.id === VideoPlaylistPrivacy.UNLISTED
+    return this.playlist().privacy.id === VideoPlaylistPrivacy.UNLISTED
   }
 
   isPrivatePlaylist () {
-    return this.playlist.privacy.id === VideoPlaylistPrivacy.PRIVATE
+    return this.playlist().privacy.id === VideoPlaylistPrivacy.PRIVATE
   }
 
   isPublicPlaylist () {
-    return this.playlist.privacy.id === VideoPlaylistPrivacy.PUBLIC
+    return this.playlist().privacy.id === VideoPlaylistPrivacy.PUBLIC
   }
 
-  loadPlaylistElements (playlist: VideoPlaylist, redirectToFirst = false, position?: number) {
+  loadPlaylistElements (options: {
+    playlist: VideoPlaylist
+    redirectToFirst?: boolean // default false
+    reset?: boolean // default false
+    position?: number
+  }) {
+    const { playlist, redirectToFirst = false, reset = false, position } = options
+
     const obs = this.hooks.wrapObsFun(
       this.videoPlaylist.getPlaylistVideos.bind(this.videoPlaylist),
       { videoPlaylistId: playlist.uuid, componentPagination: this.playlistPagination },
@@ -113,6 +120,8 @@ export class VideoWatchPlaylistComponent {
     )
 
     obs.subscribe(({ total, data: playlistElements }) => {
+      if (reset) this.playlistElements = []
+
       this.playlistElements = this.playlistElements.concat(playlistElements)
       this.playlistPagination.totalItems = total
 
@@ -143,7 +152,7 @@ export class VideoWatchPlaylistComponent {
     if (this.playlistElements.length === 0 || !position) return
 
     // Handle the reverse index
-    if (position < 0) position = this.playlist.videosLength + position + 1
+    if (position < 0) position = this.playlist().videosLength + position + 1
 
     for (const playlistElement of this.playlistElements) {
       // >= if the previous videos were not valid

@@ -1,6 +1,6 @@
 import { firstValueFrom } from 'rxjs'
 import { switchMap, tap } from 'rxjs/operators'
-import { Component } from '@angular/core'
+import { Component, inject } from '@angular/core'
 import { AuthService, ComponentPaginationLight, DisableForReuseHook, ScopedTokensService } from '@app/core'
 import { HooksService } from '@app/core/plugins/hooks.service'
 import { VideoSortField } from '@peertube/peertube-models'
@@ -12,10 +12,15 @@ import { VideoFilters } from '@app/shared/shared-video-miniature/video-filters.m
 @Component({
   selector: 'my-videos-user-subscriptions',
   templateUrl: './video-user-subscriptions.component.html',
-  standalone: true,
   imports: [ VideosListComponent ]
 })
 export class VideoUserSubscriptionsComponent implements DisableForReuseHook {
+  private authService = inject(AuthService)
+  private userSubscription = inject(UserSubscriptionService)
+  private hooks = inject(HooksService)
+  private videoService = inject(VideoService)
+  private scopedTokensService = inject(ScopedTokensService)
+
   getVideosObservableFunction = this.getVideosObservable.bind(this)
   getSyndicationItemsFunction = this.getSyndicationItems.bind(this)
 
@@ -32,16 +37,6 @@ export class VideoUserSubscriptionsComponent implements DisableForReuseHook {
   disabled = false
 
   private feedToken: string
-
-  constructor (
-    private authService: AuthService,
-    private userSubscription: UserSubscriptionService,
-    private hooks: HooksService,
-    private videoService: VideoService,
-    private scopedTokensService: ScopedTokensService
-  ) {
-
-  }
 
   getVideosObservable (pagination: ComponentPaginationLight, filters: VideoFilters) {
     const params = {

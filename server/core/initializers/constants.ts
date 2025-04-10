@@ -46,7 +46,7 @@ import { CONFIG, registerConfigChangedHandler } from './config.js'
 
 // ---------------------------------------------------------------------------
 
-export const LAST_MIGRATION_VERSION = 865
+export const LAST_MIGRATION_VERSION = 875
 
 // ---------------------------------------------------------------------------
 
@@ -85,7 +85,7 @@ export const WEBSERVER = {
 // Sortable columns per schema
 export const SORTABLE_COLUMNS = {
   ADMIN_USERS: [ 'id', 'username', 'videoQuotaUsed', 'createdAt', 'lastLoginDate', 'role' ],
-  USER_SUBSCRIPTIONS: [ 'id', 'createdAt' ],
+  USER_SUBSCRIPTIONS: [ 'id', 'createdAt', 'channelUpdatedAt' ],
   ACCOUNTS: [ 'createdAt' ],
   JOBS: [ 'createdAt' ],
   VIDEO_CHANNELS: [ 'id', 'name', 'updatedAt', 'createdAt' ],
@@ -419,11 +419,11 @@ export const CONSTRAINTS_FIELDS = {
     IMAGE: {
       EXTNAME: [ '.png', '.jpg', '.jpeg', '.webp' ],
       FILE_SIZE: {
-        max: 4 * 1024 * 1024 // 4MB
+        max: 8 * 1024 * 1024 // 8MB
       }
     },
     EXTNAME: [] as string[],
-    INFO_HASH: { min: 40, max: 40 }, // Length, info hash is 20 bytes length but we represent it in hexadecimal so 20 * 2
+    INFO_HASH: { min: 10, max: 100 },
     DURATION: { min: 0 }, // Number
     TAGS: { min: 0, max: 5 }, // Number of total tags
     TAG: { min: 2, max: 30 }, // Length
@@ -444,7 +444,7 @@ export const CONSTRAINTS_FIELDS = {
     IMAGE: {
       EXTNAME: [ '.jpg', '.jpeg' ],
       FILE_SIZE: {
-        max: 4 * 1024 * 1024 // 4MB
+        max: 8 * 1024 * 1024 // 8MB
       }
     }
   },
@@ -455,7 +455,7 @@ export const CONSTRAINTS_FIELDS = {
     IMAGE: {
       EXTNAME: [ '.png', '.jpeg', '.jpg', '.gif', '.webp' ],
       FILE_SIZE: {
-        max: 4 * 1024 * 1024 // 4MB
+        max: 8 * 1024 * 1024 // 8MB
       }
     }
   },
@@ -826,7 +826,7 @@ export const USER_PASSWORD_RESET_LIFETIME = 60000 * 60 // 60 minutes
 export const USER_PASSWORD_CREATE_LIFETIME = 60000 * 60 * 24 * 7 // 7 days
 
 export const TWO_FACTOR_AUTH_REQUEST_TOKEN_LIFETIME = 60000 * 10 // 10 minutes
-export let JWT_TOKEN_USER_EXPORT_FILE_LIFETIME = '15 minutes'
+export let JWT_TOKEN_USER_EXPORT_FILE_LIFETIME: `${number} minutes` | `${number} seconds` = '15 minutes'
 
 export const EMAIL_VERIFY_LIFETIME = 60000 * 60 // 60 minutes
 
@@ -1112,7 +1112,9 @@ export const TRACKER_RATE_LIMITS = {
   BLOCK_IP_LIFETIME: parseDurationToMs('3 minutes')
 }
 
-export const P2P_MEDIA_LOADER_PEER_VERSION = 2
+// We use -2 instead of 2 because of historical reason
+// When p2p-media-loader bumps to v3, we'll be able to switch to 3 directly
+export const P2P_MEDIA_LOADER_PEER_VERSION = -2
 
 // ---------------------------------------------------------------------------
 

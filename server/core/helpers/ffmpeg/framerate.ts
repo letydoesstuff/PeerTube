@@ -1,3 +1,4 @@
+import { VideoResolution } from '@peertube/peertube-models'
 import { CONFIG } from '@server/initializers/config.js'
 import { logger } from '../logger.js'
 
@@ -8,6 +9,8 @@ export function computeOutputFPS (options: {
   type: 'vod' | 'live'
 }) {
   const { resolution, isOriginResolution, type } = options
+
+  if (resolution === VideoResolution.H_NOVIDEO) return 0
 
   const settings = type === 'vod'
     ? buildTranscodingFPSOptions(CONFIG.TRANSCODING.FPS.MAX)
@@ -33,8 +36,8 @@ export function computeOutputFPS (options: {
   // Cap min FPS
   fps = Math.max(fps, settings.TRANSCODED_MIN)
 
-  // Cap max FPS
-  if (fps > settings.TRANSCODED_MAX) {
+  // Cap max FPS for non-origin video file
+  if (!isOriginResolution && fps > settings.TRANSCODED_MAX) {
     fps = getClosestFramerate({ fps, settings, type: 'HD_STANDARD' })
   }
 

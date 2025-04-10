@@ -1,5 +1,5 @@
 import { NgIf } from '@angular/common'
-import { AfterViewInit, Component, EventEmitter, OnInit, Output } from '@angular/core'
+import { AfterViewInit, Component, OnInit, inject, output } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { Router } from '@angular/router'
 import { AuthService, CanComponentDeactivate, HooksService, Notifier, ServerService } from '@app/core'
@@ -40,7 +40,6 @@ import { VideoSend } from './video-send'
     './video-go-live.component.scss',
     './video-send.scss'
   ],
-  standalone: true,
   imports: [
     NgIf,
     GlobalIconComponent,
@@ -55,8 +54,20 @@ import { VideoSend } from './video-send'
   ]
 })
 export class VideoGoLiveComponent extends VideoSend implements OnInit, AfterViewInit, CanComponentDeactivate {
-  @Output() firstStepDone = new EventEmitter<string>()
-  @Output() firstStepError = new EventEmitter<void>()
+  protected formReactiveService = inject(FormReactiveService)
+  protected loadingBar = inject(LoadingBarService)
+  protected notifier = inject(Notifier)
+  protected authService = inject(AuthService)
+  protected serverService = inject(ServerService)
+  protected videoService = inject(VideoService)
+  protected videoCaptionService = inject(VideoCaptionService)
+  protected videoChapterService = inject(VideoChapterService)
+  private liveVideoService = inject(LiveVideoService)
+  private router = inject(Router)
+  private hooks = inject(HooksService)
+
+  readonly firstStepDone = output<string>()
+  readonly firstStepError = output()
 
   firstStepPermanentLive: boolean
 
@@ -71,22 +82,6 @@ export class VideoGoLiveComponent extends VideoSend implements OnInit, AfterView
   videoShortUUID: string
 
   error: string
-
-  constructor (
-    protected formReactiveService: FormReactiveService,
-    protected loadingBar: LoadingBarService,
-    protected notifier: Notifier,
-    protected authService: AuthService,
-    protected serverService: ServerService,
-    protected videoService: VideoService,
-    protected videoCaptionService: VideoCaptionService,
-    protected videoChapterService: VideoChapterService,
-    private liveVideoService: LiveVideoService,
-    private router: Router,
-    private hooks: HooksService
-  ) {
-    super()
-  }
 
   ngOnInit () {
     super.ngOnInit()
@@ -148,7 +143,7 @@ export class VideoGoLiveComponent extends VideoSend implements OnInit, AfterView
           const error = err.body as PeerTubeProblemDocument
 
           if (error?.code === ServerErrorCode.MAX_INSTANCE_LIVES_LIMIT_REACHED) {
-            message = $localize`Cannot create live because this instance have too many created lives`
+            message = $localize`Cannot create live because this platform have too many created lives`
           } else if (error?.code === ServerErrorCode.MAX_USER_LIVES_LIMIT_REACHED) {
             message = $localize`Cannot create live because you created too many lives`
           }

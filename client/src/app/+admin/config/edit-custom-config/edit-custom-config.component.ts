@@ -1,17 +1,17 @@
 import { NgFor, NgIf } from '@angular/common'
-import { Component, OnInit } from '@angular/core'
+import { Component, OnInit, inject } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { ActivatedRoute, Router } from '@angular/router'
 import { ConfigService } from '@app/+admin/config/shared/config.service'
 import { Notifier } from '@app/core'
 import { ServerService } from '@app/core/server/server.service'
+import { URL_VALIDATOR } from '@app/shared/form-validators/common-validators'
 import {
   ADMIN_EMAIL_VALIDATOR,
   CACHE_SIZE_VALIDATOR,
   CONCURRENCY_VALIDATOR,
   EXPORT_EXPIRATION_VALIDATOR,
   EXPORT_MAX_USER_VIDEO_QUOTA_VALIDATOR,
-  INDEX_URL_VALIDATOR,
   INSTANCE_NAME_VALIDATOR,
   INSTANCE_SHORT_DESCRIPTION_VALIDATOR,
   MAX_INSTANCE_LIVES_VALIDATOR,
@@ -19,7 +19,6 @@ import {
   MAX_SYNC_PER_USER,
   MAX_USER_LIVES_VALIDATOR,
   MAX_VIDEO_CHANNELS_PER_USER_VALIDATOR,
-  SEARCH_INDEX_URL_VALIDATOR,
   SERVICES_TWITTER_USERNAME_VALIDATOR,
   SIGNUP_LIMIT_VALIDATOR,
   SIGNUP_MINIMUM_AGE_VALIDATOR,
@@ -53,7 +52,6 @@ type ComponentCustomConfig = CustomConfig & {
   selector: 'my-edit-custom-config',
   templateUrl: './edit-custom-config.component.html',
   styleUrls: [ './edit-custom-config.component.scss' ],
-  standalone: true,
   imports: [
     NgIf,
     FormsModule,
@@ -75,6 +73,15 @@ type ComponentCustomConfig = CustomConfig & {
   ]
 })
 export class EditCustomConfigComponent extends FormReactive implements OnInit {
+  protected formReactiveService = inject(FormReactiveService)
+  private router = inject(Router)
+  private route = inject(ActivatedRoute)
+  private notifier = inject(Notifier)
+  private configService = inject(ConfigService)
+  private customPage = inject(CustomPageService)
+  private serverService = inject(ServerService)
+  private editConfigurationService = inject(EditConfigurationService)
+
   activeNav: string
 
   customConfig: ComponentCustomConfig
@@ -85,23 +92,10 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
   languageItems: SelectOptionsItem[] = []
   categoryItems: SelectOptionsItem[] = []
 
-  constructor (
-    protected formReactiveService: FormReactiveService,
-    private router: Router,
-    private route: ActivatedRoute,
-    private notifier: Notifier,
-    private configService: ConfigService,
-    private customPage: CustomPageService,
-    private serverService: ServerService,
-    private editConfigurationService: EditConfigurationService
-  ) {
-    super()
-  }
-
   ngOnInit () {
     this.serverConfig = this.serverService.getHTMLConfig()
 
-    const formGroupData: { [key in keyof ComponentCustomConfig ]: any } = {
+    const formGroupData: { [key in keyof ComponentCustomConfig]: any } = {
       instance: {
         name: INSTANCE_NAME_VALIDATOR,
         shortDescription: INSTANCE_SHORT_DESCRIPTION_VALIDATOR,
@@ -123,6 +117,16 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
 
         categories: null,
         languages: null,
+
+        serverCountry: null,
+        support: {
+          text: null
+        },
+        social: {
+          externalLink: URL_VALIDATOR,
+          mastodonLink: URL_VALIDATOR,
+          blueskyLink: URL_VALIDATOR
+        },
 
         defaultClientRoute: null,
 
@@ -185,7 +189,6 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
         videoChannelSynchronization: {
           enabled: null,
           maxPerUser: MAX_SYNC_PER_USER
-
         },
         users: {
           enabled: null
@@ -312,7 +315,7 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
           },
           autoFollowIndex: {
             enabled: null,
-            indexUrl: INDEX_URL_VALIDATOR
+            indexUrl: URL_VALIDATOR
           }
         }
       },
@@ -329,7 +332,7 @@ export class EditCustomConfigComponent extends FormReactive implements OnInit {
         },
         searchIndex: {
           enabled: null,
-          url: SEARCH_INDEX_URL_VALIDATOR,
+          url: URL_VALIDATOR,
           disableLocalSearch: null,
           isDefaultSearch: null
         }

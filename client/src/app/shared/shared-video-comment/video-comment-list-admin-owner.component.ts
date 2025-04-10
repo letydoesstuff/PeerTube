@@ -1,7 +1,7 @@
 import { NgClass, NgIf } from '@angular/common'
-import { Component, Input, OnInit } from '@angular/core'
+import { Component, OnDestroy, OnInit, inject, input } from '@angular/core'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
-import { AuthService, ConfirmService, MarkdownService, Notifier, RestPagination, RestTable } from '@app/core'
+import { AuthService, ConfirmService, HooksService, MarkdownService, Notifier, PluginService, RestPagination, RestTable } from '@app/core'
 import { formatICU } from '@app/helpers'
 import { BulkService } from '@app/shared/shared-moderation/bulk.service'
 import { VideoCommentForAdminOrUser } from '@app/shared/shared-video-comment/video-comment.model'
@@ -10,6 +10,7 @@ import { NgbTooltip } from '@ng-bootstrap/ng-bootstrap'
 import { UserRight } from '@peertube/peertube-models'
 import { SharedModule, SortMeta } from 'primeng/api'
 import { TableModule } from 'primeng/table'
+import { lastValueFrom } from 'rxjs'
 import { ActorAvatarComponent } from '../shared-actor-image/actor-avatar.component'
 import { AdvancedInputFilter, AdvancedInputFilterComponent } from '../shared-forms/advanced-input-filter.component'
 import { ActionDropdownComponent, DropdownAction } from '../shared-main/buttons/action-dropdown.component'
@@ -22,7 +23,6 @@ import { TableExpanderIconComponent } from '../shared-tables/table-expander-icon
   selector: 'my-video-comment-list-admin-owner',
   templateUrl: './video-comment-list-admin-owner.component.html',
   styleUrls: [ '../shared-moderation/moderation.scss', './video-comment-list-admin-owner.component.scss' ],
-  standalone: true,
   imports: [
     TableModule,
     SharedModule,
@@ -39,8 +39,19 @@ import { TableExpanderIconComponent } from '../shared-tables/table-expander-icon
     RouterLink
   ]
 })
-export class VideoCommentListAdminOwnerComponent extends RestTable <VideoCommentForAdminOrUser> implements OnInit {
-  @Input({ required: true }) mode: 'user' | 'admin'
+export class VideoCommentListAdminOwnerComponent extends RestTable<VideoCommentForAdminOrUser> implements OnInit, OnDestroy {
+  protected router = inject(Router)
+  protected route = inject(ActivatedRoute)
+  private auth = inject(AuthService)
+  private notifier = inject(Notifier)
+  private confirmService = inject(ConfirmService)
+  private videoCommentService = inject(VideoCommentService)
+  private markdownRenderer = inject(MarkdownService)
+  private bulkService = inject(BulkService)
+  private hooks = inject(HooksService)
+  private pluginService = inject(PluginService)
+
+  readonly mode = input.required<'user' | 'admin'>()
 
   comments: VideoCommentForAdminOrUser[]
   totalRecords = 0
@@ -57,61 +68,77 @@ export class VideoCommentListAdminOwnerComponent extends RestTable <VideoComment
     return this.auth.getUser()
   }
 
-  constructor (
-    protected router: Router,
-    protected route: ActivatedRoute,
-    private auth: AuthService,
-    private notifier: Notifier,
-    private confirmService: ConfirmService,
-    private videoCommentService: VideoCommentService,
-    private markdownRenderer: MarkdownService,
-    private bulkService: BulkService
-  ) {
-    super()
+  async ngOnInit () {
+    this.initialize()
 
-    this.videoCommentActions = [
+    if (this.mode() === 'admin') {
+      this.pluginService.addAction('admin-video-comment-list:load-data', () => this.reloadDataInternal())
+    }
+
+    this.buildInputFilters()
+
+    await this.buildCommentActions()
+    await this.buildBulkActions()
+  }
+
+  ngOnDestroy () {
+    if (this.mode() === 'admin') {
+      this.pluginService.removeAction('admin-video-comment-list:load-data')
+    }
+  }
+
+  private async buildCommentActions () {
+    const videoCommentActions: DropdownAction<VideoCommentForAdminOrUser>[][] = [
       [
         {
           label: $localize`Delete this comment`,
           handler: comment => this.removeComment(comment),
-          isDisplayed: () => this.mode === 'user' || this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
+          isDisplayed: () => this.mode() === 'user' || this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
         },
         {
           label: $localize`Delete all comments of this account`,
           description: $localize`Comments are deleted after a few minutes`,
           handler: comment => this.removeCommentsOfAccount(comment),
-          isDisplayed: () => this.mode === 'admin' && this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
+          isDisplayed: () => this.mode() === 'admin' && this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
         }
       ],
       [
         {
           label: $localize`Approve this comment`,
           handler: comment => this.approveComments([ comment ]),
-          isDisplayed: comment => this.mode === 'user' && comment.heldForReview
+          isDisplayed: comment => this.mode() === 'user' && comment.heldForReview
         }
       ]
     ]
+
+    this.videoCommentActions = this.mode() === 'admin'
+      ? await this.hooks.wrapObject(videoCommentActions, 'admin-comments', 'filter:admin-video-comments-list.actions.create.result')
+      : videoCommentActions
   }
 
-  ngOnInit () {
-    this.initialize()
-
-    this.bulkActions = [
+  private async buildBulkActions () {
+    const bulkActions: DropdownAction<VideoCommentForAdminOrUser[]>[] = [
       {
         label: $localize`Delete`,
         handler: comments => this.removeComments(comments),
-        isDisplayed: () => this.mode === 'user' || this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT),
+        isDisplayed: () => this.mode() === 'user' || this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT),
         iconName: 'delete'
       },
       {
         label: $localize`Approve`,
         handler: comments => this.approveComments(comments),
-        isDisplayed: comments => this.mode === 'user' && comments.every(c => c.heldForReview),
+        isDisplayed: comments => this.mode() === 'user' && comments.every(c => c.heldForReview),
         iconName: 'tick'
       }
     ]
 
-    if (this.mode === 'admin') {
+    this.bulkActions = this.mode() === 'admin'
+      ? await this.hooks.wrapObject(bulkActions, 'admin-comments', 'filter:admin-video-comments-list.bulk-actions.create.result')
+      : bulkActions
+  }
+
+  private buildInputFilters () {
+    if (this.mode() === 'admin') {
       this.inputFilters = [
         {
           title: $localize`Advanced filters`,
@@ -131,19 +158,21 @@ export class VideoCommentListAdminOwnerComponent extends RestTable <VideoComment
           ]
         }
       ]
-    } else {
-      this.inputFilters = [
-        {
-          title: $localize`Advanced filters`,
-          children: [
-            {
-              value: 'heldForReview:true',
-              label: $localize`Display comments awaiting your approval`
-            }
-          ]
-        }
-      ]
+
+      return
     }
+
+    this.inputFilters = [
+      {
+        title: $localize`Advanced filters`,
+        children: [
+          {
+            value: 'heldForReview:true',
+            label: $localize`Display comments awaiting your approval`
+          }
+        ]
+      }
+    ]
   }
 
   getIdentifier () {
@@ -162,24 +191,26 @@ export class VideoCommentListAdminOwnerComponent extends RestTable <VideoComment
     return str
   }
 
-  protected reloadDataInternal () {
-    const method = this.mode === 'admin'
+  protected async reloadDataInternal () {
+    const method = this.mode() === 'admin'
       ? this.videoCommentService.listAdminVideoComments.bind(this.videoCommentService)
       : this.videoCommentService.listVideoCommentsOfMyVideos.bind(this.videoCommentService)
 
-    method({ pagination: this.pagination, sort: this.sort, search: this.search }).subscribe({
-      next: async resultList => {
-        this.totalRecords = resultList.total
+    const obs = method({ pagination: this.pagination, sort: this.sort, search: this.search })
 
-        this.comments = []
+    try {
+      const resultList = await lastValueFrom(obs)
 
-        for (const c of resultList.data) {
-          this.comments.push(new VideoCommentForAdminOrUser(c, await this.toHtml(c.text)))
-        }
-      },
+      this.totalRecords = resultList.total
 
-      error: err => this.notifier.error(err.message)
-    })
+      this.comments = []
+
+      for (const c of resultList.data) {
+        this.comments.push(new VideoCommentForAdminOrUser(c, await this.toHtml(c.text)))
+      }
+    } catch (err) {
+      this.notifier.error(err.message)
+    }
   }
 
   private approveComments (comments: VideoCommentForAdminOrUser[]) {

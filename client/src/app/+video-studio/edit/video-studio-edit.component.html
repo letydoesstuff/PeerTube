@@ -67,19 +67,19 @@
       </div>
 
       <my-button
-        theme="primary" i18n-label label="Run video edition" icon="circle-tick"
-        (click)="runEdition()" (keydown.enter)="runEdition()"
-        [disabled]="!form.valid || isRunningEdition || noEdition()"
+        theme="primary" i18n-label label="Apply edits" icon="circle-tick"
+        (click)="runEdit()" (keydown.enter)="runEdit()"
+        [disabled]="!form.valid || isRunningEdit || noEdit()"
       ></my-button>
     </form>
 
     <div class="embed-container">
-      <div class="mb-1 fw-bold" i18n>Video before edition</div>
+      <div class="mb-1 fw-bold" i18n>Original video</div>
       <my-embed [video]="video"></my-embed>
     </div>
 
-    <div class="tasks-container" *ngIf="!noEdition()">
-      <div class="mb-1 fw-bold" i18n>Edition tasks:</div>
+    <div class="tasks-container" *ngIf="!noEdit()">
+      <div class="mb-1 fw-bold" i18n>Edits to apply:</div>
 
       <ol>
         <li *ngFor="let task of getTasksSummary()">{{ task }}</li>

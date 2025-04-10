@@ -23,13 +23,12 @@ $button-font-size: 1rem;
 $header-height: 94px;
 $header-height-small-view: 74px;
 $header-height-mobile-view: 124px;
+$header-mobile-msg-height: 48px;
 
 $menu-width: 248px;
 $menu-collapsed-width: 50px;
 $menu-margin-left: 2rem;
 $menu-overlay-view: 1200px;
-
-$sub-menu-height: 81px;
 
 $banner-inverted-ratio: math.div(1, 6);
 
@@ -61,6 +60,10 @@ $video-thumbnail-small-width: 125px;
 
 // ---------------------------------------------------------------------------
 
+$instance-img-radius: 31%;
+
+// ---------------------------------------------------------------------------
+
 $theater-bottom-space: 115px;
 $player-portrait-bottom-space: 50px;
 
@@ -80,9 +83,6 @@ $primeng-breakpoint: 960px;
 // ---------------------------------------------------------------------------
 
 $variables: (
-  --embed-foreground-color: var(--embed-foreground-color),
-  --embed-big-play-background-color: var(--embed-big-play-background-color),
-
   --x-margin-content: var(--x-margin-content),
   --main-col-width: var(--main-col-width),
   --header-height: var(--header-height),
@@ -199,12 +199,16 @@ $variables: (
   --primary-50: var(--primary-50),
 
   --border-primary: var(--border-primary),
+  --border-secondary: var(--border-secondary),
 
   --alert-primary-fg: var(--alert-primary-fg),
   --alert-primary-bg: var(--alert-primary-bg),
   --alert-primary-border-color: var(--alert-primary-border-color),
 
   --menu-margin-left: var(--menu-margin-left),
+
+  --embed-fg: var(--embed-fg),
+  --embed-big-play-bg: var(--embed-big-play-bg),
 );
 
 // SASS type check our CSS variables

@@ -1,11 +1,14 @@
-import { VideoCaption, VideoCaptionObject } from '@peertube/peertube-models'
+import { FileStorage, type FileStorageType, VideoCaption, VideoCaptionObject } from '@peertube/peertube-models'
 import { buildUUID } from '@peertube/peertube-node-utils'
+import { getObjectStoragePublicFileUrl } from '@server/lib/object-storage/urls.js'
+import { removeCaptionObjectStorage } from '@server/lib/object-storage/videos.js'
 import {
   MVideo,
   MVideoCaption,
   MVideoCaptionFormattable,
   MVideoCaptionLanguageUrl,
-  MVideoCaptionVideo
+  MVideoCaptionVideo,
+  MVideoOwned
 } from '@server/types/models/index.js'
 import { remove } from 'fs-extra/esm'
 import { join } from 'path'
@@ -17,6 +20,7 @@ import {
   Column,
   CreatedAt,
   DataType,
+  Default,
   ForeignKey,
   Is, Scopes,
   Table,
@@ -26,18 +30,20 @@ import { isVideoCaptionLanguageValid } from '../../helpers/custom-validators/vid
 import { logger } from '../../helpers/logger.js'
 import { CONFIG } from '../../initializers/config.js'
 import { CONSTRAINTS_FIELDS, LAZY_STATIC_PATHS, VIDEO_LANGUAGES, WEBSERVER } from '../../initializers/constants.js'
-import { SequelizeModel, buildWhereIdOrUUID, throwIfNotValid } from '../shared/index.js'
+import { SequelizeModel, buildWhereIdOrUUID, doesExist, throwIfNotValid } from '../shared/index.js'
 import { VideoModel } from './video.js'
 
 export enum ScopeNames {
-  WITH_VIDEO_UUID_AND_REMOTE = 'WITH_VIDEO_UUID_AND_REMOTE'
+  CAPTION_WITH_VIDEO = 'CAPTION_WITH_VIDEO'
 }
 
+const videoAttributes = [ 'id', 'name', 'remote', 'uuid', 'url', 'state' ]
+
 @Scopes(() => ({
-  [ScopeNames.WITH_VIDEO_UUID_AND_REMOTE]: {
+  [ScopeNames.CAPTION_WITH_VIDEO]: {
     include: [
       {
-        attributes: [ 'id', 'uuid', 'remote' ],
+        attributes: videoAttributes,
         model: VideoModel.unscoped(),
         required: true
       }
@@ -76,6 +82,11 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
   @AllowNull(false)
   @Column
   filename: string
+
+  @AllowNull(false)
+  @Default(FileStorage.FILE_SYSTEM)
+  @Column
+  storage: FileStorageType
 
   @AllowNull(true)
   @Column(DataType.STRING(CONSTRAINTS_FIELDS.COMMONS.URL.max))
@@ -125,22 +136,40 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
     return caption.save({ transaction })
   }
 
+  static async doesOwnedFileExist (filename: string, storage: FileStorageType) {
+    const query = 'SELECT 1 FROM "videoCaption" ' +
+      `WHERE "filename" = $filename AND "storage" = $storage LIMIT 1`
+
+    return doesExist({ sequelize: this.sequelize, query, bind: { filename, storage } })
+  }
+
   // ---------------------------------------------------------------------------
+
+  static loadWithVideo (captionId: number, transaction?: Transaction): Promise<MVideoCaptionVideo> {
+    const query = {
+      where: { id: captionId },
+      include: [
+        {
+          model: VideoModel.unscoped(),
+          attributes: videoAttributes
+        }
+      ],
+      transaction
+    }
+
+    return VideoCaptionModel.findOne(query)
+  }
 
   static loadByVideoIdAndLanguage (videoId: string | number, language: string, transaction?: Transaction): Promise<MVideoCaptionVideo> {
     const videoInclude = {
       model: VideoModel.unscoped(),
-      attributes: [ 'id', 'name', 'remote', 'uuid', 'url' ],
+      attributes: videoAttributes,
       where: buildWhereIdOrUUID(videoId)
     }
 
     const query = {
-      where: {
-        language
-      },
-      include: [
-        videoInclude
-      ],
+      where: { language },
+      include: [ videoInclude ],
       transaction
     }
 
@@ -155,7 +184,7 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
       include: [
         {
           model: VideoModel.unscoped(),
-          attributes: [ 'id', 'remote', 'uuid' ]
+          attributes: videoAttributes
         }
       ]
     }
@@ -186,7 +215,7 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
       transaction
     }
 
-    return VideoCaptionModel.scope(ScopeNames.WITH_VIDEO_UUID_AND_REMOTE).findAll(query)
+    return VideoCaptionModel.scope(ScopeNames.CAPTION_WITH_VIDEO).findAll(query)
   }
 
   static async listCaptionsOfMultipleVideos (videoIds: number[], transaction?: Transaction) {
@@ -200,7 +229,7 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
       transaction
     }
 
-    const captions = await VideoCaptionModel.scope(ScopeNames.WITH_VIDEO_UUID_AND_REMOTE).findAll<MVideoCaptionVideo>(query)
+    const captions = await VideoCaptionModel.scope(ScopeNames.CAPTION_WITH_VIDEO).findAll<MVideoCaptionVideo>(query)
     const result: { [ id: number ]: MVideoCaptionVideo[] } = {}
 
     for (const id of videoIds) {
@@ -233,7 +262,13 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
         label: VideoCaptionModel.getLanguageLabel(this.language)
       },
       automaticallyGenerated: this.automaticallyGenerated,
-      captionPath: this.getCaptionStaticPath(),
+
+      captionPath: this.Video.isOwned() && this.fileUrl
+        ? null // On object storage
+        : this.getCaptionStaticPath(),
+
+      fileUrl: this.getFileUrl(this.Video),
+
       updatedAt: this.updatedAt.toISOString()
     }
   }
@@ -243,7 +278,7 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
       identifier: this.language,
       name: VideoCaptionModel.getLanguageLabel(this.language),
       automaticallyGenerated: this.automaticallyGenerated,
-      url: this.getFileUrl(video)
+      url: this.getOriginFileUrl(video)
     }
   }
 
@@ -262,14 +297,30 @@ export class VideoCaptionModel extends SequelizeModel<VideoCaptionModel> {
   }
 
   removeCaptionFile (this: MVideoCaption) {
+    if (this.storage === FileStorage.OBJECT_STORAGE) {
+      return removeCaptionObjectStorage(this)
+    }
+
     return remove(this.getFSPath())
   }
 
-  getFileUrl (this: MVideoCaptionLanguageUrl, video: MVideo) {
-    if (video.isOwned()) return WEBSERVER.URL + this.getCaptionStaticPath()
+  // ---------------------------------------------------------------------------
+
+  getFileUrl (this: MVideoCaptionLanguageUrl, video: MVideoOwned) {
+    if (video.isOwned() && this.storage === FileStorage.OBJECT_STORAGE) {
+      return getObjectStoragePublicFileUrl(this.fileUrl, CONFIG.OBJECT_STORAGE.CAPTIONS)
+    }
+
+    return WEBSERVER.URL + this.getCaptionStaticPath()
+  }
+
+  getOriginFileUrl (this: MVideoCaptionLanguageUrl, video: MVideoOwned) {
+    if (video.isOwned()) return this.getFileUrl(video)
 
     return this.fileUrl
   }
+
+  // ---------------------------------------------------------------------------
 
   isEqual (this: MVideoCaption, other: MVideoCaption) {
     if (this.fileUrl) return this.fileUrl === other.fileUrl

@@ -40,7 +40,7 @@ import { ModelCache } from '@server/models/shared/model-cache.js'
 import { MVideoSource } from '@server/types/models/video/video-source.js'
 import Bluebird from 'bluebird'
 import { remove } from 'fs-extra/esm'
-import { FindOptions, IncludeOptions, Includeable, Op, QueryTypes, ScopeOptions, Sequelize, Transaction, WhereOptions } from 'sequelize'
+import { FindOptions, Includeable, Op, QueryTypes, ScopeOptions, Sequelize, Transaction, WhereOptions } from 'sequelize'
 import {
   AfterCreate,
   AfterDestroy,
@@ -99,6 +99,7 @@ import {
   MVideoFullLight,
   MVideoId,
   MVideoImmutable,
+  MVideoOwned,
   MVideoThumbnail,
   MVideoThumbnailBlacklist,
   MVideoWithAllFiles,
@@ -114,7 +115,6 @@ import { AccountModel } from '../account/account.js'
 import { ActorImageModel } from '../actor/actor-image.js'
 import { ActorModel } from '../actor/actor.js'
 import { VideoAutomaticTagModel } from '../automatic-tag/video-automatic-tag.js'
-import { VideoRedundancyModel } from '../redundancy/video-redundancy.js'
 import { ServerModel } from '../server/server.js'
 import { TrackerModel } from '../server/tracker.js'
 import { VideoTrackerModel } from '../server/video-tracker.js'
@@ -122,6 +122,7 @@ import {
   SequelizeModel,
   buildTrigramSearchIndex,
   buildWhereIdOrUUID,
+  doesExist,
   getVideoSort,
   isOutdated,
   setAsUpdated,
@@ -308,53 +309,30 @@ export type ForAPIOptions = {
       }
     ]
   },
-  [ScopeNames.WITH_WEB_VIDEO_FILES]: (withRedundancies = false) => {
-    let subInclude: any[] = []
-
-    if (withRedundancies === true) {
-      subInclude = [
-        {
-          attributes: [ 'fileUrl' ],
-          model: VideoRedundancyModel.unscoped(),
-          required: false
-        }
-      ]
-    }
-
+  [ScopeNames.WITH_WEB_VIDEO_FILES]: () => {
     return {
       include: [
         {
           model: VideoFileModel,
           separate: true,
-          required: false,
-          include: subInclude
+          required: false
         }
       ]
     }
   },
-  [ScopeNames.WITH_STREAMING_PLAYLISTS]: (withRedundancies = false) => {
-    const subInclude: IncludeOptions[] = [
-      {
-        model: VideoFileModel,
-        required: false
-      }
-    ]
-
-    if (withRedundancies === true) {
-      subInclude.push({
-        attributes: [ 'fileUrl' ],
-        model: VideoRedundancyModel.unscoped(),
-        required: false
-      })
-    }
-
+  [ScopeNames.WITH_STREAMING_PLAYLISTS]: () => {
     return {
       include: [
         {
           model: VideoStreamingPlaylistModel.unscoped(),
           required: false,
           separate: true,
-          include: subInclude
+          include: [
+            {
+              model: VideoFileModel,
+              required: false
+            }
+          ]
         }
       ]
     }
@@ -959,7 +937,7 @@ export class VideoModel extends SequelizeModel<VideoModel> {
       },
       include: [
         {
-          attributes: [ 'filename', 'language', 'fileUrl' ],
+          attributes: [ 'filename', 'language', 'storage', 'fileUrl' ],
           model: VideoCaptionModel.unscoped(),
           required: false
         },
@@ -1165,6 +1143,8 @@ export class VideoModel extends SequelizeModel<VideoModel> {
     tagsAllOf?: string[]
     privacyOneOf?: VideoPrivacyType[]
 
+    host?: string
+
     accountId?: number
     videoChannelId?: number
 
@@ -1208,6 +1188,7 @@ export class VideoModel extends SequelizeModel<VideoModel> {
         'categoryOneOf',
         'licenceOneOf',
         'languageOneOf',
+        'host',
         'autoTagOneOf',
         'tagsOneOf',
         'tagsAllOf',
@@ -1636,6 +1617,8 @@ export class VideoModel extends SequelizeModel<VideoModel> {
     return videos.map(v => v.id)
   }
 
+  // ---------------------------------------------------------------------------
+
   // threshold corresponds to how many video the field should have to be returned
   static async getRandomFieldSamples (field: 'category' | 'channelId', threshold: number, count: number) {
     const serverActor = await getServerActor()
@@ -1674,6 +1657,44 @@ export class VideoModel extends SequelizeModel<VideoModel> {
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+
+  static guessLanguageOrCategoryOfChannel (channelId: number, type: 'category'): Promise<number>
+  static guessLanguageOrCategoryOfChannel (channelId: number, type: 'language'): Promise<string>
+  static guessLanguageOrCategoryOfChannel (channelId: number, type: 'language' | 'category') {
+    const queryOptions: BuildVideosListQueryOptions = {
+      attributes: [ `COUNT("${type}") AS "total"`, `"${type}"` ],
+      group: `GROUP BY "${type}"`,
+      having: `HAVING COUNT("${type}") > 0`,
+      start: 0,
+      count: 1,
+      sort: '-total',
+      videoChannelId: channelId,
+      displayOnlyForFollower: null,
+      serverAccountIdForBlock: null
+    }
+
+    const queryBuilder = new VideosIdListQueryBuilder(VideoModel.sequelize)
+
+    return queryBuilder.queryVideoIds(queryOptions)
+      .then(rows => {
+        const result = rows[0]?.[type]
+        if (!result) return undefined
+
+        if (type === 'category') return parseInt(result, 10)
+
+        return result as string
+      })
+  }
+
+  static channelHasNSFWContent (channelId: number) {
+    const query = 'SELECT 1 FROM "video" WHERE "nsfw" IS TRUE AND "channelId" = $channelId LIMIT 1'
+
+    return doesExist({ sequelize: this.sequelize, query, bind: { channelId } })
+  }
+
+  // ---------------------------------------------------------------------------
 
   private static async getAvailableForApi (
     options: BuildVideosListQueryOptions,
@@ -1796,11 +1817,11 @@ export class VideoModel extends SequelizeModel<VideoModel> {
   // ---------------------------------------------------------------------------
 
   getMaxFPS () {
-    return this.getMaxQualityFile(VideoFileStream.VIDEO).fps
+    return this.getMaxQualityFile(VideoFileStream.VIDEO)?.fps || 0
   }
 
   getMaxResolution () {
-    return this.getMaxQualityFile(VideoFileStream.VIDEO).resolution
+    return this.getMaxQualityFile(VideoFileStream.VIDEO)?.resolution || this.getMaxQualityFile(VideoFileStream.AUDIO)?.resolution
   }
 
   hasAudio () {
@@ -1866,7 +1887,7 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
   // ---------------------------------------------------------------------------
 
-  isOwned () {
+  isOwned (this: MVideoOwned) {
     return this.remote === false
   }
 
@@ -1875,7 +1896,7 @@ export class VideoModel extends SequelizeModel<VideoModel> {
   }
 
   getEmbedStaticPath () {
-    return buildVideoEmbedPath(this)
+    return buildVideoEmbedPath({ shortUUID: uuidToShort(this.uuid) })
   }
 
   getMiniatureStaticPath (this: Pick<MVideoThumbnail, 'getMiniature' | 'Thumbnails'>) {
@@ -1943,7 +1964,7 @@ export class VideoModel extends SequelizeModel<VideoModel> {
       if (isArray(videoAP.VideoCaptions)) return videoAP.VideoCaptions
 
       return this.$get('VideoCaptions', {
-        attributes: [ 'filename', 'language', 'fileUrl', 'automaticallyGenerated' ],
+        attributes: [ 'filename', 'language', 'fileUrl', 'storage', 'automaticallyGenerated' ],
         transaction
       }) as Promise<MVideoCaptionLanguageUrl[]>
     }
@@ -2015,19 +2036,19 @@ export class VideoModel extends SequelizeModel<VideoModel> {
 
   // ---------------------------------------------------------------------------
 
-  removeWebVideoFile (videoFile: MVideoFile, isRedundancy = false) {
-    const filePath = isRedundancy
-      ? VideoPathManager.Instance.getFSRedundancyVideoFilePath(this, videoFile)
-      : VideoPathManager.Instance.getFSVideoFileOutputPath(this, videoFile)
+  removeWebVideoFile (videoFile: MVideoFile) {
+    const filePath = VideoPathManager.Instance.getFSVideoFileOutputPath(this, videoFile)
 
-    const promises: Promise<any>[] = [ remove(filePath) ]
-    if (!isRedundancy) promises.push(videoFile.removeTorrent())
+    const promises: Promise<any>[] = [
+      remove(filePath),
+      videoFile.removeTorrent()
+    ]
 
     if (videoFile.storage === FileStorage.OBJECT_STORAGE) {
       promises.push(removeWebVideoObjectStorage(videoFile))
     }
 
-    logger.debug(`Removing files associated to web video ${videoFile.filename}`, { videoFile, isRedundancy, ...lTags(this.uuid) })
+    logger.debug(`Removing files associated to web video ${videoFile.filename}`, { videoFile, ...lTags(this.uuid) })
 
     return Promise.all(promises)
   }

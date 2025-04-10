@@ -1,12 +1,14 @@
-import { Sequelize } from 'sequelize'
+import { ActorImageType, UserNotificationType_Type } from '@peertube/peertube-models'
 import { AbstractRunQuery, ModelBuilder } from '@server/models/shared/index.js'
 import { UserNotificationModelForApi } from '@server/types/models/index.js'
-import { ActorImageType } from '@peertube/peertube-models'
+import { Sequelize } from 'sequelize'
 import { getSort } from '../../shared/index.js'
 
 export interface ListNotificationsOptions {
   userId: number
   unread?: boolean
+  typeOneOf?: UserNotificationType_Type[]
+
   sort: string
   offset: number
   limit: number
@@ -61,6 +63,11 @@ export class UserNotificationListQueryBuilder extends AbstractRunQuery {
       base += 'AND "UserNotificationModel"."read" IS TRUE '
     }
 
+    if (this.options.typeOneOf) {
+      base += 'AND "UserNotificationModel"."type" IN (:typeOneOf) '
+      this.replacements.typeOneOf = this.options.typeOneOf
+    }
+
     return `WHERE ${base}`
   }
 
@@ -80,6 +87,7 @@ export class UserNotificationListQueryBuilder extends AbstractRunQuery {
       "Video"."id" AS "Video.id",
       "Video"."uuid" AS "Video.uuid",
       "Video"."name" AS "Video.name",
+      "Video"."state" AS "Video.state",
       "Video->VideoChannel"."id" AS "Video.VideoChannel.id",
       "Video->VideoChannel"."name" AS "Video.VideoChannel.name",
       "Video->VideoChannel->Actor"."id" AS "Video.VideoChannel.Actor.id",
@@ -106,18 +114,21 @@ export class UserNotificationListQueryBuilder extends AbstractRunQuery {
       "VideoComment->Video"."id" AS "VideoComment.Video.id",
       "VideoComment->Video"."uuid" AS "VideoComment.Video.uuid",
       "VideoComment->Video"."name" AS "VideoComment.Video.name",
+      "VideoComment->Video"."state" AS "VideoComment.Video.state",
       "Abuse"."id" AS "Abuse.id",
       "Abuse"."state" AS "Abuse.state",
       "Abuse->VideoAbuse"."id" AS "Abuse.VideoAbuse.id",
       "Abuse->VideoAbuse->Video"."id" AS "Abuse.VideoAbuse.Video.id",
       "Abuse->VideoAbuse->Video"."uuid" AS "Abuse.VideoAbuse.Video.uuid",
       "Abuse->VideoAbuse->Video"."name" AS "Abuse.VideoAbuse.Video.name",
+      "Abuse->VideoAbuse->Video"."state" AS "Abuse.VideoAbuse.Video.state",
       "Abuse->VideoCommentAbuse"."id" AS "Abuse.VideoCommentAbuse.id",
       "Abuse->VideoCommentAbuse->VideoComment"."id" AS "Abuse.VideoCommentAbuse.VideoComment.id",
       "Abuse->VideoCommentAbuse->VideoComment"."originCommentId" AS "Abuse.VideoCommentAbuse.VideoComment.originCommentId",
       "Abuse->VideoCommentAbuse->VideoComment->Video"."id" AS "Abuse.VideoCommentAbuse.VideoComment.Video.id",
       "Abuse->VideoCommentAbuse->VideoComment->Video"."name" AS "Abuse.VideoCommentAbuse.VideoComment.Video.name",
       "Abuse->VideoCommentAbuse->VideoComment->Video"."uuid" AS "Abuse.VideoCommentAbuse.VideoComment.Video.uuid",
+      "Abuse->VideoCommentAbuse->VideoComment->Video"."state" AS "Abuse.VideoCommentAbuse.VideoComment.Video.state",
       "Abuse->FlaggedAccount"."id" AS "Abuse.FlaggedAccount.id",
       "Abuse->FlaggedAccount"."name" AS "Abuse.FlaggedAccount.name",
       "Abuse->FlaggedAccount"."description" AS "Abuse.FlaggedAccount.description",
@@ -138,6 +149,7 @@ export class UserNotificationListQueryBuilder extends AbstractRunQuery {
       "VideoBlacklist->Video"."id" AS "VideoBlacklist.Video.id",
       "VideoBlacklist->Video"."uuid" AS "VideoBlacklist.Video.uuid",
       "VideoBlacklist->Video"."name" AS "VideoBlacklist.Video.name",
+      "VideoBlacklist->Video"."state" AS "VideoBlacklist.Video.state",
       "VideoImport"."id" AS "VideoImport.id",
       "VideoImport"."magnetUri" AS "VideoImport.magnetUri",
       "VideoImport"."targetUrl" AS "VideoImport.targetUrl",
@@ -145,6 +157,7 @@ export class UserNotificationListQueryBuilder extends AbstractRunQuery {
       "VideoImport->Video"."id" AS "VideoImport.Video.id",
       "VideoImport->Video"."uuid" AS "VideoImport.Video.uuid",
       "VideoImport->Video"."name" AS "VideoImport.Video.name",
+      "VideoImport->Video"."state" AS "VideoImport.Video.state",
       "Plugin"."id" AS "Plugin.id",
       "Plugin"."name" AS "Plugin.name",
       "Plugin"."type" AS "Plugin.type",
@@ -188,7 +201,8 @@ export class UserNotificationListQueryBuilder extends AbstractRunQuery {
       "VideoCaption"."language" AS "VideoCaption.language",
       "VideoCaption->Video"."id" AS "VideoCaption.Video.id",
       "VideoCaption->Video"."uuid" AS "VideoCaption.Video.uuid",
-      "VideoCaption->Video"."name" AS "VideoCaption.Video.name"`
+      "VideoCaption->Video"."name" AS "VideoCaption.Video.name",
+      "VideoCaption->Video"."state" AS "VideoCaption.Video.state"`
   }
 
   private getJoins () {

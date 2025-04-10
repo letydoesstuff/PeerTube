@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core'
+import { Component, OnInit, inject } from '@angular/core'
 import { ActivatedRoute, Router } from '@angular/router'
 import { ConfirmService, Notifier, ServerService } from '@app/core'
 import { FormReactive } from '@app/shared/shared-forms/form-reactive'
@@ -21,7 +21,6 @@ import { GlobalIconComponent } from '@app/shared/shared-icons/global-icon.compon
   selector: 'my-video-studio-edit',
   templateUrl: './video-studio-edit.component.html',
   styleUrls: [ './video-studio-edit.component.scss' ],
-  standalone: true,
   imports: [
     FormsModule,
     ReactiveFormsModule,
@@ -35,22 +34,18 @@ import { GlobalIconComponent } from '@app/shared/shared-icons/global-icon.compon
   ]
 })
 export class VideoStudioEditComponent extends FormReactive implements OnInit {
-  isRunningEdition = false
+  protected formReactiveService = inject(FormReactiveService)
+  private serverService = inject(ServerService)
+  private notifier = inject(Notifier)
+  private router = inject(Router)
+  private route = inject(ActivatedRoute)
+  private videoStudioService = inject(VideoStudioService)
+  private loadingBar = inject(LoadingBarService)
+  private confirmService = inject(ConfirmService)
+
+  isRunningEdit = false
 
   video: VideoDetails
-
-  constructor (
-    protected formReactiveService: FormReactiveService,
-    private serverService: ServerService,
-    private notifier: Notifier,
-    private router: Router,
-    private route: ActivatedRoute,
-    private videoStudioService: VideoStudioService,
-    private loadingBar: LoadingBarService,
-    private confirmService: ConfirmService
-  ) {
-    super()
-  }
 
   ngOnInit () {
     this.video = this.route.snapshot.data.video
@@ -87,21 +82,22 @@ export class VideoStudioEditComponent extends FormReactive implements OnInit {
     return this.serverService.getHTMLConfig().video.image.extensions
   }
 
-  async runEdition () {
-    if (this.isRunningEdition) return
+  async runEdit () {
+    if (this.isRunningEdit) return
     if (!this.form.valid) return
-    if (this.noEdition()) return
+    if (this.noEdit()) return
 
     const title = $localize`Are you sure you want to edit "${this.video.name}"?`
     const listHTML = this.getTasksSummary().map(t => `<li>${t}</li>`).join('')
 
-    // eslint-disable-next-line max-len
-    const confirmHTML = $localize`The current video will be overwritten by this edited video and <strong>you won't be able to recover it</strong>.<br /><br />` +
+    const confirmHTML =
+      // eslint-disable-next-line max-len
+      $localize`The current video will be overwritten by this edited video and <strong>you won't be able to recover it</strong>.<br /><br />` +
       $localize`As a reminder, the following tasks will be executed: <ol>${listHTML}</ol>`
 
     if (await this.confirmService.confirm(confirmHTML, title) !== true) return
 
-    this.isRunningEdition = true
+    this.isRunningEdit = true
 
     const tasks = this.buildTasks()
 
@@ -110,7 +106,7 @@ export class VideoStudioEditComponent extends FormReactive implements OnInit {
     return this.videoStudioService.editVideo(this.video.uuid, tasks)
       .subscribe({
         next: () => {
-          this.notifier.success($localize`Edition tasks created.`)
+          this.notifier.success($localize`Editing tasks created.`)
 
           // Don't redirect to old video version watch page that could be confusing for users
           this.router.navigateByUrl('/my-library/videos')
@@ -118,7 +114,7 @@ export class VideoStudioEditComponent extends FormReactive implements OnInit {
 
         error: err => {
           this.loadingBar.useRef().complete()
-          this.isRunningEdition = false
+          this.isRunningEdit = false
           this.notifier.error(err.message)
           logger.error(err)
         }
@@ -133,7 +129,7 @@ export class VideoStudioEditComponent extends FormReactive implements OnInit {
     return $localize`(extensions: ${this.imageExtensions.join(', ')})`
   }
 
-  noEdition () {
+  noEdit () {
     return this.buildTasks().length === 0
   }
 
@@ -183,7 +179,6 @@ export class VideoStudioEditComponent extends FormReactive implements OnInit {
 
     const cut = value['cut']
     if (cut['start'] !== 0 || cut['end'] !== this.video.duration) {
-
       const options: VideoStudioTaskCut['options'] = {}
       if (cut['start'] !== 0) options.start = cut['start']
       if (cut['end'] !== this.video.duration) options.end = cut['end']
@@ -223,5 +218,4 @@ export class VideoStudioEditComponent extends FormReactive implements OnInit {
 
     return tasks
   }
-
 }

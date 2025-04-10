@@ -31,14 +31,16 @@ import { Redis } from '../../../lib/redis.js'
 import { ActorModel } from '../../../models/actor/actor.js'
 import {
   areValidationErrors,
+  checkEmailDoesNotAlreadyExist,
   checkUserCanManageAccount,
-  checkUserEmailExist,
+  checkUserEmailExistPermissive,
   checkUserIdExist,
-  checkUserNameOrEmailDoNotAlreadyExist,
+  checkUsernameOrEmailDoNotAlreadyExist,
   doesVideoChannelIdExist,
   doesVideoExist,
   isValidVideoIdParam
 } from '../shared/index.js'
+import { Hooks } from '@server/lib/plugins/hooks.js'
 
 export const usersListValidator = [
   query('blocked')
@@ -84,7 +86,7 @@ export const usersAddValidator = [
 
   async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (areValidationErrors(req, res, { omitBodyLog: true })) return
-    if (!await checkUserNameOrEmailDoNotAlreadyExist(req.body.username, req.body.email, res)) return
+    if (!await checkUsernameOrEmailDoNotAlreadyExist(req.body.username, req.body.email, res)) return
 
     const authUser = res.locals.oauth.token.User
     if (authUser.role !== UserRole.ADMINISTRATOR && req.body.role !== UserRole.USER) {
@@ -198,6 +200,8 @@ export const usersUpdateValidator = [
       return res.fail({ message: 'Cannot change root role.' })
     }
 
+    if (req.body.email && req.body.email !== user.email && !await checkEmailDoesNotAlreadyExist(req.body.email, res)) return
+
     return next()
   }
 ]
@@ -277,6 +281,8 @@ export const usersUpdateMeValidator = [
 
     if (areValidationErrors(req, res, { omitBodyLog: true })) return
 
+    if (req.body.email && req.body.email !== user.email && !await checkEmailDoesNotAlreadyExist(req.body.email, res)) return
+
     return next()
   }
 ]
@@ -334,9 +340,13 @@ export const usersAskResetPasswordValidator = [
   async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (areValidationErrors(req, res)) return
 
-    const exists = await checkUserEmailExist(req.body.email, res, false)
+    const { email } = await Hooks.wrapObject({
+      email: req.body.email
+    }, 'filter:api.users.ask-reset-password.body')
+
+    const exists = await checkUserEmailExistPermissive(email, res, false)
     if (!exists) {
-      logger.debug('User with email %s does not exist (asking reset password).', req.body.email)
+      logger.debug('User with email %s does not exist (asking reset password).', email)
       // Do not leak our emails
       return res.status(HttpStatusCode.NO_CONTENT_204).end()
     }

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, Input, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, ElementRef, OnInit, inject, input } from '@angular/core'
 import { HooksService } from '@app/core/plugins/hooks.service'
 
 const icons = {
@@ -14,9 +14,13 @@ const icons = {
   'following': require('../../../assets/images/misc/account-arrow-right.svg'), // material ui
   'tip': require('../../../assets/images/misc/tip.svg'), // material ui
   'flame': require('../../../assets/images/misc/flame.svg'),
+  'fediverse': require('../../../assets/images/misc/fediverse.svg'),
+  'mastodon': require('../../../assets/images/misc/mastodon.svg'),
+  'bluesky': require('../../../assets/images/misc/bluesky.svg'),
 
   // feather/lucide icons
   'menu': require('../../../assets/images/feather/menu.svg'),
+  'link': require('../../../assets/images/feather/link.svg'),
   'history': require('../../../assets/images/feather/history.svg'),
   'registry': require('../../../assets/images/feather/registry.svg'),
   'subscriptions': require('../../../assets/images/feather/subscriptions.svg'),
@@ -98,19 +102,17 @@ export type GlobalIconName = keyof typeof icons
   standalone: true
 })
 export class GlobalIconComponent implements OnInit {
-  @Input({ required: true }) iconName: GlobalIconName
+  private el = inject(ElementRef)
+  private hooks = inject(HooksService)
 
-  constructor (
-    private el: ElementRef,
-    private hooks: HooksService
-  ) { }
+  readonly iconName = input.required<GlobalIconName>()
 
   async ngOnInit () {
     const nativeElement = this.el.nativeElement as HTMLElement
 
     nativeElement.innerHTML = await this.hooks.wrapFun(
       this.getSVGContent.bind(this),
-      { name: this.iconName },
+      { name: this.iconName() },
       'common',
       'filter:internal.common.svg-icons.get-content.params',
       'filter:internal.common.svg-icons.get-content.result'

@@ -1,19 +1,20 @@
 @use '_variables' as *;
 @use '_mixins' as *;
-@use 'video.js/dist/video-js';
-
-$assets-path: '../../assets/';
-
-@use '../../sass/player/index';
+@use '_css-variables' as *;
+@use '../player/build/peertube-player';
 
 [hidden] {
   display: none !important;
 }
 
 body {
-  font-family: $main-fonts;
-  font-weight: $font-regular;
-  color: #000;
+  @include define-css-variables();
+
+  & {
+    font-family: $main-fonts;
+    font-weight: $font-regular;
+    color: #000;
+  }
 }
 
 video {
