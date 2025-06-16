@@ -1,19 +1,20 @@
-@use '_variables' as *;
-@use '_mixins' as *;
-@use '_icons' as *;
+@use "_variables" as *;
+@use "_mixins" as *;
+@use "_icons" as *;
 
 $hover-bg: pvar(--bg-secondary-400);
+$hover-bg-2: pvar(--bg-secondary-350);
 
 /* stylelint-disable */
-@import 'primeng/resources/primeng.css';
+@import "primeng/resources/primeng.css";
 
 // Override primeng style we don't want
-input[type=button] {
+input[type="button"] {
   border-radius: inherit;
 }
 
 p-table .p-datatable-header .caption {
-  margin-bottom: 15px;
+  margin-bottom: 1rem;
 }
 
 // Taken from old nova light theme
@@ -90,10 +91,12 @@ body .p-paginator .p-paginator-current {
   min-width: 2.286em;
   line-height: 2.286em;
 }
-body .p-paginator .p-dropdown .p-dropdown-trigger, body .p-paginator .p-dropdown .p-dropdown-label {
+body .p-paginator .p-dropdown .p-dropdown-trigger,
+body .p-paginator .p-dropdown .p-dropdown-label {
   color: pvar(--fg-300);
 }
-body .p-paginator .p-dropdown:hover .p-dropdown-trigger, body .p-paginator .p-dropdown:hover .p-dropdown-label {
+body .p-paginator .p-dropdown:hover .p-dropdown-trigger,
+body .p-paginator .p-dropdown:hover .p-dropdown-label {
   color: pvar(--fg);
 }
 body .p-paginator .p-paginator-first:before {
@@ -172,7 +175,8 @@ body .p-dropdown .p-dropdown-label {
 body .p-dropdown .p-dropdown-label.p-placeholder {
   color: pvar(--input-placeholder);
 }
-.p-dropdown .p-dropdown-label:focus, .p-dropdown .p-dropdown-label:enabled:focus {
+.p-dropdown .p-dropdown-label:focus,
+.p-dropdown .p-dropdown-label:enabled:focus {
   outline: 0 none;
   box-shadow: none;
 }
@@ -493,12 +497,12 @@ body p-autocomplete.ng-dirty.ng-invalid > .p-autocomplete > .p-inputtext {
 .p-chips .p-chips-multiple-container .p-chips-token {
   padding: 2px 15px;
   margin-right: 0.5rem;
-  background: pvar(--bg-secondary-500);
+  background: pvar(--input-bg-550);
   color: pvar(--fg);
   border-radius: 4px;
 }
 .p-chips .p-chips-multiple-container .p-chips-token.p-focus {
-  background: pvar(--bg-secondary-500);
+  background: pvar(--input-bg-600);
   color: pvar(--fg);
 }
 .p-chips .p-chips-multiple-container .p-chips-token .p-chips-token-icon {
@@ -508,7 +512,7 @@ body p-autocomplete.ng-dirty.ng-invalid > .p-autocomplete > .p-inputtext {
   padding: 3px 0;
 }
 .p-chips .p-chips-multiple-container .p-chips-input-token input {
-  color: pvar(--input-placeholder);
+  color: pvar(--input-fg);
   padding: 0;
   margin: 0;
 }
@@ -544,12 +548,13 @@ p-chips.p-chips-clearable .p-chips-clear-icon {
 }
 .p-multiselect .p-multiselect-label {
   padding: pvar(--input-y-padding) pvar(--input-x-padding);
-  line-height: normal;
+  line-height: 1.5rem;
   font-weight: normal;
   transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 .p-multiselect .p-multiselect-label.p-placeholder {
   color: pvar(--input-placeholder);
+  font-size: 14px;
 }
 .p-multiselect.p-multiselect-chip .p-multiselect-token {
   padding: 2px 7px;
@@ -664,7 +669,7 @@ p-chips.p-chips-clearable .p-chips-clear-icon {
 }
 .p-multiselect-panel .p-multiselect-items .p-multiselect-item:not(.p-highlight):not(.p-disabled):hover {
   color: pvar(--fg);
-  background: pvar(--bg-secondary-500);
+  background: $hover-bg;
 }
 .p-multiselect-panel .p-multiselect-items .p-multiselect-item .p-checkbox {
   margin-right: 0.5rem;
@@ -747,7 +752,6 @@ p-multiselect.ng-dirty.ng-invalid > .p-multiselect {
   background-color: #f4f4f4;
 }
 
-
 // ---------------------------------------------------------------------------
 // PeerTube customizations
 // ---------------------------------------------------------------------------
@@ -770,7 +774,9 @@ p-table {
       gap: 0.5rem;
 
       .left-buttons {
-        @include padding-left(1rem);
+        @include font-size(22px);
+
+        color: pvar(--fg-300);
       }
     }
   }
@@ -783,23 +789,18 @@ p-table {
     white-space: nowrap;
   }
 
-  td, th {
+  td,
+  th {
     font-family: $main-fonts;
     font-size: 15px;
     color: pvar(--fg) !important;
   }
 
   td {
-    @include padding-left(15px !important);
+    @include padding-left(1rem !important);
 
     &.expand-cell {
-      padding: 10px 15px;
-    }
-
-    &:not(.action-cell):not(.expand-cell):not(.checkbox-cell) {
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      white-space: nowrap !important;
+      padding: 10px 1rem;
     }
   }
 
@@ -811,20 +812,21 @@ p-table {
     &.p-highlight {
       background-color: pvar(--bg-secondary-400) !important;
 
-      td, td > a {
+      td,
+      td > a {
         color: pvar(--fg) !important;
       }
     }
 
     &:focus-visible {
-      border: 1px solid pvar(--fg) !important
+      border: 1px solid pvar(--fg) !important;
     }
   }
 
   .p-datatable-tbody {
     tr {
       &:hover {
-        background-color: $hover-bg !important;
+        background-color: $hover-bg-2 !important;
       }
 
       td {
@@ -872,7 +874,7 @@ p-table {
     }
 
     &.p-sortable-column:focus-visible {
-      border: 1px solid pvar(--fg) !important
+      border: 1px solid pvar(--fg) !important;
     }
 
     &.p-highlight {
@@ -896,6 +898,15 @@ p-table {
     }
   }
 
+  .checkbox-cell {
+    @include padding-left(0.25rem !important);
+    @include padding-right(0 !important);
+
+    @media screen and (max-width: $mobile-view) {
+      @include padding-left(0 !important);
+    }
+  }
+
   .action-cell {
     width: 250px !important;
 
@@ -904,10 +915,12 @@ p-table {
     my-delete-button,
     my-button {
       display: inline-block !important;
+      max-width: 100%;
+
       @include margin-left(5px);
 
       &:first-child {
-        @include margin-left(0)
+        @include margin-left(0);
       }
     }
   }
@@ -1010,7 +1023,10 @@ p-table {
           }
 
           &.p-highlight {
-            &, &:hover, &:active, &:focus {
+            &,
+            &:hover,
+            &:active,
+            &:focus {
               color: pvar(--fg) !important;
               background-color: pvar(--bg-secondary-500) !important;
             }
@@ -1021,8 +1037,15 @@ p-table {
   }
 
   .pt-badge {
-    font-size: 12px;
     text-transform: uppercase;
+  }
+}
+
+p-table:not(.cell-wrap) {
+  td:not(.action-cell):not(.expand-cell):not(.checkbox-cell) {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
   }
 }
 
@@ -1060,13 +1083,39 @@ p-table {
   }
 }
 
+@media screen and (max-width: $medium-view) {
+  p-table {
+    td {
+      &.expand-cell {
+        padding: 5px;
+      }
+    }
+  }
+}
+
+@media screen and (max-width: $mobile-view) {
+  p-table {
+    th,
+    td {
+      @include padding-left(0.5rem !important);
+    }
+
+    .p-datatable-header {
+      .caption > div {
+        width: 100%;
+        padding: 0 !important;
+      }
+    }
+  }
+}
+
 p-tablecheckbox:hover div .p-checkbox-box {
-  box-shadow: 0 0 0 .1rem rgba(87, 85, 217, .2);
+  box-shadow: 0 0 0 0.1rem rgba(87, 85, 217, 0.2);
 }
 
 .p-checkbox {
-
-  &, .p-checkbox-box {
+  &,
+  .p-checkbox-box {
     width: 18px !important;
     height: 18px !important;
   }
@@ -1097,7 +1146,7 @@ p-toast {
       top: 5px;
       width: 18px;
       height: 18px;
-      background: url('../assets/images/feather/x.svg') no-repeat;
+      background: url("../assets/images/feather/x.svg") no-repeat;
       background-size: contain;
     }
   }
@@ -1109,7 +1158,7 @@ p-toast {
     border-radius: 5px;
     box-sizing: border-box;
     border: 1px solid #EBEEF5 !important;
-    box-shadow: 0 2px 12px 0 rgba(0, 0 , 0, .1);
+    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
     overflow: hidden;
 
     .notification-block {
@@ -1153,38 +1202,6 @@ p-toast {
   }
 }
 
-@media screen and (max-width: $primeng-breakpoint) {
-  p-table {
-    td {
-      padding: 3px 0;
-
-      &.expand-cell {
-        padding: 5px;
-      }
-    }
-
-    .p-datatable-tbody {
-
-      td:last-child {
-        padding-bottom: 15px;
-        margin-bottom: 15px;
-        border-bottom: 1px solid $separator-border-color !important;
-      }
-    }
-  }
-}
-
-@media screen and (max-width: $mobile-view) {
-  p-table {
-    .p-datatable-header {
-      .caption > div {
-        width: 100%;
-        padding: 0 !important;
-      }
-    }
-  }
-}
-
 p-chips {
   .p-input-wrapper {
     display: flex;
@@ -1219,7 +1236,7 @@ p-chips {
 
 .p-dropdown-clear-icon,
 .p-multiselect-clear-icon {
-  margin-top: -.5em;
+  margin-top: -0.5em;
 }
 
 .p-dropdown {
@@ -1229,5 +1246,147 @@ p-chips {
   .p-dropdown-label {
     line-height: normal;
     min-height: 29px;
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+.new-p-table {
+  margin-bottom: 0.5rem;
+  display: block;
+
+  .column-toggle {
+    .tertiary-button:not(.active) {
+      color: pvar(--fg-300) !important;
+    }
+  }
+
+  &.loading table {
+    opacity: 0.5;
+  }
+
+  thead {
+    tr {
+      height: 1.5rem;
+    }
+  }
+
+  th {
+    font-size: 14px !important;
+    color: pvar(--fg-200) !important;
+    font-weight: normal !important;
+
+    &.p-highlight {
+      background-color: pvar(--bg) !important;
+    }
+
+    .column-toggle {
+      .dropdown > my-button::after {
+        display: none;
+      }
+    }
+  }
+
+  th,
+  .p-paginator {
+    border-color: pvar(--bg-secondary-450) !important;
+  }
+
+  .p-sortable-column-icon {
+    display: inline-block;
+    position: relative;
+    top: -1px;
+
+    .tertiary-button:not(.active) {
+      color: pvar(--secondary-icon-color) !important;
+    }
+  }
+
+  p-paginator {
+    .p-paginator {
+      padding-top: 1.5rem;
+      margin-top: 0.75rem;
+      height: auto !important;
+
+      .p-paginator-pages {
+        .p-paginator-page {
+          font-weight: normal !important;
+          height: 34px !important;
+          width: 34px !important;
+          border-radius: 100% !important;
+
+          &.p-highlight {
+            &,
+            &:hover,
+            &:active,
+            &:focus {
+              background-color: pvar(--bg-secondary-450) !important;
+              color: pvar(--fg) !important;
+              font-weight: $font-bold !important;
+            }
+          }
+        }
+      }
+
+      .p-dropdown,
+      .p-dropdown-trigger {
+        color: pvar(--input-fg);
+        background-color: pvar(--input-bg);
+      }
+
+      .p-paginator-element .p-icon-wrapper {
+        color: pvar(--fg-300) !important;
+      }
+    }
+  }
+
+  .p-paginator-right-content {
+    margin-left: 0;
+    margin-right: 0;
+    color: pvar(--fg-300);
+
+    @include margin-left(1rem);
+  }
+
+  .action-cell {
+    width: 0 !important;
+
+    @include padding-right(0.25rem);
+  }
+}
+
+.sticky-p-table {
+  table {
+    table-layout: auto;
+  }
+
+  @media screen and (min-width: $small-view) {
+    .action-cell,
+    .action-head {
+      position: sticky;
+      right: 0;
+      padding-right: 0.5rem;
+      background-color: inherit;
+    }
+
+    .action-cell {
+      z-index: 10;
+    }
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background-color: pvar(--bg);
+  }
+
+  .p-datatable,
+  .p-datatable-wrapper {
+    max-height: inherit;
+  }
+
+  .p-datatable-wrapper {
+    overflow: auto;
   }
 }

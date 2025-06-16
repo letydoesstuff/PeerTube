@@ -34,8 +34,7 @@ ls -ld /var/www/peertube # Should be drwxr-xr-x
 **On FreeBSD**
 
 ```bash
-sudo pw useradd -n peertube -d /var/www/peertube -s /usr/local/bin/bash -m
-sudo passwd peertube
+sudo pw useradd -n peertube -d /var/www/peertube -s /usr/sbin/nologin -m
 ```
 or use `adduser` to create it interactively.
 
@@ -256,6 +255,7 @@ If your OS uses OpenRC, copy the service script:
 
 ```bash
 sudo cp /var/www/peertube/peertube-latest/support/init.d/peertube /etc/init.d/
+sudo cp /var/www/peertube/peertube-latest/support/conf.d/peertube /etc/conf.d/
 ```
 
 If you want to start PeerTube on boot:
@@ -382,6 +382,16 @@ cd /var/www/peertube/versions
 diff -u "$(ls -t | head -2 | tail -1)/support/systemd/peertube.service" "$(ls -t | head -1)/support/systemd/peertube.service"
 ```
 
+<details>
+<summary><strong>If using OpenRC</strong></summary>
+
+```bash
+cd /var/www/peertube/versions
+diff -u "$(ls -t | head -2 | tail -1)/support/init.d/peertube" "$(ls -t | head -1)/support/init.d/peertube"
+diff -u "$(ls -t | head -2 | tail -1)/support/conf.d/peertube" "$(ls -t | head -1)/support/conf.d/peertube"
+```
+</details>
+
 ### Restart PeerTube
 
 If you changed your nginx configuration:
@@ -407,9 +417,9 @@ sudo systemctl restart peertube && sudo journalctl -fu peertube
 Change `peertube-latest` destination to the previous version and restore your SQL backup:
 
 ```bash
-OLD_VERSION="v0.42.42" && SQL_BACKUP_PATH="backup/sql-peertube_prod-2018-01-19T10:18+01:00.bak" && \
+OLD_VERSION="v0.42.42" && SQL_BACKUP_PATH="backup/sql-peertube_prod-20180119-1018.bak" && \
   cd /var/www/peertube && sudo -u peertube unlink ./peertube-latest && \
   sudo -u peertube ln -s "versions/peertube-$OLD_VERSION" peertube-latest && \
-  sudo -u postgres pg_restore -c -C -d postgres "$SQL_BACKUP_PATH" && \
+  sudo -u postgres pg_restore -c -C -d peertube_prod "$SQL_BACKUP_PATH" && \
   sudo systemctl restart peertube
 ```
