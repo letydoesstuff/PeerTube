@@ -1,3 +1,4 @@
+import { VideoCommentPolicyType, VideoPrivacyType } from '../videos/index.js'
 import { NSFWPolicyType } from '../videos/nsfw-policy.type.js'
 import { BroadcastMessageLevel } from './broadcast-message-level.type.js'
 
@@ -28,6 +29,8 @@ export interface CustomConfig {
     businessModel: string
     hardwareInformation: string
 
+    defaultLanguage: string
+
     languages: string[]
     categories: number[]
 
@@ -56,6 +59,19 @@ export interface CustomConfig {
 
   theme: {
     default: string
+
+    customization: {
+      primaryColor: string
+      foregroundColor: string
+      backgroundColor: string
+      backgroundSecondaryColor: string
+      menuForegroundColor: string
+      menuBackgroundColor: string
+      menuBorderRadius: string
+      headerForegroundColor: string
+      headerBackgroundColor: string
+      inputBorderRadius: string
+    }
   }
 
   services: {
@@ -65,6 +81,10 @@ export interface CustomConfig {
   }
 
   client: {
+    header: {
+      hideInstanceName: boolean
+    }
+
     videos: {
       miniature: {
         preferAuthorDisplayName: boolean
@@ -106,6 +126,16 @@ export interface CustomConfig {
 
   admin: {
     email: string
+  }
+
+  email: {
+    body: {
+      signature: string
+    }
+
+    subject: {
+      prefix: string
+    }
   }
 
   contactForm: {
@@ -268,6 +298,10 @@ export interface CustomConfig {
       enabled: boolean
       manualApproval: boolean
     }
+
+    channels: {
+      enabled: boolean
+    }
   }
 
   followings: {
@@ -306,5 +340,32 @@ export interface CustomConfig {
 
   storyboards: {
     enabled: boolean
+  }
+
+  defaults: {
+    publish: {
+      downloadEnabled: boolean
+      commentsPolicy: VideoCommentPolicyType
+      privacy: VideoPrivacyType
+      licence: number
+    }
+
+    p2p: {
+      webapp: {
+        enabled: boolean
+      }
+
+      embed: {
+        enabled: boolean
+      }
+    }
+
+    player: {
+      autoPlay: boolean
+    }
+  }
+
+  videoComments: {
+    acceptRemoteComments: boolean
   }
 }

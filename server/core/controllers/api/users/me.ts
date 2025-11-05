@@ -136,7 +136,8 @@ async function listUserVideos (req: express.Request, res: express.Response) {
   const countVideos = getCountVideos(req)
   const query = pickCommonVideoQuery(req.query)
 
-  const include = (query.include || VideoInclude.NONE) | VideoInclude.BLACKLISTED | VideoInclude.NOT_PUBLISHED_STATE
+  const include = (query.include || VideoInclude.NONE) | VideoInclude.BLACKLISTED | VideoInclude.NOT_PUBLISHED_STATE |
+    VideoInclude.BLOCKED_OWNER
 
   const apiOptions = await Hooks.wrapObject({
     privacyOneOf: getAllPrivacies(),
@@ -278,6 +279,7 @@ async function updateMe (req: express.Request, res: express.Response) {
     'autoPlayNextVideoPlaylist',
     'videosHistoryEnabled',
     'videoLanguages',
+    'language',
     'theme',
     'noInstanceConfigWarningModal',
     'noAccountSetupWarningModal',

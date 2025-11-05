@@ -206,6 +206,10 @@ export class VideosListComponent implements OnInit, OnDestroy {
   onNearOfBottom () {
     if (this.disabled()) return
 
+    if (window.location.pathname === '/') {
+      this.peertubeRouter.silentNavigate([], this.route.snapshot.queryParams)
+    }
+
     // No more results
     if (this.lastQueryLength !== undefined && this.lastQueryLength < this.pagination.itemsPerPage) return
 
@@ -266,7 +270,7 @@ export class VideosListComponent implements OnInit, OnDestroy {
   private loadUserSettings (user: User) {
     this.filters.setNSFWPolicy(user)
 
-    this.filters.load({ languageOneOf: user.videoLanguages })
+    this.filters.setDefaultLanguages(user.videoLanguages)
   }
 
   private reloadSyndicationItems () {
