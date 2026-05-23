@@ -1,11 +1,11 @@
 import { DragDropModule } from '@angular/cdk/drag-drop'
-import { CommonModule } from '@angular/common'
 import { ChangeDetectorRef, Component, inject, OnDestroy, OnInit, viewChild } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { RouterLink } from '@angular/router'
 import { AuthService, AuthUser, ConfirmService, Notifier, RestPagination, ScreenService } from '@app/core'
 import { HeaderService } from '@app/header/header.service'
 import { Actor } from '@app/shared/shared-main/account/actor.model'
+import { CollaboratorStateComponent } from '@app/shared/shared-main/channel/collaborator-state.component'
 import { TableColumnInfo, TableComponent, TableQueryParams } from '@app/shared/shared-tables/table.component'
 import { VideoPlaylist } from '@app/shared/shared-video-playlist/video-playlist.model'
 import { VideoPlaylistService } from '@app/shared/shared-video-playlist/video-playlist.service'
@@ -14,6 +14,7 @@ import debug from 'debug'
 import { SortMeta } from 'primeng/api'
 import { TableRowReorderEvent } from 'primeng/table'
 import { Subject, tap } from 'rxjs'
+import { ChannelToggleComponent } from '../../shared/shared-channels/channel-toggle.component'
 import { AdvancedInputFilterComponent } from '../../shared/shared-forms/advanced-input-filter.component'
 import { GlobalIconComponent } from '../../shared/shared-icons/global-icon.component'
 import { DeleteButtonComponent } from '../../shared/shared-main/buttons/delete-button.component'
@@ -22,9 +23,8 @@ import { PTDatePipe } from '../../shared/shared-main/common/date.pipe'
 import { NumberFormatterPipe } from '../../shared/shared-main/common/number-formatter.pipe'
 import { VideoPlaylistMiniatureComponent } from '../../shared/shared-video-playlist/video-playlist-miniature.component'
 import { PrivacyBadgeComponent } from '../../shared/shared-video/privacy-badge.component'
-import { ChannelToggleComponent } from '../../shared/standalone-channels/channel-toggle.component'
 
-type ColumnName = 'videoChannelPosition' | 'videos' | 'name' | 'privacy' | 'updated'
+type ColumnName = 'videoChannelPosition' | 'videos' | 'name' | 'privacy' | 'updatedAt'
 
 type QueryParams = TableQueryParams & {
   channelName?: string
@@ -36,7 +36,6 @@ const debugLogger = debug('peertube:my-video-playlists')
   templateUrl: './my-video-playlists.component.html',
   styleUrls: [ './my-video-playlists.component.scss' ],
   imports: [
-    CommonModule,
     FormsModule,
     GlobalIconComponent,
     AdvancedInputFilterComponent,
@@ -49,7 +48,8 @@ const debugLogger = debug('peertube:my-video-playlists')
     NumberFormatterPipe,
     PrivacyBadgeComponent,
     PTDatePipe,
-    DragDropModule
+    DragDropModule,
+    CollaboratorStateComponent
   ]
 })
 export class MyVideoPlaylistsComponent implements OnInit, OnDestroy {
@@ -102,7 +102,7 @@ export class MyVideoPlaylistsComponent implements OnInit, OnDestroy {
       { id: 'videos', label: $localize`Videos`, selected: true, sortable: false },
       { id: 'name', label: $localize`Name`, selected: true, sortable: true },
       { id: 'privacy', label: $localize`Privacy`, selected: true, sortable: false },
-      { id: 'updated', label: $localize`Updated`, selected: true, sortable: false }
+      { id: 'updatedAt', label: $localize`Updated`, selected: true, sortable: true }
     ]
   }
 
@@ -112,7 +112,7 @@ export class MyVideoPlaylistsComponent implements OnInit, OnDestroy {
 
   private _customParseQueryParams (queryParams: QueryParams) {
     this.user = this.auth.getUser()
-    this.channels = this.user.videoChannels.map(c => ({
+    this.channels = [ ...this.user.videoChannels, ...this.user.videoChannelCollaborations ].map(c => ({
       ...c,
 
       selected: queryParams.channelName === c.name
@@ -156,7 +156,7 @@ export class MyVideoPlaylistsComponent implements OnInit, OnDestroy {
           this.notifier.success($localize`Playlist ${videoPlaylist.displayName} deleted.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -197,7 +197,7 @@ export class MyVideoPlaylistsComponent implements OnInit, OnDestroy {
           this.notifier.success($localize`Playlists reordered`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -228,12 +228,14 @@ export class MyVideoPlaylistsComponent implements OnInit, OnDestroy {
     const obs = channel
       ? this.videoPlaylistService.listChannelPlaylists({
         videoChannel: { nameWithHost: Actor.CREATE_BY_STRING(channel.name, channel.host) },
+        includeCollaborations: true,
         restPagination: pagination,
         sort,
         search
       })
       : this.videoPlaylistService.listAccountPlaylists({
         account: this.user.account,
+        includeCollaborations: true,
         restPagination: pagination,
         sort,
         search

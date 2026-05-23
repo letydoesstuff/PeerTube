@@ -9,11 +9,11 @@ export class NewAbuseMessageForReporter extends AbstractNewAbuseMessage {
 
   async prepare () {
     // Only notify our users
-    if (this.abuse.ReporterAccount.isOwned() !== true) return
+    if (this.abuse.ReporterAccount.isLocal() !== true) return
 
     await this.loadMessageAccount()
 
-    const reporter = await UserModel.loadByAccountActorId(this.abuse.ReporterAccount.actorId)
+    const reporter = await UserModel.loadByAccountActorId(this.abuse.ReporterAccount.Actor.id)
     // Don't notify my own message
     if (reporter.Account.id === this.message.accountId) return
 

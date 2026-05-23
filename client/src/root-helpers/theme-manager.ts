@@ -9,7 +9,7 @@ const debugLogger = debug('peertube:theme')
 type ConfigCSSVariableMap = Record<keyof ServerConfig['theme']['customization'], string>
 
 export type ThemeCustomizationKey = keyof ConfigCSSVariableMap
-export type ColorPaletteThemeConfig = Pick<HTMLServerConfig['theme'], 'default' | 'customization'>
+export type ColorPaletteThemeConfig = Pick<HTMLServerConfig['theme'], 'default' | 'customization' | 'builtIn'>
 
 export class ThemeManager {
   private configVariablesStyle: HTMLStyleElement
@@ -18,6 +18,7 @@ export class ThemeManager {
 
   private readonly configCSSVariableMap: ConfigCSSVariableMap = {
     primaryColor: '--primary',
+    onPrimaryColor: '--on-primary',
     foregroundColor: '--fg',
     backgroundColor: '--bg',
     backgroundSecondaryColor: '--bg-secondary',
@@ -53,8 +54,8 @@ export class ThemeManager {
     this.configuredCSSVariables.clear()
     this.configVariablesStyle.textContent = ''
 
-    // Only inject config variables for the default theme
-    if (currentTheme !== config.default) return
+    // Only inject config variables for the default theme, otherwise we may override the theme colors with wrong values
+    if (!this.isUsingDefaultTheme({ currentTheme, config })) return
 
     const computedStyle = getComputedStyle(document.documentElement)
 
@@ -147,6 +148,23 @@ export class ThemeManager {
     this.getHeadElement().removeChild(linkEl)
   }
 
+  isUsingDefaultTheme (options: {
+    currentTheme: string
+    config: Pick<ColorPaletteThemeConfig, 'default' | 'builtIn'>
+  }) {
+    const { currentTheme, config } = options
+
+    if (currentTheme === config.default) return true
+
+    // Only inject config variables for the default theme
+    if (config.default === 'default') {
+      // Accept built-in themes
+      return config.builtIn.some(t => t.name === currentTheme)
+    }
+
+    return false
+  }
+
   private canInjectCoreColorPalette () {
     const computedStyle = getComputedStyle(document.documentElement)
     const isDark = computedStyle.getPropertyValue('--is-dark')
@@ -176,11 +194,11 @@ export class ThemeManager {
         })
       }
 
-      const isMenuDarkTheme = () => {
+      const isComponentDarkTheme = (component: 'header' | 'menu') => {
         return this.isDarkTheme({
-          fg: computedStyle.getPropertyValue('--menu-fg'),
-          bg: computedStyle.getPropertyValue('--menu-bg'),
-          isDarkVar: computedStyle.getPropertyValue('--is-menu-dark')
+          fg: computedStyle.getPropertyValue(`--${component}-fg`),
+          bg: computedStyle.getPropertyValue(`--${component}-bg`),
+          isDarkVar: computedStyle.getPropertyValue(`--is-${component}-dark`)
         })
       }
 
@@ -192,8 +210,11 @@ export class ThemeManager {
 
         { prefix: 'input-bg', invertIfDark: true, step: 5, darkTheme: isGlobalDarkTheme },
 
-        { prefix: 'menu-fg', invertIfDark: true, step: 5, darkTheme: isMenuDarkTheme },
-        { prefix: 'menu-bg', invertIfDark: true, step: 5, darkTheme: isMenuDarkTheme }
+        { prefix: 'menu-fg', invertIfDark: true, step: 5, darkTheme: () => isComponentDarkTheme('menu') },
+        { prefix: 'menu-bg', invertIfDark: true, step: 5, darkTheme: () => isComponentDarkTheme('menu') },
+
+        { prefix: 'header-fg', invertIfDark: true, step: 5, darkTheme: () => isComponentDarkTheme('header') },
+        { prefix: 'header-bg', invertIfDark: true, step: 5, darkTheme: () => isComponentDarkTheme('header') }
       ] as { prefix: string, invertIfDark: boolean, step: number, darkTheme: () => boolean, fallbacks?: Record<string, string> }[]
 
       for (const { prefix, invertIfDark, step, darkTheme, fallbacks = {} } of toProcess) {
@@ -256,7 +277,7 @@ export class ThemeManager {
 
         if (paletteStyleContent) {
           // To override default variables
-          document.documentElement.className = 'color-palette'
+          document.documentElement.classList.add('color-palette')
 
           this.colorPaletteStyle.textContent = `:root.color-palette {\n${paletteStyleContent} }`
         }

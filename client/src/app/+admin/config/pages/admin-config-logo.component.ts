@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, inject, OnDestroy, OnInit } from '@angular/core'
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { ActivatedRoute } from '@angular/router'
@@ -13,9 +12,9 @@ import { PeertubeCheckboxComponent } from '@app/shared/shared-forms/peertube-che
 import { CustomConfig, LogoType } from '@peertube/peertube-models'
 import { of, Subscription, switchMap, tap } from 'rxjs'
 import { AdminConfigService } from '../../../shared/shared-admin/admin-config.service'
-import { PreviewUploadComponent } from '../../../shared/shared-forms/preview-upload.component'
-import { AdminSaveBarComponent } from '../shared/admin-save-bar.component'
+import { ImageInputComponent } from '../../../shared/shared-forms/image-input.component'
 import { InstanceLogoService } from '../../../shared/shared-instance/instance-logo.service'
+import { AdminSaveBarComponent } from '../shared/admin-save-bar.component'
 
 type Form = {
   hideInstanceName: FormControl<boolean>
@@ -35,9 +34,8 @@ type Form = {
   imports: [
     FormsModule,
     ReactiveFormsModule,
-    CommonModule,
     AdminSaveBarComponent,
-    PreviewUploadComponent,
+    ImageInputComponent,
     PeertubeCheckboxComponent
   ]
 })
@@ -59,6 +57,14 @@ export class AdminConfigLogoComponent implements OnInit, OnDestroy, CanComponent
 
   get instanceName () {
     return this.server.getHTMLConfig().instance.name
+  }
+
+  get avatarFileConstraints () {
+    return this.server.getHTMLConfig().avatar.file
+  }
+
+  get logoFileConstraints () {
+    return this.server.getHTMLConfig().logo.file
   }
 
   ngOnInit () {
@@ -137,7 +143,7 @@ export class AdminConfigLogoComponent implements OnInit, OnDestroy, CanComponent
         this.form.markAsPristine()
       },
 
-      error: err => this.notifier.error(err.message)
+      error: err => this.notifier.handleError(err)
     })
   }
 

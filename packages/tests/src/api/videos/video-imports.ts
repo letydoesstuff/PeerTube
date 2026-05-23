@@ -15,8 +15,9 @@ import {
 } from '@peertube/peertube-server-commands'
 import { DeepPartial } from '@peertube/peertube-typescript-utils'
 import { testCaptionFile } from '@tests/shared/captions.js'
-import { testImageGeneratedByFFmpeg } from '@tests/shared/checks.js'
 import { FIXTURE_URLS } from '@tests/shared/fixture-urls.js'
+import { SQLCommand } from '@tests/shared/sql-command.js'
+import { checkThumbnails } from '@tests/shared/videos.js'
 import { expect } from 'chai'
 import { pathExists, remove } from 'fs-extra/esm'
 import { readdir } from 'fs/promises'
@@ -72,7 +73,7 @@ async function checkVideoServer2 (server: PeerTubeServer, id: number | string) {
   expect(video.description).to.equal('my super description')
   expect(video.tags).to.deep.equal([ 'supertag1', 'supertag2' ])
 
-  await testImageGeneratedByFFmpeg(server.url, 'custom-thumbnail', video.thumbnailPath)
+  await checkThumbnails({ server, video, thumbnails: [ 'custom-thumbnail-280x157.jpg', 'custom-thumbnail-850x480.jpg' ] })
 
   expect(video.files).to.have.lengthOf(1)
 
@@ -86,6 +87,8 @@ describe('Test video imports', function () {
   function runSuite (mode: 'youtube-dl' | 'yt-dlp') {
     describe('Import ' + mode, function () {
       let servers: PeerTubeServer[] = []
+      let importId: number
+      let importVideoId: number
 
       before(async function () {
         this.timeout(60_000)
@@ -114,19 +117,26 @@ describe('Test video imports', function () {
         this.timeout(60_000)
 
         const attributes = { privacy: VideoPrivacy.PUBLIC, targetUrl: FIXTURE_URLS.youtube }
-        const { video } = await servers[0].videoImports.importVideo({ attributes })
+        const { video, id } = await servers[0].videoImports.importVideo({ attributes })
+        importId = id
+        importVideoId = video.id
+
         expect(video.name).to.equal('small video - youtube')
 
-        {
-          expect(video.thumbnailPath).to.match(new RegExp(`^/lazy-static/thumbnails/.+.jpg$`))
-          expect(video.previewPath).to.match(new RegExp(`^/lazy-static/previews/.+.jpg$`))
+        const extension = video.thumbnails[0].fileUrl.endsWith('.webp')
+          ? '.webp'
+          : '.jpg'
 
-          const suffix = mode === 'yt-dlp'
-            ? '_yt_dlp'
-            : ''
+        const pathRegexp = new RegExp(`^/lazy-static/thumbnails/.+.${extension}$`)
+        const urlRegexp = new RegExp(`^${servers[0].url}/lazy-static/thumbnails/.+.${extension}$`)
 
-          await testImageGeneratedByFFmpeg(servers[0].url, 'video_import_thumbnail' + suffix, video.thumbnailPath)
-          await testImageGeneratedByFFmpeg(servers[0].url, 'video_import_preview' + suffix, video.previewPath)
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        expect(video.thumbnailPath).to.match(pathRegexp)
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        expect(video.previewPath).to.match(pathRegexp)
+
+        for (const thumbnail of video.thumbnails) {
+          expect(thumbnail.fileUrl).to.match(urlRegexp)
         }
 
         const bodyCaptions = await servers[0].captions.list({ videoId: video.id })
@@ -137,7 +147,7 @@ describe('Test video imports', function () {
           const enCaption = videoCaptions.find(caption => caption.language.id === 'en')
           expect(enCaption).to.exist
           expect(enCaption.language.label).to.equal('English')
-          expect(enCaption.captionPath).to.match(new RegExp(`^/lazy-static/video-captions/.+-en.vtt$`))
+          expect(enCaption.fileUrl).to.match(new RegExp(`^${servers[0].url}/lazy-static/video-captions/.+-en.vtt$`))
 
           const regex = `WEBVTT[ \n]+Kind: captions[ \n]+` +
             `(Language: en[ \n]+)?` +
@@ -151,7 +161,7 @@ describe('Test video imports', function () {
           const frCaption = videoCaptions.find(caption => caption.language.id === 'fr')
           expect(frCaption).to.exist
           expect(frCaption.language.label).to.equal('French')
-          expect(frCaption.captionPath).to.match(new RegExp(`^/lazy-static/video-captions/.+-fr.vtt`))
+          expect(frCaption.fileUrl).to.match(new RegExp(`^${servers[0].url}/lazy-static/video-captions/.+-fr.vtt`))
 
           const regex = `WEBVTT[ \n]+Kind: captions[ \n]+` +
             `(Language: fr[ \n]+)?` +
@@ -204,7 +214,7 @@ describe('Test video imports', function () {
       it('Should list the videos to import in my imports on server 1', async function () {
         if (areYoutubeImportTestsDisabled()) return
 
-        const { total, data: videoImports } = await servers[0].videoImports.getMyVideoImports({ sort: '-createdAt' })
+        const { total, data: videoImports } = await servers[0].videoImports.listMyVideoImports({ sort: '-createdAt' })
 
         const totalExpected = areYoutubeImportTestsDisabled()
           ? 2
@@ -241,10 +251,30 @@ describe('Test video imports', function () {
         }
       })
 
+      it('Should filter my imports on id', async function () {
+        if (areYoutubeImportTestsDisabled()) return
+
+        const { total, data: videoImports } = await servers[0].videoImports.listMyVideoImports({ id: importId })
+        expect(total).to.equal(1)
+        expect(videoImports).to.have.lengthOf(1)
+
+        expect(videoImports[0].id).to.equal(importId)
+      })
+
+      it('Should filter my imports on videoId', async function () {
+        if (areYoutubeImportTestsDisabled()) return
+
+        const { total, data: videoImports } = await servers[0].videoImports.listMyVideoImports({ videoId: importVideoId })
+        expect(total).to.equal(1)
+        expect(videoImports).to.have.lengthOf(1)
+
+        expect(videoImports[0].id).to.equal(importId)
+      })
+
       it('Should filter my imports on target URL', async function () {
         if (areYoutubeImportTestsDisabled()) return
 
-        const { total, data: videoImports } = await servers[0].videoImports.getMyVideoImports({ targetUrl: FIXTURE_URLS.youtube })
+        const { total, data: videoImports } = await servers[0].videoImports.listMyVideoImports({ targetUrl: FIXTURE_URLS.youtube })
         expect(total).to.equal(1)
         expect(videoImports).to.have.lengthOf(1)
 
@@ -253,7 +283,7 @@ describe('Test video imports', function () {
 
       it('Should search in my imports', async function () {
         {
-          const { total, data } = await servers[0].videoImports.getMyVideoImports({ search: 'peertube2' })
+          const { total, data } = await servers[0].videoImports.listMyVideoImports({ search: 'peertube2' })
           expect(total).to.equal(1)
           expect(data).to.have.lengthOf(1)
 
@@ -262,7 +292,7 @@ describe('Test video imports', function () {
         }
 
         {
-          const { total, data } = await servers[0].videoImports.getMyVideoImports({ search: FIXTURE_URLS.magnet })
+          const { total, data } = await servers[0].videoImports.listMyVideoImports({ search: FIXTURE_URLS.magnet })
           expect(total).to.equal(1)
           expect(data).to.have.lengthOf(1)
 
@@ -309,7 +339,7 @@ describe('Test video imports', function () {
             name: 'my super name',
             description: 'my super description',
             tags: [ 'supertag1', 'supertag2' ],
-            thumbnailfile: 'custom-thumbnail.jpg'
+            thumbnailfile: 'custom-thumbnail-input.jpg'
           }
         })
         expect(video.name).to.equal('my super name')
@@ -530,8 +560,9 @@ describe('Test video imports', function () {
 
   runSuite('yt-dlp')
 
-  describe('Delete/cancel an import', function () {
+  describe('Managing an import', function () {
     let server: PeerTubeServer
+    let sqlCommand: SQLCommand
 
     let finishedImportId: number
     let finishedVideo: Video
@@ -548,6 +579,7 @@ describe('Test video imports', function () {
       this.timeout(120_000)
 
       server = await createSingleServer(1)
+      sqlCommand = new SQLCommand(server)
 
       await setAccessTokensToServers([ server ])
       await setDefaultVideoChannel([ server ])
@@ -558,7 +590,7 @@ describe('Test video imports', function () {
       await server.jobs.pauseJobQueue()
       pendingImportId = await importVideo('pending')
 
-      const { data } = await server.videoImports.getMyVideoImports()
+      const { data } = await server.videoImports.listMyVideoImports()
       expect(data).to.have.lengthOf(2)
 
       finishedVideo = data.find(i => i.id === finishedImportId).video
@@ -567,7 +599,7 @@ describe('Test video imports', function () {
     it('Should delete a video import', async function () {
       await server.videoImports.delete({ importId: finishedImportId })
 
-      const { data } = await server.videoImports.getMyVideoImports()
+      const { data } = await server.videoImports.listMyVideoImports()
       expect(data).to.have.lengthOf(1)
       expect(data[0].id).to.equal(pendingImportId)
       expect(data[0].state.id).to.equal(VideoImportState.PENDING)
@@ -582,7 +614,7 @@ describe('Test video imports', function () {
     it('Should cancel a video import', async function () {
       await server.videoImports.cancel({ importId: pendingImportId })
 
-      const { data } = await server.videoImports.getMyVideoImports()
+      const { data } = await server.videoImports.listMyVideoImports()
       expect(data).to.have.lengthOf(1)
       expect(data[0].id).to.equal(pendingImportId)
       expect(data[0].state.id).to.equal(VideoImportState.CANCELLED)
@@ -595,7 +627,7 @@ describe('Test video imports', function () {
 
       await waitJobs([ server ])
 
-      const { data } = await server.videoImports.getMyVideoImports()
+      const { data } = await server.videoImports.listMyVideoImports()
       expect(data).to.have.lengthOf(1)
       expect(data[0].id).to.equal(pendingImportId)
       expect(data[0].state.id).to.equal(VideoImportState.CANCELLED)
@@ -604,11 +636,43 @@ describe('Test video imports', function () {
 
     it('Should delete the cancelled video import', async function () {
       await server.videoImports.delete({ importId: pendingImportId })
-      const { data } = await server.videoImports.getMyVideoImports()
+      const { data } = await server.videoImports.listMyVideoImports()
       expect(data).to.have.lengthOf(0)
     })
 
+    it('Should fail an import', async function () {
+      await server.jobs.pauseJobQueue()
+
+      pendingImportId = await importVideo('to retry')
+
+      await sqlCommand.setImportUrl(pendingImportId, FIXTURE_URLS.badVideo)
+      await server.jobs.resumeJobQueue()
+
+      await waitJobs([ server ])
+
+      const { data } = await server.videoImports.listMyVideoImports()
+      expect(data[0].state.id).to.equal(VideoImportState.FAILED)
+
+      const video = await server.videos.getWithToken({ id: data[0].video.id })
+      expect(video.state.id).to.equal(VideoState.TO_IMPORT_FAILED)
+    })
+
+    it('Should retry an import job', async function () {
+      await sqlCommand.setImportUrl(pendingImportId, FIXTURE_URLS.goodVideo)
+
+      await server.videoImports.retry({ importId: pendingImportId })
+      await waitJobs([ server ])
+
+      const { data } = await server.videoImports.listMyVideoImports()
+      expect(data[0].state.id).to.equal(VideoImportState.SUCCESS)
+
+      const video = await server.videos.getWithToken({ id: data[0].video.id })
+      expect(video.state.id).to.equal(VideoState.PUBLISHED)
+    })
+
     after(async function () {
+      await sqlCommand?.cleanup()
+
       await cleanupTests([ server ])
     })
   })

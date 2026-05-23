@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnInit, inject, viewChild } from '@angular/core'
 import { ConfirmService, Notifier } from '@app/core'
 import { PTDatePipe } from '@app/shared/shared-main/common/date.pipe'
@@ -15,7 +14,6 @@ import { RunnerService } from '../runner.service'
   styleUrls: [ './runner-registration-token-list.component.scss' ],
   templateUrl: './runner-registration-token-list.component.html',
   imports: [
-    CommonModule,
     ButtonComponent,
     ActionDropdownComponent,
     CopyButtonComponent,
@@ -64,7 +62,7 @@ export class RunnerRegistrationTokenListComponent implements OnInit {
           this.notifier.success($localize`Registration token generated.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -83,7 +81,7 @@ export class RunnerRegistrationTokenListComponent implements OnInit {
           this.notifier.success($localize`Registration token removed.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

@@ -215,24 +215,6 @@ export class ActorFollowModel extends SequelizeModel<ActorFollowModel> {
     return [ actorFollow, created ]
   }
 
-  static removeFollowsOf (actorId: number, t?: Transaction) {
-    const query = {
-      where: {
-        [Op.or]: [
-          {
-            actorId
-          },
-          {
-            targetActorId: actorId
-          }
-        ]
-      },
-      transaction: t
-    }
-
-    return ActorFollowModel.destroy(query)
-  }
-
   // Remove actor follows with a score of 0 (too many requests where they were unreachable)
   static async removeBadActorFollows () {
     const actorFollows = await ActorFollowModel.listBadActorFollows()
@@ -385,15 +367,15 @@ export class ActorFollowModel extends SequelizeModel<ActorFollowModel> {
 
   static listInstanceFollowingForApi (options: ListFollowingOptions) {
     return Promise.all([
-      new InstanceListFollowingQueryBuilder(this.sequelize, options).countFollowing(),
-      new InstanceListFollowingQueryBuilder(this.sequelize, options).listFollowing()
+      new InstanceListFollowingQueryBuilder(this.sequelize, options).count(),
+      new InstanceListFollowingQueryBuilder(this.sequelize, options).list<MActorFollowFormattable>()
     ]).then(([ total, data ]) => ({ total, data }))
   }
 
   static listFollowersForApi (options: ListFollowersOptions) {
     return Promise.all([
-      new InstanceListFollowersQueryBuilder(this.sequelize, options).countFollowers(),
-      new InstanceListFollowersQueryBuilder(this.sequelize, options).listFollowers()
+      new InstanceListFollowersQueryBuilder(this.sequelize, options).count(),
+      new InstanceListFollowersQueryBuilder(this.sequelize, options).list<MActorFollowFormattable>()
     ]).then(([ total, data ]) => ({ total, data }))
   }
 
@@ -634,14 +616,19 @@ export class ActorFollowModel extends SequelizeModel<ActorFollowModel> {
   }
 
   static updateScore (inboxUrl: string, value: number, t?: Transaction) {
-    const query = `UPDATE "actorFollow" SET "score" = LEAST("score" + ${value}, ${ACTOR_FOLLOW_SCORE.MAX}) ` +
+    const query = 'UPDATE "actorFollow" SET "score" = LEAST("score" + $value, $maxScore) ' +
       'WHERE id IN (' +
       'SELECT "actorFollow"."id" FROM "actorFollow" ' +
       'INNER JOIN "actor" ON "actor"."id" = "actorFollow"."actorId" ' +
-      `WHERE "actor"."inboxUrl" = '${inboxUrl}' OR "actor"."sharedInboxUrl" = '${inboxUrl}'` +
+      'WHERE "actor"."inboxUrl" = $inboxUrl OR "actor"."sharedInboxUrl" = $inboxUrl' +
       ')'
 
     const options = {
+      bind: {
+        inboxUrl,
+        maxScore: ACTOR_FOLLOW_SCORE.MAX,
+        value
+      },
       type: QueryTypes.BULKUPDATE,
       transaction: t
     }
@@ -659,7 +646,7 @@ export class ActorFollowModel extends SequelizeModel<ActorFollowModel> {
       'WHERE id IN (' +
       'SELECT "actorFollow"."id" FROM "actorFollow" ' +
       'INNER JOIN "actor" ON "actor"."id" = "actorFollow"."targetActorId" ' +
-      `WHERE "actorFollow"."actorId" = ${me.Account.actorId} ` + // I'm the follower
+      `WHERE "actorFollow"."actorId" = ${me.Account.Actor.id} ` + // I'm the follower
       `AND "actor"."serverId" IN (${serverIdsString})` + // Criteria on followings
       ')'
 

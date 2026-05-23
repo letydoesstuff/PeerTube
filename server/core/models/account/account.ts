@@ -1,8 +1,8 @@
-import { Account, AccountSummary, ActivityPubActor, VideoPrivacy } from '@peertube/peertube-models'
+import { Account, AccountSummary, ActivityPubActor, ActivityUrlObject, VideoPrivacy } from '@peertube/peertube-models'
+import { AttributesOnly } from '@peertube/peertube-typescript-utils'
 import { ModelCache } from '@server/models/shared/model-cache.js'
 import { FindOptions, IncludeOptions, Includeable, Op, Transaction, WhereOptions, literal } from 'sequelize'
 import {
-  AfterDestroy,
   AllowNull,
   BeforeDestroy,
   BelongsTo,
@@ -13,6 +13,7 @@ import {
   DefaultScope,
   ForeignKey,
   HasMany,
+  HasOne,
   Is,
   Scopes,
   Table,
@@ -31,17 +32,17 @@ import {
   MAccountSummaryFormattable,
   MChannelIdHost
 } from '../../types/models/index.js'
-import { ActorFollowModel } from '../actor/actor-follow.js'
 import { ActorImageModel } from '../actor/actor-image.js'
-import { ActorModel } from '../actor/actor.js'
+import { ActorModel, actorSummaryAttributes } from '../actor/actor.js'
 import { ApplicationModel } from '../application/application.js'
 import { AccountAutomaticTagPolicyModel } from '../automatic-tag/account-automatic-tag-policy.js'
 import { CommentAutomaticTagModel } from '../automatic-tag/comment-automatic-tag.js'
 import { VideoAutomaticTagModel } from '../automatic-tag/video-automatic-tag.js'
 import { ServerBlocklistModel } from '../server/server-blocklist.js'
-import { ServerModel } from '../server/server.js'
+import { ServerModel, serverSummaryAttributes } from '../server/server.js'
 import { SequelizeModel, buildSQLAttributes, getSort, throwIfNotValid } from '../shared/index.js'
 import { UserModel } from '../user/user.js'
+import { VideoChannelCollaboratorModel } from '../video/video-channel-collaborator.js'
 import { VideoChannelModel } from '../video/video-channel.js'
 import { VideoCommentModel } from '../video/video-comment.js'
 import { VideoPlaylistModel } from '../video/video-playlist.js'
@@ -51,6 +52,8 @@ import { AccountBlocklistModel } from './account-blocklist.js'
 export enum ScopeNames {
   SUMMARY = 'SUMMARY'
 }
+
+const accountSummaryAttributes = [ 'id', 'name' ] as const satisfies (keyof AttributesOnly<AccountModel>)[]
 
 export type SummaryOptions = {
   actorRequired?: boolean // Default: true
@@ -71,14 +74,14 @@ export type SummaryOptions = {
 @Scopes(() => ({
   [ScopeNames.SUMMARY]: (options: SummaryOptions = {}) => {
     const serverInclude: IncludeOptions = {
-      attributes: [ 'host' ],
+      attributes: serverSummaryAttributes,
       model: ServerModel.unscoped(),
       required: !!options.whereServer,
       where: options.whereServer
     }
 
     const actorInclude: Includeable = {
-      attributes: [ 'id', 'preferredUsername', 'url', 'serverId' ],
+      attributes: actorSummaryAttributes,
       model: ActorModel.unscoped(),
       required: options.actorRequired ?? true,
       where: options.whereActor,
@@ -98,7 +101,7 @@ export type SummaryOptions = {
     ]
 
     const query: FindOptions = {
-      attributes: [ 'id', 'name', 'actorId' ]
+      attributes: accountSummaryAttributes
     }
 
     if (options.withAccountBlockerIds) {
@@ -137,10 +140,6 @@ export type SummaryOptions = {
   tableName: 'account',
   indexes: [
     {
-      fields: [ 'actorId' ],
-      unique: true
-    },
-    {
       fields: [ 'applicationId' ]
     },
     {
@@ -164,18 +163,6 @@ export class AccountModel extends SequelizeModel<AccountModel> {
 
   @UpdatedAt
   declare updatedAt: Date
-
-  @ForeignKey(() => ActorModel)
-  @Column
-  declare actorId: number
-
-  @BelongsTo(() => ActorModel, {
-    foreignKey: {
-      allowNull: false
-    },
-    onDelete: 'cascade'
-  })
-  declare Actor: Awaited<ActorModel>
 
   @ForeignKey(() => UserModel)
   @Column
@@ -259,31 +246,32 @@ export class AccountModel extends SequelizeModel<AccountModel> {
   })
   declare VideoAutomaticTags: Awaited<VideoAutomaticTagModel>[]
 
+  @HasMany(() => VideoChannelCollaboratorModel, {
+    foreignKey: 'accountId',
+    onDelete: 'CASCADE'
+  })
+  declare VideoChannelCollaborators: Awaited<VideoChannelCollaboratorModel>[]
+
+  @HasOne(() => ActorModel, {
+    foreignKey: {
+      allowNull: true
+    },
+    hooks: true,
+    onDelete: 'cascade'
+  })
+  declare Actor: Awaited<ActorModel>
+
   @BeforeDestroy
   static async sendDeleteIfOwned (instance: AccountModel, options) {
     if (!instance.Actor) {
       instance.Actor = await instance.$get('Actor', { transaction: options.transaction })
     }
 
-    await ActorFollowModel.removeFollowsOf(instance.Actor.id, options.transaction)
-
-    if (instance.isOwned()) {
+    if (instance.isLocal()) {
       return sendDeleteActor(instance.Actor, options.transaction)
     }
 
     return undefined
-  }
-
-  @AfterDestroy
-  static async deleteActorIfRemote (instance: AccountModel, options) {
-    if (!instance.Actor) {
-      instance.Actor = await instance.$get('Actor', { transaction: options.transaction })
-    }
-
-    // Remote actor, delete it
-    if (instance.Actor.serverId) {
-      await instance.Actor.destroy({ transaction: options.transaction })
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -293,6 +281,15 @@ export class AccountModel extends SequelizeModel<AccountModel> {
       model: this,
       tableName,
       aliasPrefix
+    })
+  }
+
+  static getSQLSummaryAttributes (tableName: string, aliasPrefix = '') {
+    return buildSQLAttributes({
+      model: this,
+      tableName,
+      aliasPrefix,
+      includeAttributes: accountSummaryAttributes
     })
   }
 
@@ -388,18 +385,7 @@ export class AccountModel extends SequelizeModel<AccountModel> {
     return AccountModel.findOne(query)
   }
 
-  static listForApi (start: number, count: number, sort: string) {
-    const query = {
-      offset: start,
-      limit: count,
-      order: getSort(sort)
-    }
-
-    return Promise.all([
-      AccountModel.count(),
-      AccountModel.findAll(query)
-    ]).then(([ total, data ]) => ({ total, data }))
-  }
+  // ---------------------------------------------------------------------------
 
   static loadAccountIdFromVideo (videoId: number): Promise<MAccount> {
     const query = {
@@ -422,6 +408,21 @@ export class AccountModel extends SequelizeModel<AccountModel> {
     }
 
     return AccountModel.findOne(query)
+  }
+
+  // ---------------------------------------------------------------------------
+
+  static listForApi (start: number, count: number, sort: string) {
+    const query = {
+      offset: start,
+      limit: count,
+      order: getSort(sort)
+    }
+
+    return Promise.all([
+      AccountModel.count(),
+      AccountModel.findAll(query)
+    ]).then(([ total, data ]) => ({ total, data }))
   }
 
   static listLocalsForSitemap (sort: string): Promise<MAccountHost[]> {
@@ -450,6 +451,8 @@ export class AccountModel extends SequelizeModel<AccountModel> {
       ]
     })
   }
+
+  // ---------------------------------------------------------------------------
 
   toFormattedJSON (this: MAccountFormattable): Account {
     return {
@@ -481,32 +484,30 @@ export class AccountModel extends SequelizeModel<AccountModel> {
     const obj = await this.Actor.toActivityPubObject(this.name)
 
     return Object.assign(obj, {
-      // // TODO: Uncomment in v8 for backward compatibility
-      // url: [
-      //   {
-      //     type: 'Link',
-      //     mediaType: 'text/html',
-      //     href: this.getClientUrl(true)
-      //   },
-      //   {
-      //     type: 'Link',
-      //     mediaType: 'text/html',
-      //     href: this.getClientUrl(false)
-      //   },
-      //   {
-      //     type: 'Link',
-      //     mediaType: 'text/html',
-      //     href: this.Actor.url
-      //   }
-      // ] as ActivityUrlObject[],
+      url: [
+        {
+          type: 'Link',
+          mediaType: 'text/html',
+          href: this.getClientUrl(true)
+        },
+        {
+          type: 'Link',
+          mediaType: 'text/html',
+          href: this.getClientUrl(false)
+        },
+        {
+          type: 'Link',
+          mediaType: 'text/html',
+          href: this.Actor.url
+        }
+      ] as ActivityUrlObject[],
 
-      url: this.Actor.url,
       summary: this.description
     })
   }
 
-  isOwned () {
-    return this.Actor.isOwned()
+  isLocal () {
+    return this.Actor.isLocal()
   }
 
   isOutdated () {

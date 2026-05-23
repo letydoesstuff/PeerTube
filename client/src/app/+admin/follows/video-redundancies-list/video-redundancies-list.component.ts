@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnInit, inject, viewChild } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { ConfirmService, Notifier, ServerService } from '@app/core'
@@ -24,7 +23,6 @@ type QueryParams = TableQueryParams & {
   templateUrl: './video-redundancies-list.component.html',
   styleUrls: [ './video-redundancies-list.component.scss' ],
   imports: [
-    CommonModule,
     GlobalIconComponent,
     FormsModule,
     DeleteButtonComponent,
@@ -181,7 +179,7 @@ export class VideoRedundanciesListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

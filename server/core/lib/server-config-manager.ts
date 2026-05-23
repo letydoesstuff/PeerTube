@@ -6,7 +6,6 @@ import {
   RegisteredExternalAuthConfig,
   RegisteredIdAndPassAuthConfig,
   ServerConfig,
-  VideoCommentPolicy,
   VideoResolutionType
 } from '@peertube/peertube-models'
 import { getServerCommit } from '@server/helpers/version.js'
@@ -14,9 +13,7 @@ import { CONFIG, isEmailEnabled } from '@server/initializers/config.js'
 import { CONSTRAINTS_FIELDS, DEFAULT_THEME_NAME, PEERTUBE_VERSION, WEBSERVER } from '@server/initializers/constants.js'
 import { isSignupAllowed, isSignupAllowedForCurrentIP } from '@server/lib/signup.js'
 import { ActorCustomPageModel } from '@server/models/account/actor-custom-page.js'
-import { ActorImageModel } from '@server/models/actor/actor-image.js'
 import { getServerActor } from '@server/models/application/application.js'
-import { UploadImageModel } from '@server/models/application/upload-image.js'
 import { PluginModel } from '@server/models/server/plugin.js'
 import { MActorImage, MActorUploadImages, MUploadImage } from '@server/types/models/index.js'
 import { Hooks } from './plugins/hooks.js'
@@ -49,6 +46,10 @@ class ServerConfigManager {
     this.homepageEnabled = !!content
   }
 
+  isHomepageEnabled () {
+    return this.homepageEnabled
+  }
+
   async getHTMLServerConfig (): Promise<HTMLServerConfig> {
     if (this.serverCommit === undefined) this.serverCommit = await getServerCommit()
 
@@ -58,6 +59,7 @@ class ServerConfigManager {
 
     return {
       client: {
+        newFeaturesInfo: CONFIG.CLIENT.NEW_FEATURES_INFO,
         header: {
           hideInstanceName: CONFIG.CLIENT.HEADER.HIDE_INSTANCE_NAME
         },
@@ -68,6 +70,10 @@ class ServerConfigManager {
           resumableUpload: {
             maxChunkSize: CONFIG.CLIENT.VIDEOS.RESUMABLE_UPLOAD.MAX_CHUNK_SIZE
           }
+        },
+        browseVideos: {
+          defaultSort: CONFIG.CLIENT.BROWSE_VIDEOS.DEFAULT_SORT,
+          defaultScope: CONFIG.CLIENT.BROWSE_VIDEOS.DEFAULT_SCOPE
         },
         menu: {
           login: {
@@ -97,8 +103,6 @@ class ServerConfigManager {
           downloadEnabled: CONFIG.DEFAULTS.PUBLISH.DOWNLOAD_ENABLED,
 
           commentsPolicy: CONFIG.DEFAULTS.PUBLISH.COMMENTS_POLICY,
-          // TODO: remove, deprecated in 6.2
-          commentsEnabled: CONFIG.DEFAULTS.PUBLISH.COMMENTS_POLICY !== VideoCommentPolicy.DISABLED,
 
           privacy: CONFIG.DEFAULTS.PUBLISH.PRIVACY,
           licence: CONFIG.DEFAULTS.PUBLISH.LICENCE
@@ -112,6 +116,7 @@ class ServerConfigManager {
           }
         },
         player: {
+          theme: CONFIG.DEFAULTS.PLAYER.THEME,
           autoPlay: CONFIG.DEFAULTS.PLAYER.AUTO_PLAY
         }
       },
@@ -137,6 +142,7 @@ class ServerConfigManager {
         social: {
           blueskyLink: CONFIG.INSTANCE.SOCIAL.BLUESKY,
           mastodonLink: CONFIG.INSTANCE.SOCIAL.MASTODON_LINK,
+          xLink: CONFIG.INSTANCE.SOCIAL.X_LINK,
           externalLink: CONFIG.INSTANCE.SOCIAL.EXTERNAL_LINK
         },
         customizations: {
@@ -179,6 +185,7 @@ class ServerConfigManager {
         default: defaultTheme,
         customization: {
           primaryColor: CONFIG.THEME.CUSTOMIZATION.PRIMARY_COLOR,
+          onPrimaryColor: CONFIG.THEME.CUSTOMIZATION.ON_PRIMARY_COLOR,
           foregroundColor: CONFIG.THEME.CUSTOMIZATION.FOREGROUND_COLOR,
           backgroundColor: CONFIG.THEME.CUSTOMIZATION.BACKGROUND_COLOR,
           backgroundSecondaryColor: CONFIG.THEME.CUSTOMIZATION.BACKGROUND_SECONDARY_COLOR,
@@ -301,6 +308,14 @@ class ServerConfigManager {
           extensions: CONSTRAINTS_FIELDS.ACTORS.IMAGE.EXTNAME
         }
       },
+      logo: {
+        file: {
+          size: {
+            max: CONSTRAINTS_FIELDS.LOGO.IMAGE.FILE_SIZE.max
+          },
+          extensions: CONSTRAINTS_FIELDS.LOGO.IMAGE.EXTNAME
+        }
+      },
       video: {
         image: {
           extensions: CONSTRAINTS_FIELDS.VIDEOS.IMAGE.EXTNAME,
@@ -372,6 +387,14 @@ class ServerConfigManager {
 
       views: {
         videos: {
+          remote: {
+            maxAge: CONFIG.VIEWS.VIDEOS.REMOTE.MAX_AGE
+          },
+
+          local: {
+            maxAge: CONFIG.VIEWS.VIDEOS.LOCAL.MAX_AGE
+          },
+
           watchingInterval: {
             anonymous: CONFIG.VIEWS.VIDEOS.WATCHING_INTERVAL.ANONYMOUS,
             users: CONFIG.VIEWS.VIDEOS.WATCHING_INTERVAL.USERS
@@ -380,7 +403,10 @@ class ServerConfigManager {
       },
 
       storyboards: {
-        enabled: CONFIG.STORYBOARDS.ENABLED
+        enabled: CONFIG.STORYBOARDS.ENABLED,
+        remoteRunners: {
+          enabled: CONFIG.STORYBOARDS.REMOTE_RUNNERS.ENABLED
+        }
       },
 
       webrtc: {
@@ -389,6 +415,15 @@ class ServerConfigManager {
 
       nsfwFlagsSettings: {
         enabled: CONFIG.NSFW_FLAGS_SETTINGS.ENABLED
+      },
+
+      fieldsConstraints: {
+        users: {
+          password: {
+            minLength: CONSTRAINTS_FIELDS.USERS.PASSWORD.min,
+            maxLength: CONSTRAINTS_FIELDS.USERS.PASSWORD.max
+          }
+        }
       }
     }
   }
@@ -415,7 +450,7 @@ class ServerConfigManager {
       minimumAge: CONFIG.SIGNUP.MINIMUM_AGE,
       requiresApproval: CONFIG.SIGNUP.REQUIRES_APPROVAL,
       requiresEmailVerification: CONFIG.SIGNUP.REQUIRES_EMAIL_VERIFICATION
-    }
+    } satisfies ServerConfig['signup']
 
     const htmlConfig = await this.getHTMLServerConfig()
 
@@ -514,7 +549,7 @@ class ServerConfigManager {
     return maxBy(this.getOpenGraphLogos(serverActor), 'width')
   }
 
-  getLogoUrl (serverActor: MActorUploadImages, width: 192 | 512) {
+  getLogoUrl (serverActor: MActorUploadImages, width: 192 | 512 | 1500) {
     const customLogo = this.getLogo(serverActor, width)
 
     if (customLogo) {
@@ -524,7 +559,7 @@ class ServerConfigManager {
     return `${WEBSERVER.URL}/client/assets/images/icons/icon-${width}x${width}.png`
   }
 
-  getLogo (serverActor: MActorUploadImages, width: 192 | 512) {
+  getLogo (serverActor: MActorUploadImages, width: 192 | 512 | 1500) {
     if (serverActor.Avatars.length > 0) {
       return findAppropriateImage(serverActor.Avatars, width)
     }
@@ -616,7 +651,7 @@ class ServerConfigManager {
       height: logo.height,
       width: logo.width,
       type,
-      fileUrl: UploadImageModel.getImageUrl(logo),
+      fileUrl: logo.getLocalFileUrl(),
       isFallback
     }
   }
@@ -626,7 +661,7 @@ class ServerConfigManager {
       height: logo.height,
       width: logo.width,
       type,
-      fileUrl: ActorImageModel.getImageUrl(logo),
+      fileUrl: logo.getLocalFileUrl(),
       isFallback
     }
   }

@@ -1,15 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
-import { expect } from 'chai'
 import { UserNotification, UserNotificationSettingValue, UserNotificationType } from '@peertube/peertube-models'
 import { cleanupTests, PeerTubeServer, waitJobs } from '@peertube/peertube-server-commands'
 import { MockSmtpServer } from '@tests/shared/mock-servers/mock-email.js'
-import {
-  prepareNotificationsTest,
-  CheckerBaseParams,
-  getAllNotificationsSettings,
-  checkNewVideoFromSubscription
-} from '@tests/shared/notifications.js'
+import { checkNewVideoFromSubscription } from '@tests/shared/notifications/check-video-notifications.js'
+import { getAllNotificationsSettings, prepareNotificationsTest } from '@tests/shared/notifications/notifications-common.js'
+import { CheckerBaseParams } from '@tests/shared/notifications/shared/notification-checker.js'
+import { expect } from 'chai'
 
 describe('Test notifications API', function () {
   let server: PeerTubeServer
@@ -63,8 +60,6 @@ describe('Test notifications API', function () {
           count: 2,
           typeOneOf: [ UserNotificationType.ABUSE_NEW_MESSAGE, UserNotificationType.NEW_VIDEO_FROM_SUBSCRIPTION ]
         })
-
-        console.log(data)
 
         expect(data).to.have.lengthOf(2)
         expect(total).to.equal(10)

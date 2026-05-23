@@ -109,7 +109,7 @@ configRouter.delete(
 configRouter.post(
   '/instance-logo/:logoType/pick',
   authenticate,
-  createReqFiles([ 'logofile' ], MIMETYPES.IMAGE.MIMETYPE_EXT),
+  createReqFiles([ 'logofile' ], MIMETYPES.LOGO_IMAGE.MIMETYPE_EXT),
   ensureUserHasRight(UserRight.MANAGE_CONFIGURATION),
   updateOrDeleteLogoValidator,
   updateInstanceLogoValidator,
@@ -326,6 +326,7 @@ function customConfig (): CustomConfig {
       social: {
         blueskyLink: CONFIG.INSTANCE.SOCIAL.BLUESKY,
         mastodonLink: CONFIG.INSTANCE.SOCIAL.MASTODON_LINK,
+        xLink: CONFIG.INSTANCE.SOCIAL.X_LINK,
         externalLink: CONFIG.INSTANCE.SOCIAL.EXTERNAL_LINK
       },
 
@@ -341,6 +342,7 @@ function customConfig (): CustomConfig {
 
       customization: {
         primaryColor: CONFIG.THEME.CUSTOMIZATION.PRIMARY_COLOR,
+        onPrimaryColor: CONFIG.THEME.CUSTOMIZATION.ON_PRIMARY_COLOR,
         foregroundColor: CONFIG.THEME.CUSTOMIZATION.FOREGROUND_COLOR,
         backgroundColor: CONFIG.THEME.CUSTOMIZATION.BACKGROUND_COLOR,
         backgroundSecondaryColor: CONFIG.THEME.CUSTOMIZATION.BACKGROUND_SECONDARY_COLOR,
@@ -366,24 +368,14 @@ function customConfig (): CustomConfig {
           preferAuthorDisplayName: CONFIG.CLIENT.VIDEOS.MINIATURE.PREFER_AUTHOR_DISPLAY_NAME
         }
       },
+      browseVideos: {
+        defaultSort: CONFIG.CLIENT.BROWSE_VIDEOS.DEFAULT_SORT,
+        defaultScope: CONFIG.CLIENT.BROWSE_VIDEOS.DEFAULT_SCOPE
+      },
       menu: {
         login: {
           redirectOnSingleExternalAuth: CONFIG.CLIENT.MENU.LOGIN.REDIRECT_ON_SINGLE_EXTERNAL_AUTH
         }
-      }
-    },
-    cache: {
-      previews: {
-        size: CONFIG.CACHE.PREVIEWS.SIZE
-      },
-      captions: {
-        size: CONFIG.CACHE.VIDEO_CAPTIONS.SIZE
-      },
-      torrents: {
-        size: CONFIG.CACHE.TORRENTS.SIZE
-      },
-      storyboards: {
-        size: CONFIG.CACHE.STORYBOARDS.SIZE
       }
     },
     signup: {
@@ -437,6 +429,7 @@ function customConfig (): CustomConfig {
         '2160p': CONFIG.TRANSCODING.RESOLUTIONS['2160p']
       },
       alwaysTranscodeOriginalResolution: CONFIG.TRANSCODING.ALWAYS_TRANSCODE_ORIGINAL_RESOLUTION,
+      alwaysTranscodePodcastOptimizedAudio: CONFIG.TRANSCODING.ALWAYS_TRANSCODE_PODCAST_OPTIMIZED_AUDIO,
       fps: {
         max: CONFIG.TRANSCODING.FPS.MAX
       },
@@ -578,7 +571,10 @@ function customConfig (): CustomConfig {
       }
     },
     storyboards: {
-      enabled: CONFIG.STORYBOARDS.ENABLED
+      enabled: CONFIG.STORYBOARDS.ENABLED,
+      remoteRunners: {
+        enabled: CONFIG.STORYBOARDS.REMOTE_RUNNERS.ENABLED
+      }
     },
     defaults: {
       publish: {
@@ -597,6 +593,7 @@ function customConfig (): CustomConfig {
         }
       },
       player: {
+        theme: CONFIG.DEFAULTS.PLAYER.THEME,
         autoPlay: CONFIG.DEFAULTS.PLAYER.AUTO_PLAY
       }
     },

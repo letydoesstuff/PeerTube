@@ -8,7 +8,13 @@ import { exists, isArray, isBooleanValid } from './misc.js'
 const USERS_CONSTRAINTS_FIELDS = CONSTRAINTS_FIELDS.USERS
 
 export function isUserPasswordValid (value: string) {
-  return validator.default.isLength(value, USERS_CONSTRAINTS_FIELDS.PASSWORD)
+  return validator.default.isLength(value, { min: USERS_CONSTRAINTS_FIELDS.PASSWORD.min }) &&
+    isUserPasswordTooLong(value) !== true
+}
+
+export function isUserPasswordTooLong (value: string) {
+  return !validator.default.isLength(value, { max: USERS_CONSTRAINTS_FIELDS.PASSWORD.max }) ||
+    Buffer.byteLength(value, 'utf8') > USERS_CONSTRAINTS_FIELDS.PASSWORD.maxBytes
 }
 
 export function isUserPasswordValidOrEmpty (value: string) {
@@ -101,4 +107,8 @@ export function isUserRoleValid (value: any) {
   return exists(value) &&
     validator.default.isInt('' + value) &&
     [ UserRole.ADMINISTRATOR, UserRole.MODERATOR, UserRole.USER ].includes(value)
+}
+
+export function isUserFeatureInfo (value: string) {
+  return exists(value) && validator.default.isInt(value + '')
 }

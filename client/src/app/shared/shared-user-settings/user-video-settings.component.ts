@@ -1,4 +1,3 @@
-import { NgIf } from '@angular/common'
 import { Component, OnDestroy, OnInit, booleanAttribute, inject, input } from '@angular/core'
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { AuthService, Notifier, ServerService, User, UserService } from '@app/core'
@@ -37,7 +36,6 @@ type Form = {
     HelpComponent,
     SelectLanguagesComponent,
     PeertubeCheckboxComponent,
-    NgIf,
     SelectRadioComponent
   ]
 })
@@ -226,7 +224,7 @@ export class UserVideoSettingsComponent implements OnInit, OnDestroy {
           if (this.notifyOnUpdate()) this.notifier.success($localize`Video settings updated.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

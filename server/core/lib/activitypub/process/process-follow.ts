@@ -38,7 +38,7 @@ async function processFollow (byActor: MActorSignature, activityId: string, targ
     const targetActor = await ActorModel.loadByUrlAndPopulateAccountAndChannel(targetActorURL, t)
 
     if (!targetActor) throw new Error('Unknown actor')
-    if (targetActor.isOwned() === false) throw new Error('This is not a local actor.')
+    if (targetActor.isLocal() === false) throw new Error('This is not a local actor.')
 
     if (await rejectIfInstanceFollowDisabled(byActor, activityId, targetActor)) return { actorFollow: undefined }
     if (await rejectIfMuted(byActor, activityId, targetActor)) return { actorFollow: undefined }
@@ -98,14 +98,12 @@ async function rejectIfInstanceFollowDisabled (byActor: MActorSignature, activit
 
       return true
     }
-  } else {
-    if (CONFIG.FOLLOWERS.CHANNELS.ENABLED === false) {
-      logger.info('Rejecting %s because channel followers are disabled.', targetActor.url)
+  } else if (CONFIG.FOLLOWERS.CHANNELS.ENABLED === false) {
+    logger.info('Rejecting %s because channel followers are disabled.', targetActor.url)
 
-      sendReject(activityId, byActor, targetActor)
+    sendReject(activityId, byActor, targetActor)
 
-      return true
-    }
+    return true
   }
 
   return false

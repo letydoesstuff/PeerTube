@@ -6,7 +6,7 @@ import { formatICU } from '@app/helpers'
 import { BuildFormValidator } from '@app/shared/form-validators/form-validator.model'
 import { CustomConfig } from '@peertube/peertube-models'
 import { DeepPartial } from '@peertube/peertube-typescript-utils'
-import merge from 'lodash-es/merge'
+import mergeWith from 'lodash-es/mergeWith'
 import { catchError, map, switchMap } from 'rxjs/operators'
 import { environment } from '../../../environments/environment'
 import { SelectOptionsItem } from '../../../types/select-options-item.model'
@@ -106,7 +106,12 @@ export class AdminConfigService {
     return this.getCustomConfig()
       .pipe(
         switchMap(customConfig => {
-          const newConfig = merge(customConfig, partialConfig)
+          const newConfig = mergeWith(customConfig, partialConfig, (objValue, srcValue) => {
+            // We want to replace arrays, not merge them
+            if (Array.isArray(srcValue)) return srcValue
+
+            return undefined
+          })
 
           return this.authHttp.put<CustomConfig>(AdminConfigService.BASE_APPLICATION_URL + '/custom', newConfig)
             .pipe(map(() => newConfig))
@@ -129,17 +134,20 @@ export class AdminConfigService {
     const { currentConfig, form, formConfig, success } = options
 
     this.updateCustomConfig(formConfig)
-      .pipe(switchMap(() => this.serverService.resetConfig()))
-      .subscribe({
-        next: newConfig => {
+      .pipe(
+        switchMap(newConfig => {
           Object.assign(currentConfig, newConfig)
-
+          return this.serverService.resetConfig()
+        })
+      )
+      .subscribe({
+        next: () => {
           form.markAsPristine()
 
           this.notifier.success(success)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

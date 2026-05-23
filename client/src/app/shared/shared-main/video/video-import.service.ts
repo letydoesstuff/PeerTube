@@ -26,18 +26,27 @@ export class VideoImportService {
       .pipe(catchError(res => this.restExtractor.handleError(res)))
   }
 
-  getMyVideoImports (options: {
+  listMyVideoImports (options: {
     pagination: RestPagination
     sort: SortMeta
+    includeCollaborations: boolean
     search?: string
   }): Observable<ResultList<VideoImport>> {
-    const { pagination, sort, search } = options
+    const { pagination, sort, search, includeCollaborations } = options
 
     let params = new HttpParams()
     params = this.restService.addRestGetParams(params, pagination, sort)
 
+    if (includeCollaborations) params = params.append('includeCollaborations', 'true')
+
     if (search) {
       const filters = this.restService.parseQueryStringFilter(search, {
+        id: {
+          prefix: 'id:'
+        },
+        videoId: {
+          prefix: 'videoId:'
+        },
         videoChannelSyncId: {
           prefix: 'videoChannelSyncId:'
         },
@@ -64,6 +73,11 @@ export class VideoImportService {
 
   cancelVideoImport (videoImport: VideoImport) {
     return this.authHttp.post(VideoImportService.BASE_VIDEO_IMPORT_URL + videoImport.id + '/cancel', {})
+      .pipe(catchError(err => this.restExtractor.handleError(err)))
+  }
+
+  retryVideoImport (videoImport: VideoImport) {
+    return this.authHttp.post(VideoImportService.BASE_VIDEO_IMPORT_URL + videoImport.id + '/retry', {})
       .pipe(catchError(err => this.restExtractor.handleError(err)))
   }
 

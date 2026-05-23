@@ -2,7 +2,6 @@ import { getResolutionLabel } from '@peertube/peertube-core-utils'
 import {
   Video,
   VideoAdditionalAttributes,
-  VideoCommentPolicy,
   VideoDetails,
   VideoFile,
   VideoInclude,
@@ -10,15 +9,16 @@ import {
   VideoStreamingPlaylist
 } from '@peertube/peertube-models'
 import { uuidToShort } from '@peertube/peertube-node-utils'
-import { generateMagnetUri } from '@server/helpers/webtorrent.js'
 import { tracer } from '@server/lib/opentelemetry/tracing.js'
 import { getHLSResolutionPlaylistFilename } from '@server/lib/paths.js'
 import { getLocalVideoFileMetadataUrl } from '@server/lib/video-urls.js'
 import { VideoViewsManager } from '@server/lib/views/video-views-manager.js'
+import { generateMagnetUri } from '@server/lib/webtorrent.js'
 import { isArray } from '../../../helpers/custom-validators/misc.js'
 import {
   VIDEO_CATEGORIES,
   VIDEO_COMMENTS_POLICY,
+  VIDEO_EMBED_PRIVACY_POLICIES,
   VIDEO_LANGUAGES,
   VIDEO_LICENCES,
   VIDEO_PRIVACIES,
@@ -101,11 +101,11 @@ export function videoModelToFormattedJSON (video: MVideoFormattable, options: Vi
     nsfwSummary: video.nsfwSummary,
 
     truncatedDescription: video.getTruncatedDescription(),
-    description: options && options.completeDescription === true
+    description: options?.completeDescription === true
       ? video.description
       : video.getTruncatedDescription(),
 
-    isLocal: video.isOwned(),
+    isLocal: video.isLocal(),
     duration: video.duration,
 
     aspectRatio: video.aspectRatio,
@@ -115,8 +115,12 @@ export function videoModelToFormattedJSON (video: MVideoFormattable, options: Vi
 
     likes: video.likes,
     dislikes: video.dislikes,
-    thumbnailPath: video.getMiniatureStaticPath(),
-    previewPath: video.getPreviewStaticPath(),
+
+    thumbnailPath: video.getSmallestThumbnailStaticPath('16:9'),
+    previewPath: video.getBestThumbnailStaticPath('16:9'),
+
+    thumbnails: (video.Thumbnails || []).map(t => t.toFormattedJSON()),
+
     embedPath: video.getEmbedStaticPath(),
     createdAt: video.createdAt,
     updatedAt: video.updatedAt,
@@ -170,8 +174,6 @@ export function videoModelToFormattedDetailsJSON (video: MVideoFormattableDetail
     account: video.VideoChannel.Account.toFormattedJSON(),
     tags,
 
-    // TODO: remove, deprecated in PeerTube 6.2
-    commentsEnabled: video.commentsPolicy !== VideoCommentPolicy.DISABLED,
     commentsPolicy: {
       id: video.commentsPolicy,
       label: VIDEO_COMMENTS_POLICY[video.commentsPolicy]
@@ -179,13 +181,20 @@ export function videoModelToFormattedDetailsJSON (video: MVideoFormattableDetail
 
     downloadEnabled: video.downloadEnabled,
     waitTranscoding: video.waitTranscoding,
+
     inputFileUpdatedAt: video.inputFileUpdatedAt,
+
     state: {
       id: video.state,
       label: getStateLabel(video.state)
     },
 
-    trackerUrls: video.getTrackerUrls()
+    trackerUrls: video.getTrackerUrls(),
+
+    embedPrivacyPolicy: {
+      id: video.embedPrivacyPolicy,
+      label: VIDEO_EMBED_PRIVACY_POLICIES[video.embedPrivacyPolicy]
+    }
   }
 
   span.end()

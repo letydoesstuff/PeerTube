@@ -1,17 +1,22 @@
 <div class="menu">
+
+  <div class="svg-container" aria-hidden="true" [innerHTML]="lateralMenuBackground"></div>
+
   <h1>{{ config().title }}</h1>
 
   <ul class="ul-unstyle">
     @for (entry of config().entries; track entry) {
       @if (entry.type === 'separator') {
-      <div class="separator">
-        <div></div>
-      </div>
+        <div class="separator">
+          <div></div>
+        </div>
       } @else if (entry.type === 'link' && isDisplayed(entry)) {
         <ng-template #icon>
-          <div *ngIf="entry.icon" class="global-icon-wrapper">
-            <my-global-icon [iconName]="entry.icon"></my-global-icon>
-          </div>
+          @if (entry.icon) {
+            <div class="global-icon-wrapper">
+              <my-global-icon [iconName]="entry.icon"></my-global-icon>
+            </div>
+          }
         </ng-template>
 
         <ng-template #label>
@@ -24,7 +29,13 @@
             <span class="label" *ngTemplateOutlet="label"></span>
           </my-unavailable-menu-entry>
         } @else {
-          <a [routerLink]="entry.routerLink" queryParamsHandling="merge" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+          <a
+            [routerLink]="entry.routerLink"
+            [queryParams]="globalQueryParams()"
+            queryParamsHandling="merge"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: true }"
+          >
             <ng-container *ngTemplateOutlet="icon"></ng-container>
             <ng-container *ngTemplateOutlet="label"></ng-container>
           </a>

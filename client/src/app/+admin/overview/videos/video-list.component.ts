@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnInit, inject, viewChild } from '@angular/core'
 import { ActivatedRoute, RouterLink } from '@angular/router'
 import { AuthService, ConfirmService, Notifier, ServerService } from '@app/core'
@@ -43,7 +42,6 @@ type ColumnName =
   templateUrl: './video-list.component.html',
   styleUrls: [ './video-list.component.scss' ],
   imports: [
-    CommonModule,
     GlobalIconComponent,
     AdvancedInputFilterComponent,
     ButtonComponent,
@@ -194,7 +192,9 @@ export class VideoListComponent implements OnInit {
   }
 
   isImport (video: Video) {
-    return video.state.id === VideoState.TO_IMPORT
+    const state = video.state.id
+
+    return state === VideoState.TO_IMPORT || state === VideoState.TO_IMPORT_FAILED
   }
 
   hasOriginalFile (video: Video) {
@@ -246,7 +246,7 @@ export class VideoListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -262,7 +262,7 @@ export class VideoListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -280,7 +280,7 @@ export class VideoListComponent implements OnInit {
   onRowExpand (event: TableRowExpandEvent) {
     const video = event.data as VideoDetails
 
-    if (!video.videoSource?.filename && !videoRequiresFileToken(video)) return
+    if (!video.videoSource?.inputFilename && !videoRequiresFileToken(video)) return
 
     this.videoFileTokenService.getVideoFileToken({ videoUUID: video.uuid })
       .subscribe(({ token }) => {
@@ -329,7 +329,7 @@ export class VideoListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -347,7 +347,7 @@ export class VideoListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -376,7 +376,7 @@ export class VideoListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -389,7 +389,7 @@ export class VideoListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -426,7 +426,7 @@ export class VideoListComponent implements OnInit {
           }
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 }

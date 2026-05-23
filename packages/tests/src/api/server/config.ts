@@ -36,6 +36,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.instance.social.externalLink).to.be.empty
   expect(data.instance.social.blueskyLink).to.be.empty
   expect(data.instance.social.mastodonLink).to.be.empty
+  expect(data.instance.social.xLink).to.be.empty
 
   expect(data.instance.languages).to.have.lengthOf(0)
   expect(data.instance.categories).to.have.lengthOf(0)
@@ -50,12 +51,9 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
 
   expect(data.client.header.hideInstanceName).to.be.false
   expect(data.client.videos.miniature.preferAuthorDisplayName).to.be.false
+  expect(data.client.browseVideos.defaultSort).to.equal('-publishedAt')
+  expect(data.client.browseVideos.defaultScope).to.equal('federated')
   expect(data.client.menu.login.redirectOnSingleExternalAuth).to.be.false
-
-  expect(data.cache.previews.size).to.equal(1)
-  expect(data.cache.captions.size).to.equal(1)
-  expect(data.cache.torrents.size).to.equal(1)
-  expect(data.cache.storyboards.size).to.equal(1)
 
   expect(data.signup.enabled).to.be.true
   expect(data.signup.limit).to.equal(4)
@@ -90,6 +88,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.transcoding.alwaysTranscodeOriginalResolution).to.be.true
   expect(data.transcoding.fps.max).to.equal(60)
   expect(data.transcoding.webVideos.enabled).to.be.true
+  expect(data.transcoding.alwaysTranscodePodcastOptimizedAudio).to.be.false
   expect(data.transcoding.hls.enabled).to.be.true
   expect(data.transcoding.hls.splitAudioAndVideo).to.be.false
   expect(data.transcoding.originalFile.keep).to.be.false
@@ -156,6 +155,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.defaults.publish.privacy).to.equal(VideoPrivacy.PUBLIC)
   expect(data.defaults.p2p.embed.enabled).to.be.true
   expect(data.defaults.p2p.webapp.enabled).to.be.true
+  expect(data.defaults.player.theme).to.equal('lucide')
   expect(data.defaults.player.autoPlay).to.be.true
 
   expect(data.email.body.signature).to.equal('')
@@ -194,7 +194,8 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
       social: {
         externalLink: 'https://joinpeertube.org/',
         mastodonLink: 'https://framapiaf.org/@peertube',
-        blueskyLink: 'https://bsky.app/profile/joinpeertube.org'
+        blueskyLink: 'https://bsky.app/profile/joinpeertube.org',
+        xLink: 'https://x.org/@joinpeertube'
       },
 
       defaultClientRoute: '/videos/recently-added',
@@ -208,6 +209,7 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
       default: 'default',
       customization: {
         primaryColor: '#001',
+        onPrimaryColor: '#042',
         foregroundColor: '#002',
         backgroundColor: '#003',
         backgroundSecondaryColor: '#004',
@@ -233,24 +235,14 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
           preferAuthorDisplayName: true
         }
       },
+      browseVideos: {
+        defaultSort: '-trending',
+        defaultScope: 'local'
+      },
       menu: {
         login: {
           redirectOnSingleExternalAuth: true
         }
-      }
-    },
-    cache: {
-      previews: {
-        size: 2
-      },
-      captions: {
-        size: 3
-      },
-      torrents: {
-        size: 4
-      },
-      storyboards: {
-        size: 5
       }
     },
     signup: {
@@ -304,6 +296,7 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
         '2160p': false
       },
       alwaysTranscodeOriginalResolution: false,
+      alwaysTranscodePodcastOptimizedAudio: false,
       fps: {
         max: 120
       },
@@ -437,7 +430,10 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
       }
     },
     storyboards: {
-      enabled: false
+      enabled: false,
+      remoteRunners: {
+        enabled: true
+      }
     },
     export: {
       users: {
@@ -462,7 +458,8 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
         }
       },
       player: {
-        autoPlay: false
+        autoPlay: false,
+        theme: 'galaxy'
       }
     },
     email: {
@@ -524,10 +521,7 @@ describe('Test config', function () {
       expect(data.views.videos.watchingInterval.anonymous).to.equal(5000)
       expect(data.views.videos.watchingInterval.users).to.equal(5000)
 
-      expect(data.webrtc.stunServers).to.have.members([
-        'stun:stunserver2024.stunprotocol.org',
-        'stun:stun.framasoft.org'
-      ])
+      expect(data.webrtc.stunServers).to.include('stun:stun.framasoft.org')
     })
 
     it('Should have a correct config on a server with registration enabled', async function () {
@@ -687,9 +681,10 @@ describe('Test config', function () {
     }
 
     describe('Banner', function () {
-      const bannerPaths: string[] = []
+      const bannerUrls: string[] = []
 
-      it('Should update instance banner', async function () {
+      it('Should update instance banner/avatars', async function () {
+        await server.config.updateInstanceImage({ type: ActorImageType.AVATAR, fixture: 'avatar.png' })
         await server.config.updateInstanceImage({ type: ActorImageType.BANNER, fixture: 'banner.jpg' })
 
         const { banners } = await checkAndGetServerImages()
@@ -698,9 +693,9 @@ describe('Test config', function () {
 
         for (const banner of banners) {
           await testImage({ url: banner.fileUrl, name: `banner-resized-${banner.width}.jpg` })
-          await testFileExistsOnFSOrNot(server, 'avatars', basename(banner.path), true)
+          await testFileExistsOnFSOrNot(server, 'avatars', basename(banner.fileUrl), true)
 
-          bannerPaths.push(banner.path)
+          bannerUrls.push(banner.fileUrl)
         }
       })
 
@@ -711,17 +706,18 @@ describe('Test config', function () {
       it('Should remove instance banner', async function () {
         await server.config.deleteInstanceImage({ type: ActorImageType.BANNER })
 
-        const { banners } = await checkAndGetServerImages()
+        const { banners, avatars } = await checkAndGetServerImages()
         expect(banners).to.have.lengthOf(0)
+        expect(avatars).to.not.have.lengthOf(0)
 
-        for (const bannerPath of bannerPaths) {
-          await testFileExistsOnFSOrNot(server, 'avatars', basename(bannerPath), false)
+        for (const bannerUrl of bannerUrls) {
+          await testFileExistsOnFSOrNot(server, 'avatars', basename(bannerUrl), false)
         }
       })
     })
 
     describe('Avatar', function () {
-      const avatarPaths: string[] = []
+      const avatarUrls: string[] = []
 
       it('Should update instance avatar', async function () {
         for (const extension of [ '.png', '.gif' ]) {
@@ -733,9 +729,9 @@ describe('Test config', function () {
 
           for (const avatar of avatars) {
             await testAvatarSize({ url: server.url, avatar, imageName: `avatar-resized-${avatar.width}x${avatar.width}` })
-            await testFileExistsOnFSOrNot(server, 'avatars', basename(avatar.path), true)
+            await testFileExistsOnFSOrNot(server, 'avatars', basename(avatar.fileUrl), true)
 
-            avatarPaths.push(avatar.path)
+            avatarUrls.push(avatar.fileUrl)
           }
         }
       })
@@ -757,8 +753,8 @@ describe('Test config', function () {
         const { avatars } = await checkAndGetServerImages()
         expect(avatars).to.have.lengthOf(0)
 
-        for (const avatarPath of avatarPaths) {
-          await testFileExistsOnFSOrNot(server, 'avatars', basename(avatarPath), false)
+        for (const avatarUrl of avatarUrls) {
+          await testFileExistsOnFSOrNot(server, 'avatars', basename(avatarUrl), false)
         }
       })
 
@@ -820,6 +816,8 @@ describe('Test config', function () {
         const logoPaths: string[] = []
 
         it('Should update instance header square icon', async function () {
+          await server.config.updateInstanceLogo({ type: 'favicon', fixture: 'avatar.png' })
+
           for (const extension of [ '.png', '.gif' ]) {
             const fixture = 'avatar' + extension
 
@@ -838,6 +836,8 @@ describe('Test config', function () {
 
             await makeRawRequest({ url: logos[0].fileUrl, expectedStatus: HttpStatusCode.OK_200 })
             await testFileExistsOnFSOrNot(server, 'uploads/images', basename(logos[0].fileUrl), true)
+
+            expect(htmlConfig.instance.logo.find(l => l.type === 'favicon' && l.isFallback === false)).to.exist
           }
         })
 
@@ -858,6 +858,11 @@ describe('Test config', function () {
           for (const logoPath of logoPaths) {
             await testFileExistsOnFSOrNot(server, 'uploads/images', basename(logoPath), false)
           }
+
+          // Check we only delete the appropriate file
+          expect(htmlConfig.instance.logo.find(l => l.type === 'favicon' && l.isFallback === false)).to.exist
+
+          await server.config.deleteInstanceLogo({ type: 'favicon' })
         })
       })
 
@@ -960,6 +965,26 @@ describe('Test config', function () {
           await server.config.deleteInstanceImage({ type: ActorImageType.AVATAR })
         })
       })
+
+      describe('SVG logos', async function () {
+        it('Should upload SVG on compatible endpoints', async function () {
+          for (const type of [ 'favicon', 'header-wide', 'header-square', 'opengraph' ] as LogoType[]) {
+            await server.config.updateInstanceLogo({ type, fixture: 'peertube.svg' })
+
+            const htmlConfig = await server.config.getConfig()
+
+            const logos = htmlConfig.instance.logo.filter(l => l.type === type)
+            expect(logos).to.have.lengthOf(1)
+            expect(logos[0].width).to.be.null
+            expect(logos[0].height).to.be.null
+            expect(logos[0].isFallback).to.be.false
+            expect(logos[0].type).to.equal(type)
+
+            await makeRawRequest({ url: logos[0].fileUrl, expectedStatus: HttpStatusCode.OK_200 })
+            await testFileExistsOnFSOrNot(server, 'uploads/images', basename(logos[0].fileUrl), true)
+          }
+        })
+      })
     })
   })
 
@@ -1005,6 +1030,69 @@ describe('Test config', function () {
 
       await testImage({ url: server.url + icon.src, name: `avatar-resized-48x48.png` })
     })
+  })
+
+  after(async function () {
+    await cleanupTests([ server ])
+  })
+})
+
+describe('YAML config', function () {
+  let server: PeerTubeServer
+  let userToken: string
+
+  before(async function () {
+    this.timeout(30000)
+
+    server = await createSingleServer(1, {
+      user: {
+        password_constraints: {
+          min_length: 10
+        }
+      }
+    })
+    await setAccessTokensToServers([ server ])
+  })
+
+  it('Should update the minimum length of a password', async function () {
+    await server.users.create({ username: 'user10', password: 'short', expectedStatus: HttpStatusCode.BAD_REQUEST_400 })
+
+    await server.users.create({ username: 'user10', password: 's'.repeat(10) })
+  })
+
+  it('Should still be able to login with an old password', async function () {
+  })
+
+  it('Should update the minimum length of a password but still allow to login', async function () {
+    await server.kill()
+
+    await server.run({
+      user: {
+        password_constraints: {
+          min_length: 12
+        }
+      }
+    })
+
+    const res = await server.login.login({ user: { username: 'user10', password: 's'.repeat(10) } })
+    userToken = res.access_token
+  })
+
+  it('Should be able to change the password', async function () {
+    await server.users.updateMe({
+      token: userToken,
+      currentPassword: 's'.repeat(10),
+      password: 'password',
+      expectedStatus: HttpStatusCode.BAD_REQUEST_400
+    })
+
+    await server.users.updateMe({
+      token: userToken,
+      currentPassword: 's'.repeat(10),
+      password: 's'.repeat(12)
+    })
+
+    await server.login.login({ user: { username: 'user10', password: 's'.repeat(12) } })
   })
 
   after(async function () {

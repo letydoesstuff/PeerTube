@@ -2,7 +2,7 @@ import { inject } from '@angular/core'
 import { ActivatedRouteSnapshot, ResolveFn, RouterStateSnapshot, Routes } from '@angular/router'
 import { CanDeactivateGuard, ServerService, UserRightGuard } from '@app/core'
 import { CustomPageService } from '@app/shared/shared-main/custom-page/custom-page.service'
-import { CustomConfig, UserRight, VideoCommentPolicyType, VideoConstant, VideoPrivacyType } from '@peertube/peertube-models'
+import { CustomConfig, UserRight, VideoCommentPolicyType, ConstantLabel, VideoPrivacyType } from '@peertube/peertube-models'
 import { map } from 'rxjs'
 import { AdminConfigComponent } from './admin-config.component'
 import {
@@ -17,6 +17,7 @@ import { AdminConfigCustomizationComponent } from './pages/admin-config-customiz
 import { AdminConfigService } from '../../shared/shared-admin/admin-config.service'
 import { AdminConfigLogoComponent } from './pages/admin-config-logo.component'
 import { InstanceLogoService } from '../../shared/shared-instance/instance-logo.service'
+import { PlayerSettingsService } from '@app/shared/shared-video/player-settings.service'
 
 export const customConfigResolver: ResolveFn<CustomConfig> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
   return inject(AdminConfigService).getCustomConfig()
@@ -27,26 +28,26 @@ export const homepageResolver: ResolveFn<string> = (_route: ActivatedRouteSnapsh
     .pipe(map(({ content }) => content))
 }
 
-export const categoriesResolver: ResolveFn<VideoConstant<number>[]> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
+export const categoriesResolver: ResolveFn<ConstantLabel<number>[]> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
   return inject(ServerService).getVideoCategories()
 }
 
-export const languagesResolver: ResolveFn<VideoConstant<string>[]> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
+export const languagesResolver: ResolveFn<ConstantLabel<string>[]> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
   return inject(ServerService).getVideoLanguages()
 }
 
-export const licencesResolver: ResolveFn<VideoConstant<number>[]> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
+export const licencesResolver: ResolveFn<ConstantLabel<number>[]> = (_route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
   return inject(ServerService).getVideoLicences()
 }
 
-export const privaciesResolver: ResolveFn<VideoConstant<VideoPrivacyType>[]> = (
+export const privaciesResolver: ResolveFn<ConstantLabel<VideoPrivacyType>[]> = (
   _route: ActivatedRouteSnapshot,
   _state: RouterStateSnapshot
 ) => {
   return inject(ServerService).getVideoPrivacies()
 }
 
-export const commentPoliciesResolver: ResolveFn<VideoConstant<VideoCommentPolicyType>[]> = (
+export const commentPoliciesResolver: ResolveFn<ConstantLabel<VideoCommentPolicyType>[]> = (
   _route: ActivatedRouteSnapshot,
   _state: RouterStateSnapshot
 ) => {
@@ -71,7 +72,8 @@ export const configRoutes: Routes = [
       customConfig: customConfigResolver
     },
     providers: [
-      InstanceLogoService
+      InstanceLogoService,
+      PlayerSettingsService
     ],
     component: AdminConfigComponent,
     children: [

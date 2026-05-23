@@ -1,4 +1,3 @@
-import { NgIf } from '@angular/common'
 import { Component, OnChanges, booleanAttribute, inject, input, output, viewChild } from '@angular/core'
 import { AuthService, ConfirmService, Notifier, ScreenService, ServerService } from '@app/core'
 import { NgbDropdown, NgbDropdownAnchor, NgbDropdownMenu } from '@ng-bootstrap/ng-bootstrap'
@@ -8,8 +7,8 @@ import { Actor } from '../shared-main/account/actor.model'
 import {
   ActionDropdownComponent,
   DropdownAction,
-  DropdownButtonSize,
-  DropdownDirection
+  DropdownButtonIcon,
+  DropdownButtonSize
 } from '../shared-main/buttons/action-dropdown.component'
 import { VideoCaptionService } from '../shared-main/video-caption/video-caption.service'
 import { RedundancyService } from '../shared-main/video/redundancy.service'
@@ -44,7 +43,6 @@ export type VideoActionsDisplayType = {
   templateUrl: './video-actions-dropdown.component.html',
   styleUrls: [ './video-actions-dropdown.component.scss' ],
   imports: [
-    NgIf,
     NgbDropdown,
     NgbDropdownAnchor,
     NgbDropdownMenu,
@@ -102,7 +100,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
 
   readonly buttonStyled = input(false, { transform: booleanAttribute })
   readonly buttonSize = input<DropdownButtonSize>('normal')
-  readonly buttonDirection = input<DropdownDirection>('vertical')
+  readonly buttonIcon = input<DropdownButtonIcon>('more-vertical')
 
   readonly transcriptionWidgetOpened = input<boolean>(undefined)
 
@@ -181,14 +179,17 @@ export class VideoActionsDropdownComponent implements OnChanges {
   isVideoEditable () {
     if (!this.user) return false
 
-    return this.video().isEditableBy(this.user, this.serverService.getHTMLConfig().videoStudio.enabled)
+    return this.video().isStudioEditableBy({
+      user: this.user,
+      studioEnabled: this.serverService.getHTMLConfig().videoStudio.enabled
+    })
   }
 
   isVideoStatsAvailable () {
     if (!this.user) return false
 
-    const video = this.video()
-    return video.isLocal && video.isOwnerOrHasSeeAllVideosRight(this.user)
+    // Users that can update the video can also see its stats
+    return this.video().isUpdatableBy(this.user)
   }
 
   isVideoRemovable () {
@@ -225,6 +226,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
 
   isVideoDownloadableByAnonymous () {
     const video = this.video()
+
     return (
       video &&
       video.isLive !== true &&
@@ -237,10 +239,11 @@ export class VideoActionsDropdownComponent implements OnChanges {
     if (!this.user) return false
 
     const video = this.video()
+
     return (
       video &&
       video.isLive !== true &&
-      video.isOwnerOrHasSeeAllVideosRight(this.user)
+      video.isUpdatableBy(this.user)
     )
   }
 
@@ -293,7 +296,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.videoUnblocked.emit()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -316,7 +319,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.videoRemoved.emit()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -328,7 +331,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.notifier.success(message)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -343,7 +346,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.videoAccountMuted.emit()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -357,7 +360,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.notifier.success($localize`Account ${params.nameWithHost} unmuted.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -374,7 +377,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.videoFilesRemoved.emit()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -386,7 +389,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           this.transcodingCreated.emit()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -399,7 +402,7 @@ export class VideoActionsDropdownComponent implements OnChanges {
           else if (result.alreadyHasCaptions) this.notifier.info($localize`This video already has captions.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

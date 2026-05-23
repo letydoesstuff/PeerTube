@@ -13,6 +13,7 @@ import {
 import { buildUUID } from '@peertube/peertube-node-utils'
 import { getFFmpegCommandWrapperOptions } from '@server/helpers/ffmpeg/index.js'
 import { CONFIG } from '@server/initializers/config.js'
+import { sequelizeTypescript } from '@server/initializers/database.js'
 import { VideoTranscodingProfilesManager } from '@server/lib/transcoding/default-transcoding-profiles.js'
 import { isUserQuotaValid } from '@server/lib/user.js'
 import { VideoPathManager } from '@server/lib/video-path-manager.js'
@@ -94,8 +95,12 @@ async function processVideoStudioEdition (job: Job) {
     await safeCleanupStudioTMPFiles(payload.tasks)
 
     try {
-      const video = await VideoModel.loadFull(payload.videoUUID)
-      await video.setNewState(VideoState.PUBLISHED, false, undefined)
+      await sequelizeTypescript.transaction(async transaction => {
+        const video = await VideoModel.load(payload.videoUUID, transaction)
+        if (!video || video.state === VideoState.PUBLISHED) return
+
+        await video.setNewState(VideoState.PUBLISHED, false, transaction)
+      })
     } catch (err) {
       logger.error('Cannot reset video state after studio error', { err, ...lTags })
     }
@@ -198,7 +203,7 @@ async function checkUserQuotaOrThrow (video: MVideoFullLight, payload: VideoStud
   const filePathFinder = (i: number) => (payload.tasks[i] as VideoStudioTaskIntroPayload | VideoStudioTaskOutroPayload).options.file
 
   const additionalBytes = await approximateIntroOutroAdditionalSize(video, payload.tasks, filePathFinder)
-  if (await isUserQuotaValid({ userId: user.id, uploadSize: additionalBytes }) === false) {
+  if (await isUserQuotaValid({ channelUserId: user.id, uploadSize: additionalBytes }) === false) {
     throw new Error('Quota exceeded for this user to edit the video')
   }
 }

@@ -3,23 +3,25 @@ import { Component, inject, OnDestroy, OnInit } from '@angular/core'
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule, ValueChangeEvent } from '@angular/forms'
 import { ActivatedRoute, RouterModule } from '@angular/router'
 import { CanComponentDeactivate, ServerService, ThemeService } from '@app/core'
+import { HEX_COLOR_CODE_VALIDATOR } from '@app/shared/form-validators/common-validators'
 import { BuildFormArgumentTyped, FormDefaultTyped, FormReactiveMessagesTyped } from '@app/shared/form-validators/form-validator.model'
 import { FormReactiveErrorsTyped, FormReactiveService } from '@app/shared/shared-forms/form-reactive.service'
 import { PeertubeCheckboxComponent } from '@app/shared/shared-forms/peertube-checkbox.component'
+import { PeertubeColorPickerComponent } from '@app/shared/shared-forms/peertube-color-picker.component'
 import { SelectCustomValueComponent } from '@app/shared/shared-forms/select/select-custom-value.component'
 import { SelectOptionsComponent } from '@app/shared/shared-forms/select/select-options.component'
 import { objectKeysTyped } from '@peertube/peertube-core-utils'
-import { CustomConfig } from '@peertube/peertube-models'
+import { CustomConfig, PlayerTheme } from '@peertube/peertube-models'
 import { capitalizeFirstLetter } from '@root-helpers/string'
 import { ColorPaletteThemeConfig, ThemeCustomizationKey } from '@root-helpers/theme-manager'
 import debug from 'debug'
-import { ColorPickerModule } from 'primeng/colorpicker'
 import { debounceTime, Subscription } from 'rxjs'
 import { SelectOptionsItem } from 'src/types'
 import { AdminConfigService } from '../../../shared/shared-admin/admin-config.service'
 import { HelpComponent } from '../../../shared/shared-main/buttons/help.component'
 import { AlertComponent } from '../../../shared/shared-main/common/alert.component'
 import { AdminSaveBarComponent } from '../shared/admin-save-bar.component'
+import { SelectPlayerThemeComponent } from '@app/shared/shared-forms/select/select-player-theme.component'
 
 const debugLogger = debug('peertube:config')
 
@@ -54,6 +56,7 @@ type Form = {
 
     customization: FormGroup<{
       primaryColor: FormControl<string>
+      onPrimaryColor: FormControl<string>
       foregroundColor: FormControl<string>
       backgroundColor: FormControl<string>
       backgroundSecondaryColor: FormControl<string>
@@ -63,6 +66,12 @@ type Form = {
       headerForegroundColor: FormControl<string>
       headerBackgroundColor: FormControl<string>
       inputBorderRadius: FormControl<string>
+    }>
+  }>
+
+  defaults: FormGroup<{
+    player: FormGroup<{
+      theme: FormControl<PlayerTheme>
     }>
   }>
 }
@@ -79,12 +88,13 @@ type FieldType = 'color' | 'radius'
     RouterModule,
     ReactiveFormsModule,
     AdminSaveBarComponent,
-    ColorPickerModule,
+    PeertubeColorPickerComponent,
     AlertComponent,
     SelectOptionsComponent,
     HelpComponent,
     PeertubeCheckboxComponent,
-    SelectCustomValueComponent
+    SelectCustomValueComponent,
+    SelectPlayerThemeComponent
   ]
 })
 export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, CanComponentDeactivate {
@@ -108,6 +118,7 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
   }[] = []
 
   availableThemes: SelectOptionsItem[]
+  availablePlayerThemes: SelectOptionsItem<PlayerTheme>[] = []
 
   private customizationResetFields = new Set<ThemeCustomizationKey>()
   private customConfig: CustomConfig
@@ -119,6 +130,7 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
     { label: string, description?: string, type: FieldType, items?: SelectOptionsItem[] }
   > = {
     primaryColor: { label: $localize`Primary color`, type: 'color' },
+    onPrimaryColor: { label: $localize`On primary color`, type: 'color' },
     foregroundColor: { label: $localize`Foreground color`, type: 'color' },
     backgroundColor: { label: $localize`Background color`, type: 'color' },
     backgroundSecondaryColor: {
@@ -164,6 +176,11 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
       ...this.themeService.buildAvailableThemes()
     ]
 
+    this.availablePlayerThemes = [
+      { id: 'galaxy', label: $localize`Galaxy`, description: $localize`Original theme` },
+      { id: 'lucide', label: $localize`Lucide`, description: $localize`A clean and modern theme` }
+    ]
+
     this.buildForm()
     this.subscribeToCustomizationChanges()
 
@@ -172,11 +189,14 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
         this.customConfig = customConfig
 
         this.form.patchValue(this.getDefaultFormValues(), { emitEvent: false })
+        this.form.setErrors(this.form.errors)
       })
   }
 
   ngOnDestroy () {
     if (this.customConfigSub) this.customConfigSub.unsubscribe()
+
+    this.themeService.updateColorPalette({ builtIn: this.serverService.getHTMLConfig().theme.builtIn, ...this.customConfig.theme })
   }
 
   canDeactivate () {
@@ -195,6 +215,8 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
       currentAnimationFrame = requestAnimationFrame(() => {
         this.themeService.updateColorPalette({
           ...this.customConfig.theme,
+
+          builtIn: this.serverService.getHTMLConfig().theme.builtIn,
 
           customization: this.buildNewCustomization(formValues)
         })
@@ -254,16 +276,22 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
       theme: {
         default: null,
         customization: {
-          primaryColor: null,
-          foregroundColor: null,
-          backgroundColor: null,
-          backgroundSecondaryColor: null,
-          menuForegroundColor: null,
-          menuBackgroundColor: null,
+          primaryColor: HEX_COLOR_CODE_VALIDATOR,
+          onPrimaryColor: HEX_COLOR_CODE_VALIDATOR,
+          foregroundColor: HEX_COLOR_CODE_VALIDATOR,
+          backgroundColor: HEX_COLOR_CODE_VALIDATOR,
+          backgroundSecondaryColor: HEX_COLOR_CODE_VALIDATOR,
+          menuForegroundColor: HEX_COLOR_CODE_VALIDATOR,
+          menuBackgroundColor: HEX_COLOR_CODE_VALIDATOR,
           menuBorderRadius: null,
-          headerForegroundColor: null,
-          headerBackgroundColor: null,
+          headerForegroundColor: HEX_COLOR_CODE_VALIDATOR,
+          headerBackgroundColor: HEX_COLOR_CODE_VALIDATOR,
           inputBorderRadius: null
+        }
+      },
+      defaults: {
+        player: {
+          theme: null
         }
       }
     }
@@ -295,6 +323,13 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
     return this.availableThemes.find(t => t.id === this.getDefaultThemeName())?.label
   }
 
+  isUsingDefaultTheme () {
+    this.themeService.isUsingDefaultTheme({
+      currentTheme: this.getCurrentThemeName(),
+      config: this.serverService.getHTMLConfig().theme
+    })
+  }
+
   hasDefaultCustomizationValue (field: ThemeCustomizationKey) {
     return this.customizationResetFields.has(field)
   }
@@ -305,6 +340,8 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
     this.themeService.updateColorPalette({
       ...this.customConfig.theme,
 
+      builtIn: this.serverService.getHTMLConfig().theme.builtIn,
+
       customization: this.buildNewCustomization(this.form.get('theme.customization').value)
     })
 
@@ -313,6 +350,7 @@ export class AdminConfigCustomizationComponent implements OnInit, OnDestroy, Can
 
     control.patchValue(value, { emitEvent: false })
     control.markAsDirty()
+    control.setErrors(control.errors)
   }
 
   save () {

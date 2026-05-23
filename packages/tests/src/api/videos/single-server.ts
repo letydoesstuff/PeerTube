@@ -1,10 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
-import { expect } from 'chai'
 import { wait } from '@peertube/peertube-core-utils'
 import { Video, VideoCommentPolicy, VideoPrivacy } from '@peertube/peertube-models'
-import { checkVideoFilesWereRemoved, completeVideoCheck } from '@tests/shared/videos.js'
-import { testImageGeneratedByFFmpeg } from '@tests/shared/checks.js'
 import {
   cleanupTests,
   createSingleServer,
@@ -14,15 +11,17 @@ import {
   setDefaultChannelAvatar,
   waitJobs
 } from '@peertube/peertube-server-commands'
+import { checkVideoFilesWereRemoved, checkThumbnails, completeVideoCheck } from '@tests/shared/videos.js'
+import { expect } from 'chai'
 
 describe('Test a single server', function () {
-
   function runSuite (mode: 'legacy' | 'resumable') {
     let server: PeerTubeServer = null
     let videoId: number | string
     let videoId2: string
     let videoUUID = ''
     let videosListBase: any[] = null
+    let publishedAt: Date
 
     const getCheckAttributes = () => ({
       name: 'my super name',
@@ -215,8 +214,12 @@ describe('Test a single server', function () {
       this.timeout(120000)
 
       const videos = new Set([
-        'video_short.mp4', 'video_short.ogv', 'video_short.webm',
-        'video_short1.webm', 'video_short2.webm', 'video_short3.webm'
+        'video_short.mp4',
+        'video_short.ogv',
+        'video_short.webm',
+        'video_short1.webm',
+        'video_short2.webm',
+        'video_short3.webm'
       ])
 
       for (const video of videos) {
@@ -242,8 +245,10 @@ describe('Test a single server', function () {
       expect(data).to.be.an('array')
       expect(data).to.have.lengthOf(6)
 
-      const videosByName: { [ name: string ]: Video } = {}
-      data.forEach(v => { videosByName[v.name] = v })
+      const videosByName: { [name: string]: Video } = {}
+      data.forEach(v => {
+        videosByName[v.name] = v
+      })
 
       expect(videosByName['video_short.mp4 name'].duration).to.equal(5)
       expect(videosByName['video_short.ogv name'].duration).to.equal(5)
@@ -260,8 +265,7 @@ describe('Test a single server', function () {
       videosListBase = data
 
       for (const video of data) {
-        const videoName = video.name.replace(' name', '')
-        await testImageGeneratedByFFmpeg(server.url, videoName, video.thumbnailPath)
+        await checkThumbnails({ video, server, thumbnails: [ video.name.replace(' name', '') + '.jpg' ] })
       }
     })
 
@@ -338,6 +342,9 @@ describe('Test a single server', function () {
     })
 
     it('Should update a video', async function () {
+      const video = await server.videos.get({ id: videoId })
+      publishedAt = new Date(video.publishedAt)
+
       const attributes = {
         name: 'my super video updated',
         category: 4,
@@ -360,6 +367,17 @@ describe('Test a single server', function () {
       const video = await server.videos.get({ id: videoId })
 
       await completeVideoCheck({ server, originServer: server, videoUUID: video.uuid, attributes: updateCheckAttributes() })
+
+      expect(new Date(video.publishedAt).getTime()).to.equal(publishedAt.getTime())
+    })
+
+    it('Should not update the publication date with scheduleAt = null', async function () {
+      const attributes = { name: 'my super video updated', scheduleUpdate: null }
+      await server.videos.update({ id: videoId, attributes })
+
+      const video = await server.videos.get({ id: videoId })
+
+      expect(new Date(video.publishedAt).getTime()).to.equal(publishedAt.getTime())
     })
 
     it('Should update only the tags of a video', async function () {

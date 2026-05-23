@@ -10,6 +10,7 @@ import {
   OnDestroy,
   OnInit,
   output,
+  SimpleChanges,
   TemplateRef
 } from '@angular/core'
 import { FormsModule } from '@angular/forms'
@@ -149,7 +150,10 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
 
   totalRecords = 0
   rowsPerPageOptions = [ 5, 10, 20, 50, 100 ]
+
   sort: SortMeta = { field: undefined, order: -1 }
+  saveSort: SortMeta
+
   pagination: RestPagination
 
   search: string
@@ -168,12 +172,7 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
   private routeSubscription: Subscription
 
   ngOnInit (): void {
-    this.sort = {
-      field: this.defaultSort(),
-      order: this.defaultSortOrder() === 'desc'
-        ? -1
-        : 1
-    }
+    this.setDefaultSort()
 
     this.pagination = {
       count: this.defaultRowsPerPage(),
@@ -189,19 +188,21 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
     this.routeSubscription?.unsubscribe()
   }
 
-  ngOnChanges () {
-    this.columns = this.defaultColumns().map(c => ({
-      id: c.id,
+  ngOnChanges (changes: SimpleChanges) {
+    if (changes['defaultColumns']) {
+      this.columns = this.defaultColumns().map(c => ({
+        id: c.id,
 
-      label: c.label,
-      labelSmall: c.labelSmall,
-      sortable: c.sortable,
+        label: c.label,
+        labelSmall: c.labelSmall,
+        sortable: c.sortable,
 
-      class: c.class || '',
-      selected: c.selected ?? true,
-      sortKey: c.sortKey || c.id as string,
-      isDisplayed: c.isDisplayed || (() => true)
-    }))
+        class: c.class || '',
+        selected: c.selected ?? true,
+        sortKey: c.sortKey || c.id as string,
+        isDisplayed: c.isDisplayed || (() => true)
+      }))
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -223,15 +224,25 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
 
   // ---------------------------------------------------------------------------
 
-  onSearch (search: string, useMatchSort = false) {
-    debugLogger('On search', { search, useMatchSort })
+  onSearch (search: string, canUseMatchSort = false) {
+    debugLogger('On search', { search, canUseMatchSort })
 
     this.search = search
 
-    if (useMatchSort) {
-      this.sort = {
-        field: 'match' as any,
-        order: -1
+    if (this.search) {
+      if (canUseMatchSort && this.sort.field !== 'match') {
+        debugLogger('Saving previous sort on search', { saveSort: this.sort })
+
+        this.saveSort = { ...this.sort }
+
+        this.sort = { field: 'match', order: -1 }
+      }
+    } else if (this.sort.field === 'match') {
+      if (this.saveSort) {
+        this.sort = { ...this.saveSort }
+        this.saveSort = undefined
+      } else {
+        this.setDefaultSort()
       }
     }
 
@@ -262,34 +273,42 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
     this.expandedRows = {}
   }
 
+  private setDefaultSort () {
+    this.sort = {
+      field: this.defaultSort(),
+      order: this.defaultSortOrder() === 'desc'
+        ? -1
+        : 1
+    }
+  }
+
   // ---------------------------------------------------------------------------
 
   saveSelectedColumns () {
-    const enabled = this.columns.filter(c => c.selected === false).map(c => c.id)
+    const enabled = this.columns.filter(c => c.selected !== false).map(c => c.id)
 
-    this.peertubeLocalStorage.setItem(this.getColumnDisabledLocalStorageKey(), JSON.stringify(enabled))
+    this.peertubeLocalStorage.setItem(this.getColumnLocalStorageKey(), JSON.stringify(enabled))
   }
 
   private loadSelectedColumns () {
-    const disabledString = this.peertubeLocalStorage.getItem(this.getColumnDisabledLocalStorageKey())
-    if (!disabledString) return
+    const enabledString = this.peertubeLocalStorage.getItem(this.getColumnLocalStorageKey())
 
+    if (!enabledString) return
     try {
-      const disabled = JSON.parse(disabledString)
+      const enabled = JSON.parse(enabledString)
 
       for (const column of this.columns) {
-        if (!disabled.includes(column.id)) continue
-
-        column.selected = false
+        column.selected = enabled.includes(column.id)
       }
     } catch (err) {
       logger.error('Cannot load selected columns.', err)
     }
   }
 
-  private getColumnDisabledLocalStorageKey () {
-    return 'rest-table-columns-disabled-' + this.key()
+  private getColumnLocalStorageKey () {
+    return 'rest-table-columns-' + this.key()
   }
+
   // ---------------------------------------------------------------------------
 
   private loadTableSettings () {
@@ -305,7 +324,10 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
   }
 
   private saveTableSettings () {
-    peertubeLocalStorage.setItem(this.getSortLocalStorageKey(), JSON.stringify(this.sort))
+    if (this.sort.field !== 'match') {
+      peertubeLocalStorage.setItem(this.getSortLocalStorageKey(), JSON.stringify(this.sort))
+    }
+
     peertubeLocalStorage.setItem(this.getCountLocalStorageKey(), JSON.stringify(this.pagination.count))
   }
 
@@ -468,6 +490,8 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
 
     if (!skipLoader) this.loading = true
 
+    this.selectedRows = []
+
     return new Promise<void>((res, rej) => {
       this.dataLoader()({
         pagination: this.pagination,
@@ -484,7 +508,7 @@ export class TableComponent<Data, ColumnName = string, QueryParams extends Table
           },
 
           error: err => {
-            this.notifier.error(err.message)
+            this.notifier.handleError(err)
             rej(err)
           }
         })

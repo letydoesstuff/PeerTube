@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnDestroy, OnInit, inject, input, viewChild } from '@angular/core'
 import { ActivatedRoute, RouterLink } from '@angular/router'
 import { AuthService, ConfirmService, HooksService, MarkdownService, Notifier, PluginService } from '@app/core'
@@ -6,12 +5,14 @@ import { formatICU } from '@app/helpers'
 import { BulkService } from '@app/shared/shared-moderation/bulk.service'
 import { VideoCommentForAdminOrUser } from '@app/shared/shared-video-comment/video-comment.model'
 import { VideoCommentService } from '@app/shared/shared-video-comment/video-comment.service'
-import { UserRight } from '@peertube/peertube-models'
+import { BulkRemoveCommentsOfBody, UserRight } from '@peertube/peertube-models'
 import { switchMap } from 'rxjs'
 import { ActorAvatarComponent } from '../shared-actor-image/actor-avatar.component'
 import { AdvancedInputFilter, AdvancedInputFilterComponent } from '../shared-forms/advanced-input-filter.component'
+import { GlobalIconComponent } from '../shared-icons/global-icon.component'
 import { ActionDropdownComponent, DropdownAction } from '../shared-main/buttons/action-dropdown.component'
 import { ButtonComponent } from '../shared-main/buttons/button.component'
+import { CollaboratorStateComponent } from '../shared-main/channel/collaborator-state.component'
 import { PTDatePipe } from '../shared-main/common/date.pipe'
 import { NumberFormatterPipe } from '../shared-main/common/number-formatter.pipe'
 import { DataLoaderOptions, TableColumnInfo, TableComponent } from '../shared-tables/table.component'
@@ -28,7 +29,6 @@ type ColumnName =
   templateUrl: './video-comment-list-admin-owner.component.html',
   styleUrls: [ '../shared-moderation/moderation.scss', './video-comment-list-admin-owner.component.scss' ],
   imports: [
-    CommonModule,
     ActionDropdownComponent,
     AdvancedInputFilterComponent,
     ButtonComponent,
@@ -36,7 +36,9 @@ type ColumnName =
     PTDatePipe,
     RouterLink,
     TableComponent,
-    NumberFormatterPipe
+    NumberFormatterPipe,
+    GlobalIconComponent,
+    CollaboratorStateComponent
   ]
 })
 export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
@@ -60,8 +62,8 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
   inputFilters: AdvancedInputFilter[] = []
 
   columns: TableColumnInfo<ColumnName>[] = [
+    { id: 'video', label: $localize`Commented video`, sortable: false },
     { id: 'account', label: $localize`Account`, sortable: false },
-    { id: 'video', label: $localize`Video`, sortable: false },
     { id: 'comment', label: $localize`Comment`, sortable: false },
     { id: 'autoTags', label: $localize`Auto tags`, sortable: false },
     { id: 'createdAt', label: $localize`Date`, sortable: true }
@@ -73,7 +75,7 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
     this.dataLoader = this._dataLoader.bind(this)
   }
 
-  get authUser () {
+  get user () {
     return this.auth.getUser()
   }
 
@@ -100,13 +102,23 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
         {
           label: $localize`Delete this comment`,
           handler: comment => this.removeComment(comment),
-          isDisplayed: () => this.mode() === 'user' || this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
+          isDisplayed: () => this.mode() === 'user' || this.user.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
         },
         {
           label: $localize`Delete all comments of this account`,
-          description: $localize`Comments are deleted after a few minutes`,
+
+          description: this.mode() === 'user'
+            ? this.user.isCollaboratingToChannels()
+              ? $localize`Whether they're from channels you own or channels for which you're an editor`
+              : $localize`This will delete comments on all your videos`
+            : $localize`This will delete comments on all videos from your platform`,
+
           handler: comment => this.removeCommentsOfAccount(comment),
-          isDisplayed: () => this.mode() === 'admin' && this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
+          isDisplayed: () => {
+            if (this.mode() === 'user') return true
+
+            return this.mode() === 'admin' && this.user.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT)
+          }
         }
       ],
       [
@@ -128,7 +140,7 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
       {
         label: $localize`Delete`,
         handler: comments => this.removeComments(comments),
-        isDisplayed: () => this.mode() === 'user' || this.authUser.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT),
+        isDisplayed: () => this.mode() === 'user' || this.user.hasRight(UserRight.MANAGE_ANY_VIDEO_COMMENT),
         iconName: 'delete'
       },
       {
@@ -233,7 +245,7 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -253,7 +265,7 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -262,18 +274,20 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
       .subscribe({
         next: () => this.table().loadData(),
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
   private async removeCommentsOfAccount (comment: VideoCommentForAdminOrUser) {
-    const message = $localize`Do you really want to delete all comments of ${comment.by}?`
+    const message = $localize`Do you really want to delete all comments of ${comment.by}? Comments are deleted after a few minutes.`
     const res = await this.confirmService.confirm(message, $localize`Delete`)
     if (res === false) return
 
-    const options = {
+    const options: BulkRemoveCommentsOfBody = {
       accountName: comment.by,
-      scope: 'instance' as 'instance'
+      scope: this.mode() === 'admin'
+        ? 'instance'
+        : 'my-videos-and-collaborations'
     }
 
     this.bulkService.removeCommentsOf(options)
@@ -282,7 +296,7 @@ export class VideoCommentListAdminOwnerComponent implements OnInit, OnDestroy {
           this.notifier.success($localize`Comments of ${options.accountName} will be deleted in a few minutes`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 }

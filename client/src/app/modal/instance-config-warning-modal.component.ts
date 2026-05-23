@@ -1,4 +1,4 @@
-import { CommonModule, Location } from '@angular/common'
+import { Location } from '@angular/common'
 import { Component, ElementRef, OnInit, inject, output, viewChild } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { Notifier, User, UserService } from '@app/core'
@@ -13,7 +13,7 @@ import { peertubeLocalStorage } from '@root-helpers/peertube-web-storage'
   selector: 'my-instance-config-warning-modal',
   templateUrl: './instance-config-warning-modal.component.html',
   styleUrls: [ './instance-config-warning-modal.component.scss' ],
-  imports: [ CommonModule, FormsModule, GlobalIconComponent, PeertubeCheckboxComponent ]
+  imports: [ FormsModule, GlobalIconComponent, PeertubeCheckboxComponent ]
 })
 export class InstanceConfigWarningModalComponent implements OnInit {
   private userService = inject(UserService)
@@ -45,6 +45,7 @@ export class InstanceConfigWarningModalComponent implements OnInit {
   }
 
   shouldAutoOpen (serverConfig: ServerConfig, about: About) {
+    if (this.modalService.hasOpenModals()) return false
     if (!serverConfig.signup.allowed) return false
 
     return serverConfig.instance.name.toLowerCase() === 'peertube' ||
@@ -76,7 +77,7 @@ export class InstanceConfigWarningModalComponent implements OnInit {
       .subscribe({
         next: () => logger.info('We will not open the instance config warning modal again.'),
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 }

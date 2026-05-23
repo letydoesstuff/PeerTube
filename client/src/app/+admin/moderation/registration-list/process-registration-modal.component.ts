@@ -5,8 +5,7 @@ import { Notifier, ServerService } from '@app/core'
 import { FormReactive } from '@app/shared/shared-forms/form-reactive'
 import { FormReactiveService } from '@app/shared/shared-forms/form-reactive.service'
 import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
-import { NgbModal } from '@ng-bootstrap/ng-bootstrap'
-import { NgbModalRef } from '@ng-bootstrap/ng-bootstrap/modal/modal-ref'
+import { NgbModal, NgbModalRef } from '@ng-bootstrap/ng-bootstrap'
 import { UserRegistration } from '@peertube/peertube-models'
 import { PeertubeCheckboxComponent } from '../../../shared/shared-forms/peertube-checkbox.component'
 import { GlobalIconComponent } from '../../../shared/shared-icons/global-icon.component'
@@ -107,7 +106,7 @@ export class ProcessRegistrationModalComponent extends FormReactive implements O
         this.hide()
       },
 
-      error: err => this.notifier.error(err.message)
+      error: err => this.notifier.handleError(err)
     })
   }
 
@@ -124,7 +123,7 @@ export class ProcessRegistrationModalComponent extends FormReactive implements O
         this.hide()
       },
 
-      error: err => this.notifier.error(err.message)
+      error: err => this.notifier.handleError(err)
     })
   }
 }

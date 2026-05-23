@@ -1,4 +1,3 @@
-import { NgIf } from '@angular/common'
 import { booleanAttribute, Component, inject, input, OnDestroy, OnInit } from '@angular/core'
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { AuthService, Notifier, ServerService, ThemeService, UserService } from '@app/core'
@@ -23,7 +22,7 @@ type Form = {
   selector: 'my-user-interface-settings',
   templateUrl: './user-interface-settings.component.html',
   styleUrls: [ './user-interface-settings.component.scss' ],
-  imports: [ FormsModule, ReactiveFormsModule, NgIf, SelectOptionsComponent ]
+  imports: [ FormsModule, ReactiveFormsModule, SelectOptionsComponent ]
 })
 export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
   private formReactiveService = inject(FormReactiveService)
@@ -47,6 +46,7 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
   availableLanguages: SelectOptionsItem[]
 
   formValuesWatcher: Subscription
+  userInfoSub: Subscription
 
   private serverConfig: HTMLServerConfig
   private initialUserLanguage: string
@@ -72,7 +72,7 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
 
     this.buildForm()
 
-    this.userInformationLoaded()
+    this.userInfoSub = this.userInformationLoaded()
       .subscribe(() => {
         this.form.patchValue({
           theme: this.user().theme,
@@ -84,6 +84,12 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
         }
       })
   }
+
+  ngOnDestroy () {
+    this.formValuesWatcher?.unsubscribe()
+    this.userInfoSub?.unsubscribe()
+  }
+
   private buildForm () {
     const obj: BuildFormArgumentTyped<Form> = {
       theme: null,
@@ -99,10 +105,6 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
     this.form = form
     this.formErrors = formErrors
     this.validationMessages = validationMessages
-  }
-
-  ngOnDestroy () {
-    this.formValuesWatcher?.unsubscribe()
   }
 
   // ---------------------------------------------------------------------------
@@ -139,7 +141,7 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
             if (this.notifyOnUpdate()) this.notifier.success($localize`Interface settings updated.`)
           },
 
-          error: err => this.notifier.error(err.message)
+          error: err => this.notifier.handleError(err)
         })
 
       return
@@ -152,7 +154,7 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
           window.location.reload()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
 
       return
@@ -164,8 +166,6 @@ export class UserInterfaceSettingsComponent implements OnInit, OnDestroy {
 
   getSubmitValue () {
     return $localize`Save interface settings`
-
-    // return $localize`Save and reload the interface`
   }
 
   private getDefaultInstanceThemeLabel () {

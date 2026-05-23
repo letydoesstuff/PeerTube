@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
+import { expect } from 'chai'
 import { omit } from '@peertube/peertube-core-utils'
 import { ActorImageType, CustomConfig, HttpStatusCode, LogoType } from '@peertube/peertube-models'
 import { buildAbsoluteFixturePath } from '@peertube/peertube-node-utils'
@@ -221,6 +222,83 @@ describe('Test config API validators', function () {
         expectedStatus: HttpStatusCode.OK_200
       })
     })
+
+    describe('Browse videos section', function () {
+      it('Should fail with an invalid default sort', async function () {
+        const newUpdateParams: CustomConfig = merge({}, {}, updateParams, {
+          client: {
+            browseVideos: {
+              defaultSort: 'hello'
+            }
+          }
+        })
+
+        const response = await makePutBodyRequest({
+          url: server.url,
+          path,
+          fields: newUpdateParams,
+          token: server.accessToken,
+          expectedStatus: HttpStatusCode.BAD_REQUEST_400
+        })
+
+        expect(response.body.detail).to.equal(
+          'Browse videos default sort should be -publishedAt or -originallyPublishedAt ' +
+            'or name or -trending or -hot or -likes or -views, instead of hello'
+        )
+      })
+
+      it('Should fail with a trending default sort & disabled trending algorithm', async function () {
+        const newUpdateParams: CustomConfig = merge({}, {}, updateParams, {
+          trending: {
+            videos: {
+              algorithms: {
+                enabled: [ 'hot', 'most-liked' ]
+              }
+            }
+          },
+          client: {
+            browseVideos: {
+              defaultSort: '-trending'
+            }
+          }
+        })
+
+        const response = await makePutBodyRequest({
+          url: server.url,
+          path,
+          fields: newUpdateParams,
+          token: server.accessToken,
+          expectedStatus: HttpStatusCode.BAD_REQUEST_400
+        })
+
+        expect(response.body.detail).to.equal(
+          'Trending videos algorithm most-viewed should be enabled ' +
+            'if browse videos default sort is -trending'
+        )
+      })
+
+      it('Should fail with an invalid default scope', async function () {
+        const newUpdateParams: CustomConfig = merge({}, {}, updateParams, {
+          client: {
+            browseVideos: {
+              defaultScope: 'hello'
+            }
+          }
+        })
+
+        const response = await makePutBodyRequest({
+          url: server.url,
+          path,
+          fields: newUpdateParams,
+          token: server.accessToken,
+          expectedStatus: HttpStatusCode.BAD_REQUEST_400
+        })
+
+        expect(response.body.detail).to.equal(
+          'Browse videos default scope should be local or federated, instead of hello'
+        )
+      })
+    })
   })
 
   describe('When deleting the configuration', function () {
@@ -244,12 +322,12 @@ describe('Test config API validators', function () {
 
   describe('Updating instance image/logo', function () {
     const toTest = [
-      { path: '/api/v1/config/instance-banner/pick', attachName: 'bannerfile' },
-      { path: '/api/v1/config/instance-avatar/pick', attachName: 'avatarfile' },
-      { path: '/api/v1/config/instance-logo/favicon/pick', attachName: 'logofile' },
-      { path: '/api/v1/config/instance-logo/header-square/pick', attachName: 'logofile' },
-      { path: '/api/v1/config/instance-logo/header-wide/pick', attachName: 'logofile' },
-      { path: '/api/v1/config/instance-logo/opengraph/pick', attachName: 'logofile' }
+      { path: '/api/v1/config/instance-banner/pick', attachName: 'bannerfile', supportSVG: false },
+      { path: '/api/v1/config/instance-avatar/pick', attachName: 'avatarfile', supportSVG: false },
+      { path: '/api/v1/config/instance-logo/favicon/pick', attachName: 'logofile', supportSVG: true },
+      { path: '/api/v1/config/instance-logo/header-square/pick', attachName: 'logofile', supportSVG: true },
+      { path: '/api/v1/config/instance-logo/header-wide/pick', attachName: 'logofile', supportSVG: true },
+      { path: '/api/v1/config/instance-logo/opengraph/pick', attachName: 'logofile', supportSVG: true }
     ]
 
     it('Should fail with an incorrect input file', async function () {
@@ -315,6 +393,23 @@ describe('Test config API validators', function () {
           fields: {},
           attaches,
           expectedStatus: HttpStatusCode.NO_CONTENT_204
+        })
+      }
+    })
+
+    it('Should succeed with SVG logo on some endpoints', async function () {
+      for (const { attachName, path, supportSVG } of toTest) {
+        const attaches = { [attachName]: buildAbsoluteFixturePath('peertube.svg') }
+
+        await makeUploadRequest({
+          url: server.url,
+          path,
+          token: server.accessToken,
+          fields: {},
+          attaches,
+          expectedStatus: supportSVG
+            ? HttpStatusCode.NO_CONTENT_204
+            : HttpStatusCode.BAD_REQUEST_400
         })
       }
     })

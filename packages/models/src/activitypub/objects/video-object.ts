@@ -31,13 +31,15 @@ export interface VideoObject {
   permanentLive: boolean
   latencyMode: LiveVideoLatencyModeType
 
-  commentsEnabled?: boolean
   commentsPolicy: VideoCommentPolicyType
   canReply: 'as:Public' | 'https://www.w3.org/ns/activitystreams#Public'
 
   downloadEnabled: boolean
   waitTranscoding: boolean
   state: VideoStateType
+
+  // If null, the embed has restrictions
+  embedUrl: string | null
 
   published: string
   originallyPublishedAt: string
@@ -64,13 +66,16 @@ export interface VideoObject {
   shares: string
   comments: string
   hasParts: string | VideoChapterObject[]
+  playerSettings: string
 
-  attributedTo: ActivityPubAttributedTo[]
+  attributedTo: ActivityPubAttributedTo[] | string
 
   preview?: ActivityPubStoryboard[]
 
   to?: string[]
   cc?: string[]
+
+  audience: string
 
   // For export
   attachment?: {

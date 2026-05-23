@@ -1,4 +1,4 @@
-import { NgClass, NgFor, NgIf } from '@angular/common'
+import { NgClass } from '@angular/common'
 import { Component, OnChanges, OnInit, inject, input, model, output, viewChild } from '@angular/core'
 import { RouterLink } from '@angular/router'
 import { MarkdownService, Notifier, UserService } from '@app/core'
@@ -21,14 +21,12 @@ import { VideoCommentAddComponent } from './video-comment-add.component'
   templateUrl: './video-comment.component.html',
   styleUrls: [ './video-comment.component.scss' ],
   imports: [
-    NgIf,
     NgClass,
     ActorAvatarComponent,
     RouterLink,
     TimestampRouteTransformerDirective,
     UserModerationDropdownComponent,
     VideoCommentAddComponent,
-    NgFor,
     CommentReportComponent,
     FromNowPipe
   ]
@@ -189,7 +187,7 @@ export class VideoCommentComponent implements OnInit, OnChanges {
         .subscribe({
           next: user => this.commentUser = user,
 
-          error: err => this.notifier.error(err.message)
+          error: err => this.notifier.handleError(err)
         })
     }
   }

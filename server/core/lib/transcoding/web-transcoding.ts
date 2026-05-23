@@ -7,7 +7,7 @@ import {
 } from '@peertube/peertube-ffmpeg'
 import { VideoFileStream } from '@peertube/peertube-models'
 import { computeOutputFPS } from '@server/helpers/ffmpeg/index.js'
-import { createTorrentAndSetInfoHash } from '@server/helpers/webtorrent.js'
+import { createTorrentAndSetInfoHash } from '@server/lib/webtorrent.js'
 import { VideoModel } from '@server/models/video/video.js'
 import { MVideoFile, MVideoFullLight } from '@server/types/models/index.js'
 import { Job } from 'bullmq'
@@ -16,21 +16,20 @@ import { copyFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { CONFIG } from '../../initializers/config.js'
 import { VideoFileModel } from '../../models/video/video-file.js'
-import { JobQueue } from '../job-queue/index.js'
 import { generateWebVideoFilename } from '../paths.js'
 import { buildNewFile, saveNewOriginalFileIfNeeded } from '../video-file.js'
-import { buildStoryboardJobIfNeeded } from '../video-jobs.js'
+import { addLocalOrRemoteStoryboardJobIfNeeded } from '../video-jobs.js'
 import { VideoPathManager } from '../video-path-manager.js'
 import { buildFFmpegVOD } from './shared/index.js'
+import { canDoQuickTranscode } from './transcoding-quick-transcode.js'
 import { buildOriginalFileResolution } from './transcoding-resolutions.js'
 
 // Optimize the original video file and replace it. The resolution is not changed.
 export async function optimizeOriginalVideofile (options: {
   video: MVideoFullLight
-  quickTranscode: boolean
   job: Job
 }) {
-  const { quickTranscode, job } = options
+  const { job } = options
 
   const transcodeDirectory = CONFIG.STORAGE.TMP_DIR
   const newExtname = '.mp4'
@@ -45,7 +44,7 @@ export async function optimizeOriginalVideofile (options: {
     const result = await VideoPathManager.Instance.makeAvailableVideoFile(inputVideoFile, async videoInputPath => {
       const videoOutputPath = join(transcodeDirectory, video.id + '-transcoded' + newExtname)
 
-      const transcodeType: TranscodeVODOptionsType = quickTranscode
+      const transcodeType: TranscodeVODOptionsType = await canDoQuickTranscode(videoInputPath, CONFIG.TRANSCODING.FPS.MAX)
         ? 'quick-transcode'
         : 'video'
 
@@ -143,15 +142,15 @@ export async function mergeAudioVideofile (options: {
     const result = await VideoPathManager.Instance.makeAvailableVideoFile(inputVideoFile, async audioInputPath => {
       const videoOutputPath = join(transcodeDirectory, video.id + '-transcoded' + newExtname)
 
-      // If the user updates the video preview during transcoding
-      const previewPath = video.getPreview().getPath()
-      const tmpPreviewPath = join(CONFIG.STORAGE.TMP_DIR, basename(previewPath))
-      await copyFile(previewPath, tmpPreviewPath)
+      // If the user updates the video thumbnails during transcoding
+      const thumbnailPath = video.getBestThumbnail('16:9').getFSPath()
+      const tmpThumbnailPath = join(CONFIG.STORAGE.TMP_DIR, basename(thumbnailPath))
+      await copyFile(thumbnailPath, tmpThumbnailPath)
 
       const transcodeOptions: MergeAudioTranscodeOptions = {
         type: 'merge-audio',
 
-        videoInputPath: tmpPreviewPath,
+        videoInputPath: tmpThumbnailPath,
         audioPath: audioInputPath,
 
         outputPath: videoOutputPath,
@@ -165,9 +164,9 @@ export async function mergeAudioVideofile (options: {
       try {
         await buildFFmpegVOD(job).transcode(transcodeOptions)
 
-        await remove(tmpPreviewPath)
+        await remove(tmpThumbnailPath)
       } catch (err) {
-        await remove(tmpPreviewPath)
+        await remove(tmpThumbnailPath)
         throw err
       }
 
@@ -229,7 +228,7 @@ export async function onWebVideoFileTranscoding (options: {
     video.VideoFiles = await video.$get('VideoFiles')
 
     if (wasAudioFile) {
-      await JobQueue.Instance.createJob(buildStoryboardJobIfNeeded({ video, federate: false }))
+      await addLocalOrRemoteStoryboardJobIfNeeded({ video, federate: false })
     }
 
     return { video, videoFile }

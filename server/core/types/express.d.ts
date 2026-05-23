@@ -14,17 +14,21 @@ import {
   MActorFollowActorsDefault,
   MActorUrl,
   MChannelBannerAccountDefault,
+  MChannelCollaboratorAccount,
   MChannelSyncChannel,
+  MLocalVideoViewerWithWatchSections,
   MRegistration,
   MStreamingPlaylist,
   MUserAccountUrl,
   MUserExport,
   MVideoChangeOwnershipFull,
+  MVideoEmbedDomain,
   MVideoFile,
   MVideoFormattableDetails,
   MVideoId,
   MVideoImmutable,
   MVideoLiveSessionReplay,
+  MVideoLiveWithSettingSchedules,
   MVideoPassword,
   MVideoPlaylistFull,
   MVideoPlaylistFullSummary,
@@ -196,8 +200,10 @@ declare module 'express' {
       follow?: MActorFollowActorsDefault
       subscription?: MActorFollowActorsDefaultSubscription
 
-      nextOwner?: MAccountDefault
       videoChangeOwnership?: MVideoChangeOwnershipFull
+      videoChangeOwnershipNextOwner?: MAccountDefault
+
+      videoEmbedDomain?: MVideoEmbedDomain
 
       account?: MAccountDefault
 
@@ -248,6 +254,8 @@ declare module 'express' {
       watchedWordsList?: MWatchedWordsList
 
       tokenSession?: MOAuthToken
+
+      channelCollaborator?: MChannelCollaboratorAccount
     }
   }
 }

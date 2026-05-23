@@ -1,4 +1,4 @@
-import { maxBy, minBy, randomInt } from '@peertube/peertube-core-utils'
+import { randomInt } from '@peertube/peertube-core-utils'
 import {
   AbuseState,
   AbuseStateType,
@@ -8,6 +8,8 @@ import {
   FollowState,
   JobType,
   NSFWPolicyType,
+  PlayerThemeChannelSetting,
+  PlayerThemeVideoSetting,
   RunnerJobState,
   RunnerJobStateType,
   UploadImageType,
@@ -18,10 +20,18 @@ import {
   UserImportStateType,
   UserRegistrationState,
   UserRegistrationStateType,
+  VideoChannelActivityAction,
+  VideoChannelActivityActionType,
+  VideoChannelActivityTarget,
+  VideoChannelActivityTargetType,
+  VideoChannelCollaboratorState,
+  VideoChannelCollaboratorStateType,
   VideoChannelSyncState,
   VideoChannelSyncStateType,
   VideoCommentPolicy,
   VideoCommentPolicyType,
+  VideoEmbedPrivacyPolicy,
+  VideoEmbedPrivacyPolicyType,
   VideoImportState,
   VideoImportStateType,
   VideoLicence,
@@ -50,7 +60,7 @@ import { CONFIG, registerConfigChangedHandler } from './config.js'
 
 // ---------------------------------------------------------------------------
 
-export const LAST_MIGRATION_VERSION = 925
+export const LAST_MIGRATION_VERSION = 1001
 
 // ---------------------------------------------------------------------------
 
@@ -153,7 +163,11 @@ export const SORTABLE_COLUMNS = {
 
   AVAILABLE_PLUGINS: [ 'npmName', 'popularity', 'trending' ],
 
-  VIDEO_REDUNDANCIES: [ 'name' ]
+  VIDEO_REDUNDANCIES: [ 'name' ],
+
+  VIDEO_CHANNEL_ACTIVITIES: [ 'createdAt' ],
+
+  LIVE_SESSIONS: [ 'startDate' ]
 }
 
 export const ROUTE_CACHE_LIFETIME = {
@@ -280,7 +294,7 @@ export const JOB_TTL: { [id in JobType]: number } = {
   'federate-video': 60000 * 5, // 5 minutes,
   'create-user-export': 60000 * 60 * 24, // 24 hours
   'import-user-archive': 60000 * 60 * 24, // 24 hours
-  'video-transcription': 1000 * 3600 * 6 // 6 hours
+  'video-transcription': CONFIG.VIDEO_TRANSCRIPTION.TIMEOUT
 }
 export const REPEAT_JOBS: { [id in JobType]?: RepeatOptions } = {
   'videos-views-stats': {
@@ -291,7 +305,9 @@ export const REPEAT_JOBS: { [id in JobType]?: RepeatOptions } = {
   }
 }
 export const JOB_PRIORITY = {
-  TRANSCODING: 100,
+  STORYBOARD: 95,
+  REQUIRED_TRANSCODING: 100,
+  OPTIONAL_TRANSCODING: 10000,
   VIDEO_STUDIO: 150,
   TRANSCRIPTION: 200
 }
@@ -365,7 +381,7 @@ export const CONSTRAINTS_FIELDS = {
     NAME: { min: 1, max: 120 }, // Length
     DESCRIPTION: { min: 3, max: 1000 }, // Length
     USERNAME: { min: 1, max: 50 }, // Length
-    PASSWORD: { min: 6, max: 255 }, // Length
+    PASSWORD: { min: CONFIG.USER.PASSWORD_CONSTRAINTS.MIN_LENGTH, max: 50, maxBytes: 72 }, // Limited by bcrypt algorithm
     VIDEO_QUOTA: { min: -1 },
     VIDEO_QUOTA_DAILY: { min: -1 },
     VIDEO_LANGUAGES: { max: 500 }, // Array length
@@ -469,6 +485,14 @@ export const CONSTRAINTS_FIELDS = {
       }
     }
   },
+  LOGO: {
+    IMAGE: {
+      EXTNAME: [ '.svg', '.png', '.jpeg', '.jpg', '.gif', '.webp' ],
+      FILE_SIZE: {
+        max: 8 * 1024 * 1024 // 8MB
+      }
+    }
+  },
   VIDEO_EVENTS: {
     COUNT: { min: 0 }
   },
@@ -492,7 +516,8 @@ export const CONSTRAINTS_FIELDS = {
   },
   VIDEO_STUDIO: {
     TASKS: { min: 1, max: 10 }, // Number of tasks
-    CUT_TIME: { min: 0 } // Value
+    CUT_TIME_START: { min: 0 }, // Value
+    CUT_TIME_END: { min: 1 } // Value
   },
   LOGS: {
     CLIENT_MESSAGE: { min: 1, max: 1000 }, // Length
@@ -589,7 +614,7 @@ export const VIDEO_LICENCES: { [id in VideoLicenceType]: string } = {
   [VideoLicence['CC-BY-NC-ND']]: 'Attribution - Non Commercial - No Derivatives',
   [VideoLicence['CC0']]: 'Public Domain Dedication',
   [VideoLicence['PDM']]: 'Free of known copyright restrictions',
-  [VideoLicence['COPYRIGHT']]: 'Copyrighted - All Rights Reserved'
+  [VideoLicence['ALL_RIGHTS_RESERVED']]: 'All Rights Reserved'
 }
 
 export const VIDEO_LANGUAGES: { [id: string]: string } = {}
@@ -613,7 +638,8 @@ export const VIDEO_STATES: { [id in VideoStateType]: string } = {
   [VideoState.TO_MOVE_TO_EXTERNAL_STORAGE_FAILED]: 'External storage move failed',
   [VideoState.TO_EDIT]: 'To edit',
   [VideoState.TO_MOVE_TO_FILE_SYSTEM]: 'To move to file system',
-  [VideoState.TO_MOVE_TO_FILE_SYSTEM_FAILED]: 'Move to file system failed'
+  [VideoState.TO_MOVE_TO_FILE_SYSTEM_FAILED]: 'Move to file system failed',
+  [VideoState.TO_IMPORT_FAILED]: 'Import failed'
 }
 
 export const VIDEO_IMPORT_STATES: { [id in VideoImportStateType]: string } = {
@@ -687,6 +713,44 @@ export const VIDEO_COMMENTS_POLICY: { [id in VideoCommentPolicyType]: string } =
   [VideoCommentPolicy.REQUIRES_APPROVAL]: 'Requires approval'
 }
 
+export const CHANNEL_COLLABORATOR_STATE: { [id in VideoChannelCollaboratorStateType]: string } = {
+  [VideoChannelCollaboratorState.ACCEPTED]: 'Accepted',
+  [VideoChannelCollaboratorState.PENDING]: 'Pending',
+  [VideoChannelCollaboratorState.REJECTED]: 'Rejected'
+}
+
+export const VIDEO_CHANNEL_ACTIVITY_ACTIONS: { [id in VideoChannelActivityActionType]: string } = {
+  [VideoChannelActivityAction.CREATE]: 'Create',
+  [VideoChannelActivityAction.UPDATE]: 'Update',
+  [VideoChannelActivityAction.DELETE]: 'Delete',
+  [VideoChannelActivityAction.UPDATE_CAPTIONS]: 'Update captions',
+  [VideoChannelActivityAction.UPDATE_CHAPTERS]: 'Update chapters',
+  [VideoChannelActivityAction.UPDATE_PASSWORDS]: 'Update passwords',
+  [VideoChannelActivityAction.CREATE_STUDIO_TASKS]: 'Create studio tasks',
+  [VideoChannelActivityAction.UPDATE_SOURCE_FILE]: 'Update source file',
+  [VideoChannelActivityAction.UPDATE_ELEMENTS]: 'Update elements',
+  [VideoChannelActivityAction.REMOVE_CHANNEL_OWNERSHIP]: 'Remove channel ownership',
+  [VideoChannelActivityAction.CREATE_CHANNEL_OWNERSHIP]: 'Create channel ownership',
+  [VideoChannelActivityAction.SEND_OWNERSHIP_REQUEST]: 'Send ownership request',
+  [VideoChannelActivityAction.ACCEPT_OWNERSHIP_REQUEST]: 'Accept ownership request',
+  [VideoChannelActivityAction.REFUSE_OWNERSHIP_REQUEST]: 'Refuse ownership request',
+  [VideoChannelActivityAction.UPDATE_EMBED_POLICY]: 'Update embed policy'
+}
+
+export const VIDEO_CHANNEL_ACTIVITY_TARGETS: { [id in VideoChannelActivityTargetType]: string } = {
+  [VideoChannelActivityTarget.CHANNEL]: 'Channel',
+  [VideoChannelActivityTarget.CHANNEL_SYNC]: 'Channel synchronization',
+  [VideoChannelActivityTarget.PLAYLIST]: 'Playlist',
+  [VideoChannelActivityTarget.VIDEO]: 'Video',
+  [VideoChannelActivityTarget.VIDEO_IMPORT]: 'Video import'
+}
+
+export const VIDEO_EMBED_PRIVACY_POLICIES: { [id in VideoEmbedPrivacyPolicyType]: string } = {
+  [VideoEmbedPrivacyPolicy.ALL_ALLOWED]: 'All allowed',
+  [VideoEmbedPrivacyPolicy.ALLOWLIST]: 'Allowlist',
+  [VideoEmbedPrivacyPolicy.REMOTE_RESTRICTIONS]: 'Remote restrictions'
+}
+
 export const MIMETYPES = {
   AUDIO: {
     MIMETYPE_EXT: {
@@ -731,6 +795,10 @@ export const MIMETYPES = {
     },
     EXT_MIMETYPE: null as { [id: string]: string }
   },
+  LOGO_IMAGE: {
+    MIMETYPE_EXT: null as { [id: string]: string },
+    EXT_MIMETYPE: null as { [id: string]: string }
+  },
   VIDEO_CAPTIONS: {
     MIMETYPE_EXT: {
       'text/vtt': '.vtt',
@@ -769,8 +837,15 @@ export const MIMETYPES = {
   }
 }
 
+MIMETYPES.LOGO_IMAGE.MIMETYPE_EXT = {
+  ...MIMETYPES.IMAGE.MIMETYPE_EXT,
+
+  'image/svg+xml': '.svg'
+}
+
 MIMETYPES.AUDIO.EXT_MIMETYPE = invert(MIMETYPES.AUDIO.MIMETYPE_EXT)
 MIMETYPES.IMAGE.EXT_MIMETYPE = invert(MIMETYPES.IMAGE.MIMETYPE_EXT)
+MIMETYPES.LOGO_IMAGE.EXT_MIMETYPE = invert(MIMETYPES.LOGO_IMAGE.MIMETYPE_EXT)
 MIMETYPES.VIDEO_CAPTIONS.EXT_MIMETYPE = invert(MIMETYPES.VIDEO_CAPTIONS.MIMETYPE_EXT)
 
 export const BINARY_CONTENT_TYPES = new Set([
@@ -816,8 +891,6 @@ export const ACTIVITY_PUB_ACTOR_TYPES: { [id: string]: ActivityPubActorType } = 
 }
 
 export const HTTP_SIGNATURE = {
-  HEADER_NAME: 'signature',
-  ALGORITHM: 'rsa-sha256',
   HEADERS_TO_SIGN_WITH_PAYLOAD: [ '(request-target)', 'host', 'date', 'digest' ],
   HEADERS_TO_SIGN_WITHOUT_PAYLOAD: [ '(request-target)', 'host', 'date' ],
   CLOCK_SKEW_SECONDS: 1800
@@ -837,6 +910,7 @@ export const ENCRYPTION = {
   ENCODING: 'hex' as Encoding
 }
 
+export const ADMIN_MEMORABLE_PASSWORD_GENERATION_LENGTH = 20
 export const USER_PASSWORD_RESET_LIFETIME = 60000 * 60 // 60 minutes
 export const USER_PASSWORD_CREATE_LIFETIME = 60000 * 60 * 24 * 7 // 7 days
 
@@ -890,7 +964,6 @@ export const LAZY_STATIC_PATHS = {
   THUMBNAILS: '/lazy-static/thumbnails/',
   BANNERS: '/lazy-static/banners/',
   AVATARS: '/lazy-static/avatars/',
-  PREVIEWS: '/lazy-static/previews/',
   VIDEO_CAPTIONS: '/lazy-static/video-captions/',
   TORRENTS: '/lazy-static/torrents/',
   STORYBOARDS: '/lazy-static/storyboards/'
@@ -912,17 +985,6 @@ export const STATIC_MAX_AGE = {
   CLIENT: '30d'
 }
 
-// Videos thumbnail size
-export const THUMBNAILS_SIZE = {
-  width: minBy(CONFIG.THUMBNAILS.SIZES, 'width').width,
-  height: minBy(CONFIG.THUMBNAILS.SIZES, 'width').height,
-  minRemoteWidth: 150
-}
-export const PREVIEWS_SIZE = {
-  width: maxBy(CONFIG.THUMBNAILS.SIZES, 'width').width,
-  height: maxBy(CONFIG.THUMBNAILS.SIZES, 'width').height,
-  minRemoteWidth: 400
-}
 export const ACTOR_IMAGES_SIZE: { [key in ActorImageType_Type]: { width: number, height: number }[] } = {
   [ActorImageType.AVATAR]: [ // 1/1 ratio
     {
@@ -992,8 +1054,12 @@ export const EMBED_SIZE = {
 
 // Sub folders of cache directory
 export const FILES_CACHE = {
-  PREVIEWS: {
-    DIRECTORY: join(CONFIG.STORAGE.CACHE_DIR, 'previews'),
+  AVATARS: {
+    DIRECTORY: join(CONFIG.STORAGE.CACHE_DIR, 'avatars'),
+    MAX_AGE: 1000 * 3600 * 24 * 7 // 7 days
+  },
+  THUMBNAILS: {
+    DIRECTORY: join(CONFIG.STORAGE.CACHE_DIR, 'thumbnails'),
     MAX_AGE: 1000 * 3600 * 3 // 3 hours
   },
   STORYBOARDS: {
@@ -1003,10 +1069,6 @@ export const FILES_CACHE = {
   VIDEO_CAPTIONS: {
     DIRECTORY: join(CONFIG.STORAGE.CACHE_DIR, 'video-captions'),
     MAX_AGE: 1000 * 3600 * 3 // 3 hours
-  },
-  TORRENTS: {
-    DIRECTORY: join(CONFIG.STORAGE.CACHE_DIR, 'torrents'),
-    MAX_AGE: 1000 * 3600 * 3 // 3 hours
   }
 }
 
@@ -1015,7 +1077,7 @@ export const LRU_CACHE = {
     MAX_SIZE: 1000
   },
   FILENAME_TO_PATH_PERMANENT_FILE_CACHE: {
-    MAX_SIZE: 1000
+    MAX_SIZE: 5000
   },
   STATIC_VIDEO_FILES_RIGHTS_CHECK: {
     MAX_SIZE: 5000,
@@ -1097,23 +1159,15 @@ export const totalCPUs = Math.max(cpus().length, 1)
 
 export const WORKER_THREADS = {
   IDLE_TIMEOUT: 1000 * 10, // 10 seconds
-  DOWNLOAD_IMAGE: {
-    CONCURRENCY: 3,
-    MAX_THREADS: 1
-  },
-  PROCESS_IMAGE: {
-    CONCURRENCY: 1,
-    MAX_THREADS: Math.min(totalCPUs, 5)
-  },
-  GET_IMAGE_SIZE: {
-    CONCURRENCY: 1,
-    MAX_THREADS: Math.min(totalCPUs, 5)
-  },
   SIGN_JSON_LD_OBJECT: {
     CONCURRENCY: 1,
     MAX_THREADS: 1 // FIXME: we would want 2 threads but there is an issue with JSONLD in worker thread where CPU jumps and stays at 100%
   },
   BUILD_DIGEST: {
+    CONCURRENCY: 1,
+    MAX_THREADS: 1
+  },
+  CREATE_TORRENT: {
     CONCURRENCY: 1,
     MAX_THREADS: 1
   }
@@ -1176,7 +1230,9 @@ export const PLUGIN_GLOBAL_CSS_PATH = join(CONFIG.STORAGE.TMP_DIR, PLUGIN_GLOBAL
 export let PLUGIN_EXTERNAL_AUTH_TOKEN_LIFETIME = 1000 * 60 * 5 // 5 minutes
 
 export const DEFAULT_THEME_NAME = 'default'
-export const DEFAULT_USER_THEME_NAME = 'instance-default'
+export const DEFAULT_INSTANCE_THEME_NAME = 'instance-default'
+export const DEFAULT_CHANNEL_PLAYER_SETTING_VALUE: PlayerThemeVideoSetting = 'channel-default'
+export const DEFAULT_INSTANCE_PLAYER_SETTING_VALUE: PlayerThemeVideoSetting | PlayerThemeChannelSetting = 'instance-default'
 
 // ---------------------------------------------------------------------------
 
@@ -1195,6 +1251,10 @@ export const STATS_TIMESERIE = {
 
 // ---------------------------------------------------------------------------
 
+export const MAX_SQL_DELETE_ITEMS = 10000
+
+// ---------------------------------------------------------------------------
+
 // Special constants for a test instance
 if (process.env.PRODUCTION_CONSTANTS !== 'true') {
   if (isTestOrDevInstance()) {
@@ -1210,7 +1270,6 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     SCHEDULER_INTERVALS_MS.ACTOR_FOLLOW_SCORES = 1000
     SCHEDULER_INTERVALS_MS.REMOVE_OLD_JOBS = 10000
     SCHEDULER_INTERVALS_MS.REMOVE_OLD_HISTORY = 5000
-    SCHEDULER_INTERVALS_MS.REMOVE_OLD_VIEWS = 5000
     SCHEDULER_INTERVALS_MS.UPDATE_VIDEOS = 5000
     SCHEDULER_INTERVALS_MS.AUTO_FOLLOW_INDEX_INSTANCES = 5000
     SCHEDULER_INTERVALS_MS.UPDATE_INBOX_STATS = 5000
@@ -1248,6 +1307,7 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     ACTIVITY_PUB.VIDEO_PLAYLIST_REFRESH_INTERVAL = 10 * 1000 // 10 seconds
 
     CONSTRAINTS_FIELDS.ACTORS.IMAGE.FILE_SIZE.max = 100 * 1024 // 100KB
+    CONSTRAINTS_FIELDS.LOGO.IMAGE.FILE_SIZE.max = 100 * 1024 // 100KB
     CONSTRAINTS_FIELDS.VIDEOS.IMAGE.FILE_SIZE.max = 400 * 1024 // 400KB
 
     VIEW_LIFETIME.VIEWER_COUNTER = 1000 * 5 // 5 second
@@ -1328,7 +1388,9 @@ export async function buildLanguages () {
     jbo: true, // Lojban
     avk: true, // Kotava
 
-    zxx: true // No linguistic content (ISO-639-2)
+    zxx: true, // No linguistic content (ISO-639-2),
+
+    gsw: true // Swiss German (ISO-639-3)
   }
 
   // Only add ISO639-1 languages and some sign languages (ISO639-3)
@@ -1389,6 +1451,7 @@ function buildVideoMimetypeExt () {
 
       Object.assign(data, {
         'video/x-matroska': '.mkv',
+        'video/matroska': '.mkv',
 
         // Developed by Apple
         'video/quicktime': [ '.mov', '.qt', '.mqv' ], // often used as output format by editing software
@@ -1415,7 +1478,7 @@ function buildVideoMimetypeExt () {
 
         // The standard video format used by many Sony and Panasonic HD camcorders.
         // It is also used for storing high definition video on Blu-ray discs.
-        'video/mp2t': [ '.mts', 'ts' ],
+        'video/mp2t': [ '.mts', '.ts' ],
         'video/vnd.dlna.mpeg-tts': '.mts',
 
         'video/m2ts': '.m2ts',

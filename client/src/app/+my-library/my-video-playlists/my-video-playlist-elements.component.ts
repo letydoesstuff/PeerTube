@@ -1,5 +1,4 @@
 import { CdkDrag, CdkDragDrop, CdkDropList } from '@angular/cdk/drag-drop'
-import { NgFor, NgIf } from '@angular/common'
 import { Component, OnDestroy, OnInit, inject, viewChild } from '@angular/core'
 import { ActivatedRoute, Router } from '@angular/router'
 import { ComponentPagination, ConfirmService, HooksService, Notifier, ScreenService, updatePaginationOnDelete } from '@app/core'
@@ -10,7 +9,6 @@ import { VideoPlaylist } from '@app/shared/shared-video-playlist/video-playlist.
 import { VideoPlaylistService } from '@app/shared/shared-video-playlist/video-playlist.service'
 import { VideoPlaylistType } from '@peertube/peertube-models'
 import { Subject, Subscription } from 'rxjs'
-
 import { ActionDropdownComponent, DropdownAction } from '../../shared/shared-main/buttons/action-dropdown.component'
 import { InfiniteScrollerDirective } from '../../shared/shared-main/common/infinite-scroller.directive'
 import { VideoPlaylistElementMiniatureComponent } from '../../shared/shared-video-playlist/video-playlist-element-miniature.component'
@@ -20,13 +18,11 @@ import { VideoPlaylistMiniatureComponent } from '../../shared/shared-video-playl
   templateUrl: './my-video-playlist-elements.component.html',
   styleUrls: [ './my-video-playlist-elements.component.scss' ],
   imports: [
-    NgIf,
     ButtonComponent,
     VideoPlaylistMiniatureComponent,
     ActionDropdownComponent,
     InfiniteScrollerDirective,
     CdkDropList,
-    NgFor,
     CdkDrag,
     VideoPlaylistElementMiniatureComponent,
     VideoShareComponent
@@ -109,7 +105,7 @@ export class MyVideoPlaylistElementsComponent implements OnInit, OnDestroy {
           this.reorderClientPositions()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -155,7 +151,7 @@ export class MyVideoPlaylistElementsComponent implements OnInit, OnDestroy {
           this.notifier.success($localize`Playlist ${videoPlaylist.displayName} deleted.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

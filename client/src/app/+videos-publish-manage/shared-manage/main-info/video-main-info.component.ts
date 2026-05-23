@@ -1,8 +1,9 @@
 import { CommonModule } from '@angular/common'
-import { ChangeDetectorRef, Component, inject, NgZone, OnDestroy, OnInit } from '@angular/core'
+import { ChangeDetectorRef, Component, inject, NgZone, OnDestroy, OnInit, viewChild } from '@angular/core'
 import { AbstractControl, FormArray, FormControl, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms'
 import { Router, RouterLink } from '@angular/router'
-import { ConfirmService, HooksService, Notifier, PluginService, ServerService } from '@app/core'
+import { VideoChangeOwnershipComponent } from '@app/+my-library/my-videos/modals/video-change-ownership.component'
+import { AuthService, ConfirmService, HooksService, Notifier, PluginService, ServerService } from '@app/core'
 import { BuildFormArgument, BuildFormValidator } from '@app/shared/form-validators/form-validator.model'
 import {
   VIDEO_CATEGORY_VALIDATOR,
@@ -18,7 +19,7 @@ import {
   VIDEO_TAGS_ARRAY_VALIDATOR
 } from '@app/shared/form-validators/video-validators'
 import { DynamicFormFieldComponent } from '@app/shared/shared-forms/dynamic-form-field.component'
-import { FormReactiveErrors, FormReactiveService, FormReactiveMessages } from '@app/shared/shared-forms/form-reactive.service'
+import { FormReactiveErrors, FormReactiveMessages, FormReactiveService } from '@app/shared/shared-forms/form-reactive.service'
 import { FormValidatorService } from '@app/shared/shared-forms/form-validator.service'
 import { InputTextComponent } from '@app/shared/shared-forms/input-text.component'
 import { MarkdownTextareaComponent } from '@app/shared/shared-forms/markdown-textarea.component'
@@ -26,6 +27,7 @@ import { PeertubeCheckboxComponent } from '@app/shared/shared-forms/peertube-che
 import { SelectChannelComponent } from '@app/shared/shared-forms/select/select-channel.component'
 import { SelectOptionsComponent } from '@app/shared/shared-forms/select/select-options.component'
 import { SelectTagsComponent } from '@app/shared/shared-forms/select/select-tags.component'
+import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
 import { PeerTubeTemplateDirective } from '@app/shared/shared-main/common/peertube-template.directive'
 import { InstanceService } from '@app/shared/shared-main/instance/instance.service'
 import { VideoService } from '@app/shared/shared-main/video/video.service'
@@ -33,7 +35,7 @@ import {
   HTMLServerConfig,
   RegisterClientFormFieldOptions,
   RegisterClientVideoFieldOptions,
-  VideoConstant,
+  ConstantLabel,
   VideoPrivacy,
   VideoPrivacyType
 } from '@peertube/peertube-models'
@@ -71,7 +73,7 @@ type Form = {
   language: FormControl<string>
   description: FormControl<string>
   tags: FormArray<FormControl<string>>
-  previewfile: FormControl<Blob>
+  thumbnailfile: FormControl<Blob>
   support: FormControl<string>
   schedulePublicationAt: FormControl<Date>
   pluginData: FormGroup
@@ -99,11 +101,14 @@ type Form = {
     ThumbnailManagerComponent,
     GlobalIconComponent,
     MarkdownHintComponent,
-    RouterLink
+    RouterLink,
+    VideoChangeOwnershipComponent,
+    AlertComponent
   ]
 })
 export class VideoMainInfoComponent implements OnInit, OnDestroy {
   private formValidatorService = inject(FormValidatorService)
+  private authService = inject(AuthService)
   private formReactiveService = inject(FormReactiveService)
   private videoService = inject(VideoService)
   private serverService = inject(ServerService)
@@ -118,6 +123,8 @@ export class VideoMainInfoComponent implements OnInit, OnDestroy {
   private notifier = inject(Notifier)
   private router = inject(Router)
 
+  readonly videoChangeOwnershipModal = viewChild<VideoChangeOwnershipComponent>('videoChangeOwnershipModal')
+
   form: FormGroup<Form>
   formErrors: FormReactiveErrors = {}
   validationMessages: FormReactiveMessages = {}
@@ -125,10 +132,10 @@ export class VideoMainInfoComponent implements OnInit, OnDestroy {
   forbidScheduledPublication: boolean
   hideWaitTranscoding: boolean
 
-  videoPrivacies: VideoConstant<VideoEditPrivacyType>[] = []
-  videoCategories: VideoConstant<number>[] = []
-  videoLicences: VideoConstant<number>[] = []
-  videoLanguages: VideoConstant<string>[] = []
+  videoPrivacies: ConstantLabel<VideoEditPrivacyType>[] = []
+  videoCategories: ConstantLabel<number>[] = []
+  videoLicences: ConstantLabel<number>[] = []
+  videoLanguages: ConstantLabel<string>[] = []
 
   pluginDataFormGroup: FormGroup
 
@@ -153,6 +160,8 @@ export class VideoMainInfoComponent implements OnInit, OnDestroy {
   userChannels: SelectChannelItem[] = []
   privacies: VideoPrivacyType[] = []
   videoEdit: VideoEdit
+
+  ownershipRequestSent: string
 
   private schedulerInterval: any
   private updatedSub: Subscription
@@ -278,7 +287,7 @@ export class VideoMainInfoComponent implements OnInit, OnDestroy {
       language: VIDEO_LANGUAGE_VALIDATOR,
       description: VIDEO_DESCRIPTION_VALIDATOR,
       tags: VIDEO_TAGS_ARRAY_VALIDATOR,
-      previewfile: null,
+      thumbnailfile: null,
       support: VIDEO_SUPPORT_VALIDATOR,
       schedulePublicationAt: VIDEO_SCHEDULE_PUBLICATION_AT_VALIDATOR
     }
@@ -469,7 +478,7 @@ export class VideoMainInfoComponent implements OnInit, OnDestroy {
 
   // ---------------------------------------------------------------------------
 
-  canBeDeleted () {
+  canBeDeletedOrTransferred () {
     return !!this.videoEdit.getVideoAttributes().id
   }
 
@@ -488,7 +497,23 @@ export class VideoMainInfoComponent implements OnInit, OnDestroy {
           this.router.navigate([ '/my-library/videos' ])
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
+  }
+
+  // ---------------------------------------------------------------------------
+
+  showChangeOwnershipModal () {
+    this.videoChangeOwnershipModal().show()
+  }
+
+  onChangeOwnershipRequest (username: string) {
+    this.ownershipRequestSent = username
+  }
+
+  // ---------------------------------------------------------------------------
+
+  isVideoOwner () {
+    return this.videoEdit.getVideoAttributes().ownerAccountId === this.authService.getUser().account.id
   }
 }

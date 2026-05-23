@@ -24,7 +24,8 @@ import { USER_VIDEO_QUOTA_DAILY_VALIDATOR, USER_VIDEO_QUOTA_VALIDATOR } from '@a
 import { FormReactiveService } from '@app/shared/shared-forms/form-reactive.service'
 import { AlertComponent } from '@app/shared/shared-main/common/alert.component'
 import { VideoService } from '@app/shared/shared-main/video/video.service'
-import { BroadcastMessageLevel, CustomConfig, VideoCommentPolicyType, VideoConstant, VideoPrivacyType } from '@peertube/peertube-models'
+import { BroadcastMessageLevel, ConstantLabel, CustomConfig, VideoCommentPolicyType, VideoPrivacyType } from '@peertube/peertube-models'
+import merge from 'lodash-es/merge'
 import { Subscription } from 'rxjs'
 import { pairwise } from 'rxjs/operators'
 import { SelectOptionsItem } from 'src/types/select-options-item.model'
@@ -33,9 +34,14 @@ import { MarkdownTextareaComponent } from '../../../shared/shared-forms/markdown
 import { PeertubeCheckboxComponent } from '../../../shared/shared-forms/peertube-checkbox.component'
 import { SelectCustomValueComponent } from '../../../shared/shared-forms/select/select-custom-value.component'
 import { SelectOptionsComponent } from '../../../shared/shared-forms/select/select-options.component'
+import { SelectVideosScopeComponent } from '../../../shared/shared-forms/select/select-videos-scope.component'
+import { SelectVideosSortComponent } from '../../../shared/shared-forms/select/select-videos-sort.component'
 import { HelpComponent } from '../../../shared/shared-main/buttons/help.component'
 import { UserRealQuotaInfoComponent } from '../../shared/user-real-quota-info.component'
 import { AdminSaveBarComponent } from '../shared/admin-save-bar.component'
+import { PartialDeep } from 'type-fest'
+
+type DownloadPolicy = 'allowed' | 'disabled'
 
 type Form = {
   instance: FormGroup<{
@@ -43,6 +49,11 @@ type Form = {
   }>
 
   client: FormGroup<{
+    browseVideos: FormGroup<{
+      defaultSort: FormControl<string>
+      defaultScope: FormControl<string>
+    }>
+
     menu: FormGroup<{
       login: FormGroup<{
         redirectOnSingleExternalAuth: FormControl<boolean>
@@ -175,10 +186,15 @@ type Form = {
 
   storyboards: FormGroup<{
     enabled: FormControl<boolean>
+
+    remoteRunners: FormGroup<{
+      enabled: FormControl<boolean>
+    }>
   }>
 
   defaults: FormGroup<{
     publish: FormGroup<{
+      downloadPolicy: FormControl<DownloadPolicy>
       commentsPolicy: FormControl<VideoCommentPolicyType>
       privacy: FormControl<VideoPrivacyType>
       licence: FormControl<number>
@@ -220,7 +236,9 @@ type Form = {
     UserRealQuotaInfoComponent,
     SelectOptionsComponent,
     AlertComponent,
-    AdminSaveBarComponent
+    AdminSaveBarComponent,
+    SelectVideosSortComponent,
+    SelectVideosScopeComponent
   ]
 })
 export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanComponentDeactivate {
@@ -242,6 +260,10 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
 
   privacyOptions: SelectOptionsItem[] = []
   commentPoliciesOptions: SelectOptionsItem[] = []
+  downloadPoliciesOptions: SelectOptionsItem<DownloadPolicy>[] = [
+    { id: 'allowed', label: $localize`Allowed` },
+    { id: 'disabled', label: $localize`Disabled` }
+  ]
   licenceOptions: SelectOptionsItem[] = []
 
   private customConfig: CustomConfig
@@ -251,9 +273,9 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
     this.customConfig = this.route.parent.snapshot.data['customConfig']
 
     const data = this.route.snapshot.data as {
-      licences: VideoConstant<number>[]
-      privacies: VideoConstant<VideoPrivacyType>[]
-      commentPolicies: VideoConstant<VideoCommentPolicyType>[]
+      licences: ConstantLabel<number>[]
+      privacies: ConstantLabel<VideoPrivacyType>[]
+      commentPolicies: ConstantLabel<VideoCommentPolicyType>[]
     }
 
     this.privacyOptions = this.videoService.explainedPrivacyLabels(data.privacies).videoPrivacies
@@ -281,7 +303,7 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
       .subscribe(customConfig => {
         this.customConfig = customConfig
 
-        this.form.patchValue(this.customConfig)
+        this.form.patchValue(this.buildFormValue(this.customConfig))
       })
   }
 
@@ -295,6 +317,10 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
         defaultClientRoute: null
       },
       client: {
+        browseVideos: {
+          defaultSort: null,
+          defaultScope: null
+        },
         menu: {
           login: {
             redirectOnSingleExternalAuth: null
@@ -410,10 +436,14 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
         }
       },
       storyboards: {
-        enabled: null
+        enabled: null,
+        remoteRunners: {
+          enabled: null
+        }
       },
       defaults: {
         publish: {
+          downloadPolicy: null,
           commentsPolicy: null,
           privacy: null,
           licence: null
@@ -435,7 +465,7 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
       }
     }
 
-    const defaultValues: FormDefaultTyped<Form> = this.customConfig
+    const defaultValues: FormDefaultTyped<Form> = this.buildFormValue(this.customConfig)
 
     const {
       form,
@@ -446,6 +476,21 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
     this.form = form
     this.formErrors = formErrors
     this.validationMessages = validationMessages
+  }
+
+  private buildFormValue (customConfig: CustomConfig) {
+    return merge(
+      customConfig,
+      {
+        defaults: {
+          publish: {
+            downloadPolicy: customConfig.defaults.publish.downloadEnabled
+              ? 'allowed'
+              : 'disabled'
+          }
+        }
+      } satisfies PartialDeep<FormDefaultTyped<Form>>
+    )
   }
 
   canDeactivate () {
@@ -523,6 +568,16 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
 
   // ---------------------------------------------------------------------------
 
+  isStoryboardEnabled () {
+    return this.form.value.storyboards.enabled === true
+  }
+
+  getStoryboardRunnerDisabledClass () {
+    return { 'disabled-checkbox-extra': !this.isStoryboardEnabled() }
+  }
+
+  // ---------------------------------------------------------------------------
+
   isAutoFollowIndexEnabled () {
     return this.form.value.followings.instance.autoFollowIndex.enabled === true
   }
@@ -592,7 +647,16 @@ export class AdminConfigGeneralComponent implements OnInit, OnDestroy, CanCompon
     this.adminConfigService.saveAndUpdateCurrent({
       currentConfig: this.customConfig,
       form: this.form,
-      formConfig: this.form.value,
+      formConfig: merge(
+        this.form.value,
+        {
+          defaults: {
+            publish: {
+              downloadEnabled: this.form.value.defaults.publish.downloadPolicy === 'allowed'
+            }
+          }
+        } satisfies PartialDeep<CustomConfig>
+      ),
       success: $localize`General configuration updated.`
     })
   }

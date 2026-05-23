@@ -8,6 +8,7 @@ import {
   CachedVideosExistInPlaylists,
   ResultList,
   VideoPlaylistElement as ServerVideoPlaylistElement,
+  VideoChannelSummary,
   VideoExistInPlaylist,
   VideoPlaylistCreate,
   VideoPlaylistElementCreate,
@@ -31,9 +32,9 @@ import { VideoPlaylist } from './video-playlist.model'
 
 const debugLogger = debug('peertube:playlists:VideoPlaylistService')
 
-export type CachedPlaylist = VideoPlaylist | { id: number, displayName: string }
+export type CachedPlaylist = VideoPlaylist | { id: number, displayName: string, videoChannel?: VideoChannelSummary }
 
-@Injectable()
+@Injectable({ providedIn: 'root' })
 export class VideoPlaylistService {
   private authHttp = inject(HttpClient)
   private auth = inject(AuthService)
@@ -80,6 +81,7 @@ export class VideoPlaylistService {
     componentPagination?: ComponentPaginationLight
     restPagination?: RestPagination
     search?: string
+    includeCollaborations?: boolean
   }): Observable<ResultList<VideoPlaylist>> {
     const { videoChannel } = options
 
@@ -93,6 +95,7 @@ export class VideoPlaylistService {
     sort: SortMeta | string
     restPagination?: RestPagination
     search?: string
+    includeCollaborations?: boolean
   }): Observable<ResultList<VideoPlaylist>> {
     const { account } = options
 
@@ -107,8 +110,9 @@ export class VideoPlaylistService {
     componentPagination?: ComponentPaginationLight
     restPagination?: RestPagination
     search?: string
+    includeCollaborations?: boolean
   }) {
-    const { url, sort, search } = options
+    const { url, sort, search, includeCollaborations } = options
 
     let params = new HttpParams()
 
@@ -119,6 +123,7 @@ export class VideoPlaylistService {
 
     params = this.restService.addRestGetParams(params, restPagination, sort)
 
+    if (includeCollaborations) params = params.append('includeCollaborations', 'true')
     if (search) params = this.restService.addObjectParams(params, { search })
 
     return this.authHttp.get<ResultList<VideoPlaylist>>(url, { params })
@@ -137,6 +142,7 @@ export class VideoPlaylistService {
     const obs = this.listAccountPlaylists({
       account: user.account,
       sort: '-updatedAt',
+      includeCollaborations: true,
       search
     }).pipe(
       tap(result => {

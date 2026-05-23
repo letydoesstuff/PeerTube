@@ -5,7 +5,7 @@
     <div class="buttons">
       <my-button theme="secondary" class="pre-config" (click)="openConfigWizard()" i18n>Open config wizard</my-button>
 
-      <my-button theme="primary" class="save-button" icon="circle-tick" [disabled]="!canUpdate()" (click)="onSave($event)" i18n>Save</my-button>
+      <my-button form="admin-config-form" theme="primary" class="save-button" icon="circle-tick" [disabled]="!canUpdate()" (click)="onSave($event)" i18n>Save</my-button>
     </div>
   </div>
 
@@ -18,7 +18,9 @@
       <ng-container i18n>There are errors in the configuration:</ng-container>
 
       <ul class="mb-0">
-        <li *ngFor="let error of grabAllErrors()">{{ error }}</li>
+        @for (error of grabAllErrors(); track error) {
+          <li>{{ error }}</li>
+        }
       </ul>
     </my-alert>
   }

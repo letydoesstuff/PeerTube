@@ -1,4 +1,4 @@
-import { forceNumber, hasUserRight, USER_ROLE_LABELS } from '@peertube/peertube-core-utils'
+import { forceNumber, hasUserRight, sortBy, USER_ROLE_LABELS } from '@peertube/peertube-core-utils'
 import {
   AbuseState,
   MyUser,
@@ -10,13 +10,16 @@ import {
   VideoPlaylistType,
   type NSFWPolicyType,
   type UserAdminFlagType,
+  type UserNewFeatureInfoType,
   type UserRoleType
 } from '@peertube/peertube-models'
 import { isNSFWFlagsValid } from '@server/helpers/custom-validators/videos.js'
+import { englishLanguage } from '@server/helpers/i18n.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { TokensCache } from '@server/lib/auth/tokens-cache.js'
 import { LiveQuotaStore } from '@server/lib/live/index.js'
 import {
+  MChannelFormattable,
   MMyUserFormattable,
   MUser,
   MUserDefault,
@@ -57,7 +60,6 @@ import {
   isUserNoModal,
   isUserNSFWPolicyValid,
   isUserP2PEnabledValid,
-  isUserPasswordValid,
   isUserRoleValid,
   isUserVideoLanguages,
   isUserVideoQuotaDailyValid,
@@ -65,25 +67,24 @@ import {
   isUserVideosHistoryEnabledValid
 } from '../../helpers/custom-validators/users.js'
 import { comparePassword, cryptPassword } from '../../helpers/peertube-crypto.js'
-import { DEFAULT_USER_THEME_NAME, NSFW_POLICY_TYPES } from '../../initializers/constants.js'
+import { DEFAULT_INSTANCE_THEME_NAME, NSFW_POLICY_TYPES } from '../../initializers/constants.js'
 import { getThemeOrDefault } from '../../lib/plugins/theme-utils.js'
 import { AccountModel } from '../account/account.js'
 import { ActorFollowModel } from '../actor/actor-follow.js'
-import { ActorImageModel } from '../actor/actor-image.js'
 import { ActorModel } from '../actor/actor.js'
 import { OAuthTokenModel } from '../oauth/oauth-token.js'
-import { getAdminUsersSort, parseAggregateResult, SequelizeModel, throwIfNotValid } from '../shared/index.js'
+import { buildSQLAttributes, getAdminUsersSort, parseAggregateResult, SequelizeModel, throwIfNotValid } from '../shared/index.js'
 import { VideoChannelModel } from '../video/video-channel.js'
 import { VideoImportModel } from '../video/video-import.js'
 import { VideoLiveModel } from '../video/video-live.js'
 import { VideoPlaylistModel } from '../video/video-playlist.js'
 import { VideoModel } from '../video/video.js'
+import { ListUserOptions, UserListQueryBuilder } from './sql/user/user-list-query-builder.js'
 import { UserExportModel } from './user-export.js'
 import { UserNotificationSettingModel } from './user-notification-setting.js'
 
 enum ScopeNames {
-  FOR_ME_API = 'FOR_ME_API',
-  WITH_VIDEOCHANNELS = 'WITH_VIDEOCHANNELS',
+  WITH_VIDEO_CHANNELS = 'WITH_VIDEO_CHANNELS',
   WITH_QUOTA = 'WITH_QUOTA',
   WITH_TOTAL_FILE_SIZES = 'WITH_TOTAL_FILE_SIZES',
   WITH_STATS = 'WITH_STATS'
@@ -104,46 +105,7 @@ type WhereUserIdScopeOptions = { whereUserId?: '$userId' | '"UserModel"."id"' }
   ]
 }))
 @Scopes(() => ({
-  [ScopeNames.FOR_ME_API]: {
-    include: [
-      {
-        model: AccountModel,
-        include: [
-          {
-            model: VideoChannelModel.unscoped(),
-            include: [
-              {
-                model: ActorModel,
-                required: true,
-                include: [
-                  {
-                    model: ActorImageModel,
-                    as: 'Banners',
-                    required: false
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            attributes: [ 'id', 'name', 'type' ],
-            model: VideoPlaylistModel.unscoped(),
-            required: true,
-            where: {
-              type: {
-                [Op.ne]: VideoPlaylistType.REGULAR
-              }
-            }
-          }
-        ]
-      },
-      {
-        model: UserNotificationSettingModel,
-        required: true
-      }
-    ]
-  },
-  [ScopeNames.WITH_VIDEOCHANNELS]: {
+  [ScopeNames.WITH_VIDEO_CHANNELS]: {
     include: [
       {
         model: AccountModel,
@@ -290,7 +252,6 @@ type WhereUserIdScopeOptions = { whereUserId?: '$userId' | '"UserModel"."id"' }
 })
 export class UserModel extends SequelizeModel<UserModel> {
   @AllowNull(true)
-  @Is('UserPassword', value => throwIfNotValid(value, isUserPasswordValid, 'user password', true))
   @Column
   declare password: string
 
@@ -419,7 +380,7 @@ export class UserModel extends SequelizeModel<UserModel> {
   declare videoQuotaDaily: number
 
   @AllowNull(false)
-  @Default(DEFAULT_USER_THEME_NAME)
+  @Default(DEFAULT_INSTANCE_THEME_NAME)
   @Is('UserTheme', value => throwIfNotValid(value, isThemeNameValid, 'theme'))
   @Column
   declare theme: string
@@ -450,6 +411,10 @@ export class UserModel extends SequelizeModel<UserModel> {
   )
   @Column
   declare noAccountSetupWarningModal: boolean
+
+  @AllowNull(false)
+  @Column
+  declare newFeaturesInfoRead: UserNewFeatureInfoType
 
   @AllowNull(true)
   @Default(null)
@@ -534,6 +499,18 @@ export class UserModel extends SequelizeModel<UserModel> {
   static removeTokenCache (instance: UserModel) {
     return TokensCache.Instance.clearCacheByUserId(instance.id)
   }
+
+  // ---------------------------------------------------------------------------
+
+  static getSQLAttributes (tableName: string, aliasPrefix = '') {
+    return buildSQLAttributes({
+      model: this,
+      tableName,
+      aliasPrefix
+    })
+  }
+
+  // ---------------------------------------------------------------------------
 
   static countTotal () {
     return UserModel.unscoped().count()
@@ -658,7 +635,7 @@ export class UserModel extends SequelizeModel<UserModel> {
   }
 
   static loadByIdWithChannels (id: number, withStats = false): Promise<MUserDefault> {
-    const scopes: (string | ScopeOptions)[] = [ ScopeNames.WITH_VIDEOCHANNELS ]
+    const scopes: (string | ScopeOptions)[] = [ ScopeNames.WITH_VIDEO_CHANNELS ]
 
     if (withStats) {
       const scopeOptions: WhereUserIdScopeOptions = { whereUserId: '$userId' }
@@ -684,14 +661,14 @@ export class UserModel extends SequelizeModel<UserModel> {
     return UserModel.findOne(query)
   }
 
-  static loadForMeAPI (id: number): Promise<MUserNotifSettingChannelDefault> {
-    const query = {
-      where: {
-        id
-      }
+  static async loadForMeAPI (id: number) {
+    const options: ListUserOptions = {
+      userId: forceNumber(id),
+      start: 0,
+      count: 1
     }
 
-    return UserModel.scope(ScopeNames.FOR_ME_API).findOne(query)
+    return new UserListQueryBuilder(UserModel.sequelize, options).get<MUserNotifSettingChannelDefault>()
   }
 
   static loadByEmailCaseInsensitive (email: string): Promise<MUserDefault[]> {
@@ -732,6 +709,8 @@ export class UserModel extends SequelizeModel<UserModel> {
     return UserModel.findAll(query)
   }
 
+  // ---------------------------------------------------------------------------
+
   static loadByVideoId (videoId: number): Promise<MUserDefault> {
     const query = {
       include: [
@@ -742,12 +721,12 @@ export class UserModel extends SequelizeModel<UserModel> {
           include: [
             {
               required: true,
-              attributes: [ 'id' ],
+              attributes: [],
               model: VideoChannelModel.unscoped(),
               include: [
                 {
                   required: true,
-                  attributes: [ 'id' ],
+                  attributes: [],
                   model: VideoModel.unscoped(),
                   where: {
                     id: videoId
@@ -781,7 +760,7 @@ export class UserModel extends SequelizeModel<UserModel> {
   }
 
   static loadByChannelActorId (videoChannelActorId: number): Promise<MUserDefault> {
-    const query = {
+    return UserModel.findOne({
       include: [
         {
           required: true,
@@ -790,18 +769,23 @@ export class UserModel extends SequelizeModel<UserModel> {
           include: [
             {
               required: true,
-              attributes: [ 'id' ],
+              attributes: [],
               model: VideoChannelModel.unscoped(),
-              where: {
-                actorId: videoChannelActorId
-              }
+              include: [
+                {
+                  model: ActorModel.unscoped(),
+                  required: true,
+                  attributes: [],
+                  where: {
+                    id: videoChannelActorId
+                  }
+                }
+              ]
             }
           ]
         }
       ]
-    }
-
-    return UserModel.findOne(query)
+    })
   }
 
   static loadByAccountId (accountId: number): Promise<MUserDefault> {
@@ -809,8 +793,7 @@ export class UserModel extends SequelizeModel<UserModel> {
       include: [
         {
           required: true,
-          attributes: [ 'id' ],
-          model: AccountModel.unscoped(),
+          model: AccountModel,
           where: {
             id: accountId
           }
@@ -822,20 +805,25 @@ export class UserModel extends SequelizeModel<UserModel> {
   }
 
   static loadByAccountActorId (accountActorId: number): Promise<MUserDefault> {
-    const query = {
+    return UserModel.findOne({
       include: [
         {
           required: true,
           attributes: [ 'id' ],
           model: AccountModel.unscoped(),
-          where: {
-            actorId: accountActorId
-          }
+          include: [
+            {
+              model: ActorModel.unscoped(),
+              required: true,
+              attributes: [ 'id' ],
+              where: {
+                id: accountActorId
+              }
+            }
+          ]
         }
       ]
-    }
-
-    return UserModel.findOne(query)
+    })
   }
 
   static loadByLiveId (liveId: number): Promise<MUser> {
@@ -847,12 +835,12 @@ export class UserModel extends SequelizeModel<UserModel> {
           required: true,
           include: [
             {
-              attributes: [ 'id' ],
+              attributes: [],
               model: VideoChannelModel.unscoped(),
               required: true,
               include: [
                 {
-                  attributes: [ 'id' ],
+                  attributes: [],
                   model: VideoModel.unscoped(),
                   required: true,
                   include: [
@@ -996,7 +984,7 @@ export class UserModel extends SequelizeModel<UserModel> {
   }
 
   getLanguage () {
-    return this.language || CONFIG.INSTANCE.DEFAULT_LANGUAGE
+    return this.language || CONFIG.INSTANCE.DEFAULT_LANGUAGE || englishLanguage
   }
 
   toFormattedJSON (this: MUserFormattable, parameters: { withAdminFlags?: boolean } = {}): User {
@@ -1012,7 +1000,7 @@ export class UserModel extends SequelizeModel<UserModel> {
       id: this.id,
       username: this.username,
       email: this.email,
-      theme: getThemeOrDefault(this.theme, DEFAULT_USER_THEME_NAME),
+      theme: getThemeOrDefault(this.theme, DEFAULT_INSTANCE_THEME_NAME),
 
       pendingEmail: this.pendingEmail,
       emailPublic: this.emailPublic,
@@ -1044,7 +1032,7 @@ export class UserModel extends SequelizeModel<UserModel> {
       autoPlayNextVideoPlaylist: this.autoPlayNextVideoPlaylist,
       videoLanguages: this.videoLanguages,
 
-      language: this.getLanguage(),
+      language: this.language,
 
       role: {
         id: this.role,
@@ -1095,7 +1083,9 @@ export class UserModel extends SequelizeModel<UserModel> {
         ? this.NotificationSetting.toFormattedJSON()
         : undefined,
 
-      videoChannels: [],
+      videoChannels: Array.isArray(this.Account.VideoChannels)
+        ? sortBy(this.Account.VideoChannels.map(c => this.formatChannel(c)), 'createdAt')
+        : [],
 
       createdAt: this.createdAt,
 
@@ -1103,22 +1093,13 @@ export class UserModel extends SequelizeModel<UserModel> {
 
       lastLoginDate: this.lastLoginDate,
 
-      twoFactorEnabled: !!this.otpSecret
+      twoFactorEnabled: !!this.otpSecret,
+
+      newFeaturesInfoRead: this.newFeaturesInfoRead
     }
 
     if (parameters.withAdminFlags) {
       Object.assign(json, { adminFlags: this.adminFlags })
-    }
-
-    if (Array.isArray(this.Account.VideoChannels) === true) {
-      json.videoChannels = this.Account.VideoChannels
-        .map(c => c.toFormattedJSON())
-        .sort((v1, v2) => {
-          if (v1.createdAt < v2.createdAt) return -1
-          if (v1.createdAt === v2.createdAt) return 0
-
-          return 1
-        })
     }
 
     return json
@@ -1130,6 +1111,17 @@ export class UserModel extends SequelizeModel<UserModel> {
     const specialPlaylists = this.Account.VideoPlaylists
       .map(p => ({ id: p.id, name: p.name, type: p.type }))
 
-    return Object.assign(formatted, { specialPlaylists })
+    const videoChannelCollaborations = Array.isArray(this.Account.VideoChannelCollaborators)
+      ? sortBy(
+        this.Account.VideoChannelCollaborators.map(c => this.formatChannel(c.Channel)),
+        'createdAt'
+      )
+      : []
+
+    return Object.assign(formatted, { videoChannelCollaborations, specialPlaylists })
+  }
+
+  formatChannel (channel: MChannelFormattable) {
+    return { ...channel.toFormattedJSON(), ownerAccountId: channel.accountId }
   }
 }

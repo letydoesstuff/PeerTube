@@ -13,9 +13,9 @@ export class AbuseStateChangeForReporter extends AbstractNotification<MAbuseFull
 
   async prepare () {
     const reporter = this.abuse.ReporterAccount
-    if (reporter.isOwned() !== true) return
+    if (reporter.isLocal() !== true) return
 
-    this.user = await UserModel.loadByAccountActorId(this.abuse.ReporterAccount.actorId)
+    this.user = await UserModel.loadByAccountActorId(this.abuse.ReporterAccount.Actor.id)
   }
 
   log () {

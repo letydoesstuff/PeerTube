@@ -1,4 +1,4 @@
-import { NgClass, NgIf, NgTemplateOutlet } from '@angular/common'
+import { NgClass, NgTemplateOutlet } from '@angular/common'
 import { Component, OnChanges, inject, input, viewChild } from '@angular/core'
 import { AuthService, Notifier, RedirectService } from '@app/core'
 import { NgbDropdown, NgbDropdownMenu, NgbDropdownToggle } from '@ng-bootstrap/ng-bootstrap'
@@ -16,7 +16,6 @@ import { UserSubscriptionService } from './user-subscription.service'
   styleUrls: [ './subscribe-button.component.scss' ],
   imports: [
     NgClass,
-    NgIf,
     NgTemplateOutlet,
     NgbDropdown,
     NgbDropdownToggle,
@@ -148,7 +147,7 @@ export class SubscribeButtonComponent implements OnChanges {
           )
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -185,7 +184,7 @@ export class SubscribeButtonComponent implements OnChanges {
           )
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -237,7 +236,7 @@ export class SubscribeButtonComponent implements OnChanges {
           this.buildClasses()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
     }
   }

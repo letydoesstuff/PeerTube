@@ -7,6 +7,7 @@ import {
   UserNotificationSettingValue,
   VideoCommentPolicy,
   VideoCreateResult,
+  VideoEmbedPrivacyPolicy,
   VideoPlaylistPrivacy,
   VideoPlaylistType,
   VideoPrivacy,
@@ -41,6 +42,8 @@ function runTest (withObjectStorage: boolean) {
   let remoteNoahToken: string
   let remoteNoahId: number
 
+  let noahVODNames: string[]
+
   let archivePath: string
 
   let objectStorage: ObjectStorageCommand
@@ -63,7 +66,8 @@ function runTest (withObjectStorage: boolean) {
       remoteNoahToken,
       remoteServer,
       mouskaVideo,
-      blockedServer
+      blockedServer,
+      noahVODNames
     } = await prepareImportExportTests({ emails, objectStorage, withBlockedServer: true }))
 
     await blockedServer.videos.quickUpload({ name: 'blocked video' })
@@ -92,6 +96,7 @@ function runTest (withObjectStorage: boolean) {
         videoPasswords: [ 'password1', 'password2' ]
       }
     })
+    noahVODNames.unshift('noah password video')
 
     // Add a video in watch later playlist
     await server.playlists.addElement({
@@ -193,17 +198,31 @@ function runTest (withObjectStorage: boolean) {
       expect(importedMain.avatars).to.have.lengthOf(0)
       expect(importedMain.banners).to.have.lengthOf(0)
 
+      const playerSettingMain = await remoteServer.playerSettings.getForChannel({
+        channelHandle: 'noah_remote_channel',
+        token: remoteServer.accessToken,
+        raw: true
+      })
+      expect(playerSettingMain.theme).to.equal('instance-default')
+
       const importedSecond = await remoteServer.channels.get({ token: remoteNoahToken, channelName: 'noah_second_channel' })
       expect(importedSecond.displayName).to.equal('noah display name')
       expect(importedSecond.description).to.equal('noah description')
       expect(importedSecond.support).to.equal('noah support')
+
+      const playerSettingSecond = await remoteServer.playerSettings.getForChannel({
+        channelHandle: 'noah_second_channel',
+        token: remoteServer.accessToken,
+        raw: true
+      })
+      expect(playerSettingSecond.theme).to.equal('galaxy')
 
       for (const banner of importedSecond.banners) {
         await testImage({ url: banner.fileUrl, name: `banner-user-import-resized-${banner.width}.jpg` })
       }
 
       for (const avatar of importedSecond.avatars) {
-        await testImage({ url: remoteServer.url + avatar.path, name: `avatar-resized-${avatar.width}x${avatar.width}.png` })
+        await testImage({ url: avatar.fileUrl, name: `avatar-resized-${avatar.width}x${avatar.width}.png` })
       }
 
       {
@@ -359,8 +378,12 @@ function runTest (withObjectStorage: boolean) {
       // We observe weird behaviour in the CI, so re-wait jobs here just to be sure
       await waitJobs([ remoteServer, server ])
 
-      const { data } = await remoteServer.videos.listMyVideos({ token: remoteNoahToken })
+      const { data } = await remoteServer.videos.listMyVideos({ token: remoteNoahToken, sort: '-publishedAt' })
       expect(data).to.have.lengthOf(5)
+
+      // Correct order
+      const vodNames = data.filter(v => !v.isLive).map(v => v.name)
+      expect(vodNames).to.deep.equal(noahVODNames)
 
       {
         const privateVideo = data.find(v => v.name === 'noah private video')
@@ -376,6 +399,13 @@ function runTest (withObjectStorage: boolean) {
         expect(publicVideo).to.exist
         expect(publicVideo.privacy.id).to.equal(VideoPrivacy.PUBLIC)
 
+        const playerSetting = await remoteServer.playerSettings.getForVideo({
+          videoId: publicVideo.uuid,
+          token: remoteServer.accessToken,
+          raw: true
+        })
+        expect(playerSetting.theme).to.equal('lucide')
+
         // Federated
         await server.videos.get({ id: publicVideo.uuid })
       }
@@ -384,6 +414,13 @@ function runTest (withObjectStorage: boolean) {
         const passwordVideo = data.find(v => v.name === 'noah password video')
         expect(passwordVideo).to.exist
         expect(passwordVideo.privacy.id).to.equal(VideoPrivacy.PASSWORD_PROTECTED)
+
+        const playerSetting = await remoteServer.playerSettings.getForVideo({
+          videoId: passwordVideo.uuid,
+          token: remoteServer.accessToken,
+          raw: true
+        })
+        expect(playerSetting.theme).to.equal('channel-default')
 
         const { data: passwords } = await remoteServer.videoPasswords.list({ videoId: passwordVideo.uuid })
         expect(passwords.map(p => p.password).sort()).to.deep.equal([ 'password1', 'password2' ])
@@ -405,14 +442,14 @@ function runTest (withObjectStorage: boolean) {
 
             attributes: {
               name: 'noah public video second channel',
-              privacy: (VideoPrivacy.PUBLIC),
-              category: (12),
+              privacy: VideoPrivacy.PUBLIC,
+              category: 12,
               tags: [ 'tag1', 'tag2' ],
               commentsPolicy: VideoCommentPolicy.DISABLED,
               downloadEnabled: false,
               nsfw: false,
-              description: ('video description'),
-              support: ('video support'),
+              description: 'video description',
+              support: 'video support',
               language: 'fr',
               licence: 1,
               originallyPublishedAt: new Date(0).toISOString(),
@@ -443,15 +480,13 @@ function runTest (withObjectStorage: boolean) {
                   size: 23000
                 }
               ],
-              thumbnailfile: 'custom-thumbnail-from-preview',
-              previewfile: 'custom-preview'
+              thumbnails: [ 'custom-thumbnail-user-import-280x157.jpg', 'custom-thumbnail-user-import-850x480.jpg' ]
             }
           })
         }
 
         const { data: captions } = await remoteServer.captions.list({ videoId: otherVideo.uuid })
 
-        // TODO: merge these functions in v8, caption playlist are not federated before v8
         await completeCheckHlsPlaylist({
           hlsOnly: false,
           servers: [ remoteServer ],
@@ -460,17 +495,8 @@ function runTest (withObjectStorage: boolean) {
           resolutions: [ 720, 240 ],
           captions
         })
-        await completeCheckHlsPlaylist({
-          hlsOnly: false,
-          servers: [ server ],
-          videoUUID: otherVideo.uuid,
-          objectStorageBaseUrl: objectStorage?.getMockPlaylistBaseUrl(),
-          resolutions: [ 720, 240 ],
-          captions: [] // Caption playlist are not federated before v8
-        })
 
         const source = await remoteServer.videos.getSource({ id: otherVideo.uuid })
-        expect(source.filename).to.equal('video_short.webm')
         expect(source.inputFilename).to.equal('video_short.webm')
         expect(source.fileDownloadUrl).to.not.exist
 
@@ -482,9 +508,10 @@ function runTest (withObjectStorage: boolean) {
         const liveVideo = data.find(v => v.name === 'noah live video')
         expect(liveVideo).to.exist
 
-        await remoteServer.videos.get({ id: liveVideo.uuid, expectedStatus: HttpStatusCode.FORBIDDEN_403 })
+        await remoteServer.videos.get({ id: liveVideo.uuid, expectedStatus: HttpStatusCode.UNAUTHORIZED_401 })
         const video = await remoteServer.videos.getWithPassword({ id: liveVideo.uuid, password: 'password1' })
         const live = await remoteServer.live.get({ videoId: liveVideo.uuid, token: remoteNoahToken })
+        const liveEmbedPrivacy = await remoteServer.videoEmbedPrivacy.get({ videoId: liveVideo.uuid, token: remoteNoahToken })
 
         expect(video.isLive).to.be.true
         expect(live.latencyMode).to.equal(LiveVideoLatencyMode.SMALL_LATENCY)
@@ -502,6 +529,9 @@ function runTest (withObjectStorage: boolean) {
         expect(video.streamingPlaylists).to.have.lengthOf(0)
 
         expect(video.state.id).to.equal(VideoState.WAITING_FOR_LIVE)
+
+        expect(liveEmbedPrivacy.policy.id).to.equal(VideoEmbedPrivacyPolicy.ALLOWLIST)
+        expect(liveEmbedPrivacy.domains).to.deep.equal([ 'example.com' ])
       }
     })
   })
@@ -698,7 +728,6 @@ function runTest (withObjectStorage: boolean) {
         expect(data).to.have.lengthOf(1)
 
         const source = await remoteServer.videos.getSource({ id: data[0].id })
-        expect(source.filename).to.equal(fixture)
         expect(source.inputFilename).to.equal(fixture)
         expect(source.fileDownloadUrl).to.exist
 

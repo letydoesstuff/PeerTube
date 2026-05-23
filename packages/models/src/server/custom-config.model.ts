@@ -1,3 +1,4 @@
+import { PlayerTheme } from '../player/player-theme.type.js'
 import { VideoCommentPolicyType, VideoPrivacyType } from '../videos/index.js'
 import { NSFWPolicyType } from '../videos/nsfw-policy.type.js'
 import { BroadcastMessageLevel } from './broadcast-message-level.type.js'
@@ -47,6 +48,7 @@ export interface CustomConfig {
       externalLink: string
       mastodonLink: string
       blueskyLink: string
+      xLink: string
     }
 
     defaultClientRoute: string
@@ -62,6 +64,7 @@ export interface CustomConfig {
 
     customization: {
       primaryColor: string
+      onPrimaryColor: string
       foregroundColor: string
       backgroundColor: string
       backgroundSecondaryColor: string
@@ -91,28 +94,15 @@ export interface CustomConfig {
       }
     }
 
+    browseVideos: {
+      defaultSort: string
+      defaultScope: string
+    }
+
     menu: {
       login: {
         redirectOnSingleExternalAuth: boolean
       }
-    }
-  }
-
-  cache: {
-    previews: {
-      size: number
-    }
-
-    captions: {
-      size: number
-    }
-
-    torrents: {
-      size: number
-    }
-
-    storyboards: {
-      size: number
     }
   }
 
@@ -179,6 +169,7 @@ export interface CustomConfig {
     resolutions: ConfigResolutions
 
     alwaysTranscodeOriginalResolution: boolean
+    alwaysTranscodePodcastOptimizedAudio: boolean
 
     fps: {
       max: number
@@ -340,6 +331,9 @@ export interface CustomConfig {
 
   storyboards: {
     enabled: boolean
+    remoteRunners: {
+      enabled: boolean
+    }
   }
 
   defaults: {
@@ -361,6 +355,7 @@ export interface CustomConfig {
     }
 
     player: {
+      theme: PlayerTheme
       autoPlay: boolean
     }
   }

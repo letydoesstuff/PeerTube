@@ -1,15 +1,20 @@
-import { getOriginUrl } from '@app/helpers'
-import { exists, omit, pick, secondsToTime } from '@peertube/peertube-core-utils'
+import { AuthUser } from '@app/core'
+import { exists, maxBy, omit, pick, secondsToTime } from '@peertube/peertube-core-utils'
 import {
   HTMLServerConfig,
   LiveVideo,
   LiveVideoCreate,
   LiveVideoUpdate,
   NSFWFlag,
+  PlayerVideoSettings,
+  PlayerVideoSettingsUpdate,
   VideoCaption,
   VideoChapter,
   VideoCreate,
   VideoDetails,
+  VideoEmbedPrivacy,
+  VideoEmbedPrivacyPolicy,
+  VideoEmbedPrivacyUpdate,
   VideoImportCreate,
   VideoPrivacy,
   VideoPrivacyType,
@@ -26,6 +31,7 @@ import debug from 'debug'
 import { Jsonify, SharedUnionFieldsDeep } from 'type-fest'
 import { VideoCaptionWithPathEdit } from './video-caption-edit.model'
 import { VideoChaptersEdit } from './video-chapters-edit.model'
+import { splitAndGetNotEmpty } from '@root-helpers/string'
 
 const debugLogger = debug('peertube:video-manage:video-edit')
 
@@ -34,7 +40,7 @@ export type VideoEditPrivacyType = VideoPrivacyType | typeof VideoEdit.SPECIAL_S
 type CommonUpdateForm =
   & Omit<
     VideoUpdate,
-    'privacy' | 'videoPasswords' | 'thumbnailfile' | 'scheduleUpdate' | 'commentsEnabled' | 'originallyPublishedAt' | 'nsfwFlags'
+    'privacy' | 'videoPasswords' | 'previewfile' | 'scheduleUpdate' | 'originallyPublishedAt' | 'nsfwFlags'
   >
   & {
     schedulePublicationAt?: Date
@@ -65,9 +71,18 @@ type StudioForm = {
   'add-watermark'?: { file?: File }
 }
 
+type PlayerSettingsForm = PlayerVideoSettingsUpdate
+
+type EmbedPrivacyForm = {
+  videoPrivacyEmbedEnableAllowlist?: boolean
+  videoPrivacyEmbedAllowlistDomains?: string
+}
+
 // ---------------------------------------------------------------------------
 
-type LoadFromPublishOptions = Required<Pick<VideoCreate, 'channelId' | 'support'>> & Partial<Pick<VideoCreate, 'name'>>
+type LoadFromPublishOptions = Required<Pick<VideoCreate, 'channelId' | 'support'>> & Partial<Pick<VideoCreate, 'name'>> & {
+  user: AuthUser
+}
 
 type CreateFromUploadOptions = LoadFromPublishOptions & Required<Pick<VideoCreate, 'name'>>
 
@@ -106,7 +121,8 @@ type UpdateFromAPIOptions = {
     | 'aspectRatio'
     | 'views'
     | 'blacklisted'
-    | 'previewPath'
+    | 'blacklistedReason'
+    | 'thumbnails'
     | 'state'
     | 'isLive'
   >
@@ -115,11 +131,13 @@ type UpdateFromAPIOptions = {
   captions?: VideoCaption[]
   videoPasswords?: string[]
   videoSource?: VideoSource
+  playerSettings: PlayerVideoSettings
+  embedPrivacy: VideoEmbedPrivacy
 }
 
 // ---------------------------------------------------------------------------
 
-type CommonUpdate = Omit<VideoUpdate, 'thumbnailfile' | 'originallyPublishedAt' | 'scheduleUpdate'> & {
+type CommonUpdate = Omit<VideoUpdate, 'previewfile' | 'originallyPublishedAt' | 'scheduleUpdate'> & {
   originallyPublishedAt?: string
   scheduleUpdate?: {
     updateAt: string
@@ -143,6 +161,8 @@ export class VideoEdit {
   private live: LiveUpdate
   private replaceFile: File
   private studioTasks: VideoStudioTask[] = []
+  private playerSettings: PlayerVideoSettingsUpdate
+  private embedPrivacy: VideoEmbedPrivacyUpdate
 
   private videoImport: Pick<VideoImportCreate, 'magnetUri' | 'torrentfile' | 'targetUrl'>
 
@@ -157,6 +177,10 @@ export class VideoEdit {
     duration: number
     likes: number
     blacklisted: boolean
+    blacklistedReason: string
+
+    ownerAccountId: number
+    ownerAccountDisplayName: string
 
     live: Pick<LiveVideo, 'rtmpUrl' | 'rtmpsUrl' | 'streamKey'>
     videoSource: VideoSource
@@ -176,15 +200,22 @@ export class VideoEdit {
     likes: number
 
     blacklisted: boolean
+    blacklistedReason: string
+
+    ownerAccountId: number
+    ownerAccountDisplayName: string
 
     live?: Pick<LiveVideo, 'rtmpUrl' | 'rtmpsUrl' | 'streamKey'>
   }
 
   private saveStore: {
-    common?: Omit<CommonUpdate, 'pluginData' | 'previewfile'>
-    previewfile?: { size: number }
+    common?: Omit<CommonUpdate, 'pluginData' | 'thumbnailfile'>
+    thumbnailfile?: { size: number }
 
     live?: LiveUpdate
+    playerSettings?: PlayerVideoSettingsUpdate
+
+    embedPrivacy?: VideoEmbedPrivacyUpdate
 
     pluginData?: any
     pluginDefaults?: Record<string, string | boolean>
@@ -281,11 +312,15 @@ export class VideoEdit {
     this.metadata.views = 0
     this.metadata.likes = 0
 
+    this.metadata.ownerAccountDisplayName = options.user.account.displayName
+    this.metadata.ownerAccountId = options.user.account.id
+
     this.updateAfterChange()
   }
 
   // ---------------------------------------------------------------------------
 
+  // Build a new VideoEdit model based on data coming from the API
   static async createFromAPI (serverConfig: HTMLServerConfig, options: UpdateFromAPIOptions) {
     const videoEdit = new VideoEdit(serverConfig)
     await videoEdit.loadFromAPI(options)
@@ -294,12 +329,14 @@ export class VideoEdit {
   }
 
   async loadFromAPI (options: UpdateFromAPIOptions & { loadPrivacy?: boolean }) {
-    const { video, videoPasswords, live, chapters, captions, videoSource, loadPrivacy = true } = options
+    const { video, videoPasswords, live, chapters, captions, videoSource, playerSettings, embedPrivacy, loadPrivacy = true } = options
 
     debugLogger('Load from API', options)
 
     this.loadVideo({ video, videoPasswords, saveInStore: true, loadPrivacy })
     this.loadLive(live)
+    this.loadPlayerSettings(playerSettings)
+    this.loadEmbedPrivacy(embedPrivacy)
 
     if (captions !== undefined) {
       this.captions = captions
@@ -314,7 +351,7 @@ export class VideoEdit {
       this.metadata.videoSource = videoSource
     }
 
-    await this.loadPreview(video)
+    await this.loadThumbnail(video)
 
     this.updateAfterChange()
   }
@@ -376,7 +413,7 @@ export class VideoEdit {
 
     if (saveInStore) {
       const obj = buildObj({ loadPrivacy: true })
-      this.saveStore.common = omit(obj, [ 'pluginData', 'previewfile' ])
+      this.saveStore.common = omit(obj, [ 'pluginData', 'thumbnailfile' ])
 
       // Apply plugin defaults so we correctly detect changes
       const pluginDefaults = this.saveStore.pluginDefaults || {}
@@ -395,8 +432,12 @@ export class VideoEdit {
     this.metadata.likes = video.likes
     this.metadata.aspectRatio = video.aspectRatio
     this.metadata.blacklisted = video.blacklisted
+    this.metadata.blacklistedReason = video.blacklistedReason
 
     this.metadata.isLive = video.isLive
+
+    this.metadata.ownerAccountDisplayName = video.channel.ownerAccount.displayName
+    this.metadata.ownerAccountId = video.channel.ownerAccount.id
   }
 
   loadPluginDataDefaults (pluginDefaults: Record<string, string | boolean>) {
@@ -407,16 +448,18 @@ export class VideoEdit {
     }
   }
 
-  private async loadPreview (video: UpdateFromAPIOptions['video']) {
-    if (!video?.previewPath) return
+  private async loadThumbnail (video: UpdateFromAPIOptions['video']) {
+    if (!video?.thumbnails || video.thumbnails.length === 0) return
+
+    const bestThumbnail = maxBy(video.thumbnails, 'width')
 
     try {
-      const response = await fetch(getOriginUrl() + video.previewPath)
+      const response = await fetch(bestThumbnail.fileUrl)
 
-      this.common.previewfile = await response.blob()
-      this.saveStore.previewfile = { size: this.common.previewfile.size }
+      this.common.thumbnailfile = await response.blob()
+      this.saveStore.thumbnailfile = { size: this.common.thumbnailfile.size }
     } catch (err) {
-      logger.error('Failed to fetch video preview', err)
+      logger.error('Failed to fetch video thumbnail', err)
     }
   }
 
@@ -449,6 +492,29 @@ export class VideoEdit {
     this.metadata.live = pick(live, [ 'rtmpUrl', 'rtmpsUrl', 'streamKey' ])
   }
 
+  private loadPlayerSettings (playerSettings: UpdateFromAPIOptions['playerSettings']) {
+    const buildObj = () => {
+      return {
+        theme: playerSettings.theme
+      }
+    }
+
+    this.playerSettings = buildObj()
+    this.saveStore.playerSettings = buildObj()
+  }
+
+  private loadEmbedPrivacy (embedPrivacy: UpdateFromAPIOptions['embedPrivacy']) {
+    const buildObj = () => {
+      return {
+        policy: embedPrivacy.policy.id,
+        domains: embedPrivacy.domains ?? []
+      }
+    }
+
+    this.embedPrivacy = buildObj()
+    this.saveStore.embedPrivacy = buildObj()
+  }
+
   loadAfterPublish (options: {
     video: Pick<VideoDetails, 'id' | 'uuid' | 'shortUUID'>
   }) {
@@ -473,7 +539,7 @@ export class VideoEdit {
     if (values.support !== undefined) this.common.support = values.support
     if (values.commentsPolicy !== undefined) this.common.commentsPolicy = values.commentsPolicy
     if (values.downloadEnabled !== undefined) this.common.downloadEnabled = values.downloadEnabled
-    if (values.previewfile !== undefined) this.common.previewfile = values.previewfile
+    if (values.thumbnailfile !== undefined) this.common.thumbnailfile = values.thumbnailfile
     if (values.pluginData !== undefined) this.common.pluginData = values.pluginData
 
     // ---------------------------------------------------------------------------
@@ -563,7 +629,7 @@ export class VideoEdit {
 
       pluginData: this.common.pluginData,
 
-      previewfile: this.common.previewfile,
+      thumbnailfile: this.common.thumbnailfile,
 
       videoPassword: this.common.videoPasswords && this.common.videoPasswords.length !== 0
         ? this.common.videoPasswords[0]
@@ -589,7 +655,7 @@ export class VideoEdit {
     return json
   }
 
-  toVideoUpdate (): Required<Omit<VideoUpdate, 'commentsEnabled'>> {
+  toVideoUpdate (): Required<Omit<VideoUpdate, 'previewfile'>> {
     return {
       ...this.toVideoCreateOrUpdate(),
 
@@ -597,7 +663,7 @@ export class VideoEdit {
     }
   }
 
-  toVideoCreate (overriddenPrivacy: VideoPrivacyType): Required<Omit<VideoCreate, 'commentsEnabled' | 'generateTranscription'>> {
+  toVideoCreate (overriddenPrivacy: VideoPrivacyType): Required<Omit<VideoCreate, 'generateTranscription' | 'previewfile'>> {
     return {
       ...this.toVideoCreateOrUpdate(),
 
@@ -605,7 +671,7 @@ export class VideoEdit {
     }
   }
 
-  private toVideoCreateOrUpdate (): Required<Omit<SharedUnionFieldsDeep<VideoCreate | VideoUpdate>, 'commentsEnabled'>> {
+  private toVideoCreateOrUpdate (): Required<SharedUnionFieldsDeep<Omit<VideoCreate | VideoUpdate, 'previewfile'>>> {
     return {
       name: this.common.name,
       category: this.common.category || null,
@@ -627,8 +693,7 @@ export class VideoEdit {
       waitTranscoding: this.common.waitTranscoding,
       commentsPolicy: this.common.commentsPolicy,
       downloadEnabled: this.common.downloadEnabled,
-      thumbnailfile: this.common.previewfile,
-      previewfile: this.common.previewfile,
+      thumbnailfile: this.common.thumbnailfile,
       scheduleUpdate: this.common.scheduleUpdate || null,
       originallyPublishedAt: this.common.originallyPublishedAt || null
     }
@@ -797,6 +862,46 @@ export class VideoEdit {
 
   // ---------------------------------------------------------------------------
 
+  loadFromPlayerSettingsForm (values: PlayerSettingsForm) {
+    this.playerSettings = values
+  }
+
+  toPlayerSettingsFormPatch (): Required<PlayerSettingsForm> {
+    return {
+      theme: this.playerSettings?.theme ?? 'channel-default'
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+
+  loadFromEmbedPrivacyForm (value: EmbedPrivacyForm) {
+    this.embedPrivacy = {
+      policy: value.videoPrivacyEmbedEnableAllowlist
+        ? VideoEmbedPrivacyPolicy.ALLOWLIST
+        : VideoEmbedPrivacyPolicy.ALL_ALLOWED,
+
+      domains: splitAndGetNotEmpty(value.videoPrivacyEmbedAllowlistDomains)
+    }
+  }
+
+  toEmbedPrivacyFormPatch (): Required<EmbedPrivacyForm> {
+    if (!this.embedPrivacy) {
+      return {
+        videoPrivacyEmbedEnableAllowlist: false,
+        videoPrivacyEmbedAllowlistDomains: ''
+      }
+    }
+
+    return {
+      videoPrivacyEmbedEnableAllowlist: this.embedPrivacy.policy === VideoEmbedPrivacyPolicy.ALLOWLIST,
+      videoPrivacyEmbedAllowlistDomains: this.embedPrivacy.domains.join('\n')
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+
   getVideoSource () {
     return this.metadata.videoSource
   }
@@ -823,6 +928,14 @@ export class VideoEdit {
 
   getStudioTasks () {
     return this.studioTasks
+  }
+
+  getPlayerSettings () {
+    return this.playerSettings
+  }
+
+  getEmbedPrivacy () {
+    return this.embedPrivacy
   }
 
   getStudioTasksSummary () {
@@ -865,18 +978,18 @@ export class VideoEdit {
     if (this.isNewVideo) return true
     if (!this.saveStore.common) return true
 
-    let changes = !this.areSameObjects(omit(this.common, [ 'previewfile', 'pluginData' ]), this.saveStore.common)
+    let changes = !this.areSameObjects(omit(this.common, [ 'thumbnailfile', 'pluginData' ]), this.saveStore.common)
 
-    // Compare preview file
-    if (changes !== true && (this.common.previewfile || this.saveStore.previewfile)) {
-      changes = this.common.previewfile?.size !== this.saveStore.previewfile?.size
+    // Compare thumbnails
+    if (changes !== true && (this.common.thumbnailfile || this.saveStore.thumbnailfile)) {
+      changes = this.common.thumbnailfile?.size !== this.saveStore.thumbnailfile?.size
     }
 
     debugLogger('Check if has common changes', {
       changes,
       common: this.common,
       saveCommon: this.saveStore.common,
-      savePreview: this.saveStore.previewfile
+      saveThumbnail: this.saveStore.thumbnailfile
     })
 
     return changes
@@ -941,6 +1054,36 @@ export class VideoEdit {
     return changes
   }
 
+  hasPlayerSettingsChanges () {
+    if (!this.playerSettings) return false
+    if (!this.saveStore.playerSettings) return true
+
+    const changes = !this.areSameObjects(this.playerSettings, this.saveStore.playerSettings)
+
+    debugLogger('Check if player settings has changes', {
+      playerSettings: this.playerSettings,
+      savePlayerSettings: this.saveStore.playerSettings,
+      changes
+    })
+
+    return changes
+  }
+
+  hasEmbedPrivacyChanges () {
+    if (!this.embedPrivacy) return false
+    if (!this.saveStore.embedPrivacy) return true
+
+    const changes = !this.areSameObjects(this.embedPrivacy, this.saveStore.embedPrivacy)
+
+    debugLogger('Check if embed privacy has changes', {
+      embedPrivacy: this.embedPrivacy,
+      saveEmbedPrivacy: this.saveStore.embedPrivacy,
+      changes
+    })
+
+    return changes
+  }
+
   // ---------------------------------------------------------------------------
 
   hasPendingChanges () {
@@ -950,7 +1093,9 @@ export class VideoEdit {
       this.hasStudioTasks() ||
       this.hasChaptersChanges() ||
       this.hasCommonChanges() ||
-      this.hasPluginDataChanges()
+      this.hasPluginDataChanges() ||
+      this.hasPlayerSettingsChanges() ||
+      this.hasEmbedPrivacyChanges()
   }
 
   // ---------------------------------------------------------------------------
@@ -973,6 +1118,10 @@ export class VideoEdit {
       likes: this.metadata.likes,
       duration: this.metadata.duration,
       blacklisted: this.metadata.blacklisted,
+      blacklistedReason: this.metadata.blacklistedReason,
+
+      ownerAccountId: this.metadata.ownerAccountId,
+      ownerAccountDisplayName: this.metadata.ownerAccountDisplayName,
 
       live: this.metadata.live
     }

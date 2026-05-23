@@ -9,6 +9,7 @@ import {
   UserNotificationSettingValue,
   VideoCommentObject,
   VideoCommentPolicy,
+  VideoEmbedPrivacyPolicy,
   VideoObject,
   VideoPlaylistPrivacy,
   VideoPrivacy
@@ -33,7 +34,7 @@ import { tmpdir } from 'os'
 import { basename, join, resolve } from 'path'
 import { testFileExistsOnFSOrNot } from './checks.js'
 import { MockSmtpServer } from './mock-servers/mock-email.js'
-import { getAllNotificationsSettings } from './notifications.js'
+import { getAllNotificationsSettings } from './notifications/notifications-common.js'
 
 type ExportOutbox = ActivityPubOrderedCollection<ActivityCreate<VideoObject | VideoCommentObject>>
 
@@ -211,13 +212,17 @@ export async function prepareImportExportTests (options: {
     fixture: 'avatar.png',
     type: 'avatar'
   })
+  await server.playerSettings.updateForChannel({ channelHandle: 'noah_second_channel', theme: 'galaxy' })
 
   // Videos
   const externalVideo = await remoteServer.videos.quickUpload({ name: 'external video', privacy: VideoPrivacy.PUBLIC })
 
   // eslint-disable-next-line max-len
   const noahPrivateVideo = await server.videos.quickUpload({ name: 'noah private video', token: noahToken, privacy: VideoPrivacy.PRIVATE })
+
   const noahVideo = await server.videos.quickUpload({ name: 'noah public video', token: noahToken, privacy: VideoPrivacy.PUBLIC })
+  await server.playerSettings.updateForVideo({ videoId: noahVideo.uuid, theme: 'lucide' })
+
   // eslint-disable-next-line max-len
   const noahVideo2 = await server.videos.upload({
     token: noahToken,
@@ -237,8 +242,7 @@ export async function prepareImportExportTests (options: {
       waitTranscoding: true,
       channelId: noahSecondChannelId,
       privacy: VideoPrivacy.PUBLIC,
-      thumbnailfile: 'custom-thumbnail.jpg',
-      previewfile: 'custom-preview.jpg'
+      thumbnailfile: 'custom-thumbnail-input.jpg'
     }
   })
 
@@ -345,6 +349,13 @@ export async function prepareImportExportTests (options: {
     token: noahToken
   })
 
+  await server.videoEmbedPrivacy.update({
+    videoId: noahLive.uuid,
+    policy: VideoEmbedPrivacyPolicy.ALLOWLIST,
+    domains: [ 'example.com' ],
+    token: noahToken
+  })
+
   // Views
   await server.views.view({ id: noahVideo.uuid, token: noahToken, currentTime: 4 })
   await server.views.view({ id: externalVideo.uuid, token: noahToken, currentTime: 2 })
@@ -370,6 +381,13 @@ export async function prepareImportExportTests (options: {
     token: noahToken
   })
 
+  await waitJobs([ server, remoteServer ])
+
+  await server.channelCollaborators.addEditor({ channel: 'root_channel', editorToken: noahToken, editor: 'noah' })
+
+  const { data: noahVideos } = await server.videos.listMyVideos({ token: noahToken, sort: '-publishedAt' })
+  const noahVODNames = noahVideos.filter(v => !v.isLive).map(v => v.name)
+
   return {
     rootId,
 
@@ -391,6 +409,8 @@ export async function prepareImportExportTests (options: {
 
     server,
     remoteServer,
-    blockedServer
+    blockedServer,
+
+    noahVODNames
   }
 }

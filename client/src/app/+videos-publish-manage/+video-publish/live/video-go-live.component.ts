@@ -3,11 +3,13 @@ import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { ActivatedRoute } from '@angular/router'
 import { VideoEdit } from '@app/+videos-publish-manage/shared-manage/common/video-edit.model'
 import { VideoManageController } from '@app/+videos-publish-manage/shared-manage/video-manage-controller.service'
-import { CanComponentDeactivate, HooksService, Notifier, ServerService } from '@app/core'
+import { AuthService, CanComponentDeactivate, HooksService, Notifier, ServerService } from '@app/core'
 import { LiveVideoService } from '@app/shared/shared-video-live/live-video.service'
+import { PlayerSettingsService } from '@app/shared/shared-video/player-settings.service'
+import { VideoEmbedPrivacyService } from '@app/shared/shared-video/video-embed-privacy.service'
 import { LiveVideoLatencyMode, PeerTubeProblemDocument, ServerErrorCode, UserVideoQuota, VideoPrivacyType } from '@peertube/peertube-models'
 import debug from 'debug'
-import { map, switchMap } from 'rxjs'
+import { forkJoin, map, switchMap } from 'rxjs'
 import { SelectChannelItem } from 'src/types'
 import { SelectChannelComponent } from '../../../shared/shared-forms/select/select-channel.component'
 import { GlobalIconComponent } from '../../../shared/shared-icons/global-icon.component'
@@ -32,11 +34,14 @@ const debugLogger = debug('peertube:video-publish')
 })
 export class VideoGoLiveComponent implements OnInit, AfterViewInit, CanComponentDeactivate {
   private notifier = inject(Notifier)
+  private authService = inject(AuthService)
   private serverService = inject(ServerService)
   private liveVideoService = inject(LiveVideoService)
   private hooks = inject(HooksService)
   private manageController = inject(VideoManageController)
   private route = inject(ActivatedRoute)
+  private playerSettingsService = inject(PlayerSettingsService)
+  private videoEmbedPrivacyService = inject(VideoEmbedPrivacyService)
 
   readonly userChannels = input.required<SelectChannelItem[]>()
   readonly userQuota = input.required<UserVideoQuota>()
@@ -90,7 +95,8 @@ export class VideoGoLiveComponent implements OnInit, AfterViewInit, CanComponent
       latencyMode: LiveVideoLatencyMode.DEFAULT,
       saveReplay: this.isReplayAllowed(),
       replaySettings: { privacy: this.highestPrivacy() },
-      schedules: []
+      schedules: [],
+      user: this.authService.getUser()
     })
     this.manageController.setConfig({ manageType: 'go-live', serverConfig: this.serverService.getHTMLConfig() })
     this.manageController.setVideoEdit(videoEdit)
@@ -98,14 +104,17 @@ export class VideoGoLiveComponent implements OnInit, AfterViewInit, CanComponent
     this.liveVideoService.goLive(videoEdit.toLiveCreate(this.highestPrivacy()))
       .pipe(
         switchMap(({ video }) => {
-          return this.liveVideoService.getVideoLive(video.uuid)
-            .pipe(map(live => ({ live, video })))
+          return forkJoin([
+            this.liveVideoService.getVideoLive(video.uuid),
+            this.playerSettingsService.getVideoSettings({ videoId: video.uuid, raw: true }),
+            this.videoEmbedPrivacyService.getPrivacy({ videoId: video.uuid })
+          ]).pipe(map(([ live, playerSettings, embedPrivacy ]) => ({ live, playerSettings, embedPrivacy, video })))
         })
       )
       .subscribe({
-        next: async ({ video: { id, uuid, shortUUID }, live }) => {
+        next: async ({ video: { id, uuid, shortUUID }, live, playerSettings, embedPrivacy }) => {
           videoEdit.loadAfterPublish({ video: { id, uuid, shortUUID } })
-          await videoEdit.loadFromAPI({ live, loadPrivacy: false })
+          await videoEdit.loadFromAPI({ live, playerSettings, embedPrivacy, loadPrivacy: false })
 
           debugLogger(`Live published`)
 
@@ -118,18 +127,17 @@ export class VideoGoLiveComponent implements OnInit, AfterViewInit, CanComponent
 
         error: err => {
           this.firstStepError.emit()
+          this.isGoingLive = false
 
-          let message = err.message
           const error = err.body as PeerTubeProblemDocument
 
           if (error?.code === ServerErrorCode.MAX_INSTANCE_LIVES_LIMIT_REACHED) {
-            message = $localize`Cannot create live because this platform has too many created lives`
+            this.notifier.error($localize`Cannot create live because this platform has too many created lives`)
           } else if (error?.code === ServerErrorCode.MAX_USER_LIVES_LIMIT_REACHED) {
-            message = $localize`Cannot create live because you created too many lives`
+            this.notifier.error($localize`Cannot create live because you created too many lives`)
+          } else {
+            this.notifier.handleError(err)
           }
-
-          this.notifier.error(message)
-          this.isGoingLive = false
         }
       })
   }

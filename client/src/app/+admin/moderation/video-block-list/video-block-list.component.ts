@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnInit, inject, viewChild } from '@angular/core'
 import { ConfirmService, MarkdownService, Notifier, ServerService } from '@app/core'
 import { PTDatePipe } from '@app/shared/shared-main/common/date.pipe'
@@ -24,7 +23,6 @@ type VideoBlacklist = VideoBlacklistServer & { reasonHtml?: string }
   templateUrl: './video-block-list.component.html',
   styleUrls: [ '../../../shared/shared-moderation/moderation.scss' ],
   imports: [
-    CommonModule,
     AdvancedInputFilterComponent,
     ActionDropdownComponent,
     VideoCellComponent,
@@ -95,7 +93,7 @@ export class VideoBlockListComponent implements OnInit {
                 this.table().loadData()
               },
 
-              error: err => this.notifier.error(err.message)
+              error: err => this.notifier.handleError(err)
             })
           },
           isDisplayed: videoBlock => videoBlock.type === VideoBlacklistType.AUTO_BEFORE_PUBLISHED
@@ -127,7 +125,7 @@ export class VideoBlockListComponent implements OnInit {
                   this.table().loadData()
                 },
 
-                error: err => this.notifier.error(err.message)
+                error: err => this.notifier.handleError(err)
               })
           }
         }
@@ -161,7 +159,7 @@ export class VideoBlockListComponent implements OnInit {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

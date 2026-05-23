@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnInit, inject } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { Notifier, ServerService } from '@app/core'
@@ -8,7 +7,7 @@ import { DebugService } from './debug.service'
 @Component({
   templateUrl: './debug.component.html',
   styleUrls: [ './debug.component.scss' ],
-  imports: [ CommonModule, FormsModule ]
+  imports: [ FormsModule ]
 })
 export class DebugComponent implements OnInit {
   private debugService = inject(DebugService)
@@ -31,7 +30,7 @@ export class DebugComponent implements OnInit {
       .subscribe({
         next: debug => this.debug = debug,
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -44,7 +43,7 @@ export class DebugComponent implements OnInit {
           this.notifier.success($localize`Emails will be sent!`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 }

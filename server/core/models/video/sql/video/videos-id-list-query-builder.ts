@@ -1,5 +1,12 @@
 import { forceNumber } from '@peertube/peertube-core-utils'
-import { VideoInclude, VideoIncludeType, VideoPrivacy, VideoPrivacyType, VideoState } from '@peertube/peertube-models'
+import {
+  VideoChannelCollaboratorState,
+  VideoInclude,
+  VideoIncludeType,
+  VideoPrivacy,
+  VideoPrivacyType,
+  VideoState
+} from '@peertube/peertube-models'
 import { exists } from '@server/helpers/custom-validators/misc.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
 import { buildSortDirectionAndField } from '@server/models/shared/index.js'
@@ -58,6 +65,7 @@ export type BuildVideosListQueryOptions = {
   hasWebVideoFiles?: boolean
 
   accountId?: number
+  includeCollaborations?: boolean
 
   videoChannelId?: number
   channelNameOneOf?: string[]
@@ -93,6 +101,8 @@ export type BuildVideosListQueryOptions = {
   excludeAlreadyWatched?: boolean
 }
 
+type SortDirection = 'ASC' | 'DESC'
+
 export class VideosIdListQueryBuilder extends AbstractRunQuery {
   protected replacements: any = {}
 
@@ -107,8 +117,11 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
   private having = ''
 
   private sort = ''
+
   private limit = ''
   private offset = ''
+
+  private builtChannelJoin = false
 
   constructor (protected readonly sequelize: Sequelize) {
     super(sequelize)
@@ -143,10 +156,20 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
     if (options.group) this.group = options.group
     if (options.having) this.having = options.having
 
+    let sortColumn: string
+    let sortDirection: SortDirection
+
+    if (options.sort) {
+      const { direction, field } = buildSortDirectionAndField(options.sort)
+
+      sortColumn = field
+      sortDirection = direction
+    }
+
     this.joins = this.joins.concat([
       'INNER JOIN "videoChannel" ON "videoChannel"."id" = "video"."channelId"',
       'INNER JOIN "account" ON "account"."id" = "videoChannel"."accountId"',
-      'INNER JOIN "actor" "accountActor" ON "account"."actorId" = "accountActor"."id"'
+      'INNER JOIN "actor" "accountActor" ON "account"."id" = "accountActor"."accountId"'
     ])
 
     if (!(options.include & VideoInclude.BLACKLISTED)) {
@@ -177,19 +200,19 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
     }
 
     if (options.accountId) {
-      this.whereAccountId(options.accountId)
+      this.whereAccountId({ accountId: options.accountId, includeCollaborations: options.includeCollaborations })
     }
 
     if (options.videoChannelId) {
       this.whereChannelId(options.videoChannelId)
     }
 
-    if (options.channelNameOneOf) {
+    if (options.channelNameOneOf && options.channelNameOneOf.length !== 0) {
       this.whereChannelOneOf(options.channelNameOneOf)
     }
 
     if (options.displayOnlyForFollower) {
-      this.whereFollowerActorId(options.displayOnlyForFollower)
+      this.whereFollowerActorId({ ...options.displayOnlyForFollower, isCount: options.isCount === true, sortColumn })
     }
 
     if (options.hasFiles === true) {
@@ -255,10 +278,10 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
 
     // We don't exclude results in this so if we do a count we don't need to add this complex clause
     if (options.isCount !== true) {
-      if (options.sort.endsWith('trending')) {
+      if (sortColumn === 'trending') {
         this.groupForTrending(options.trendingDays)
-      } else if (options.sort.endsWith('hot') || options.sort.endsWith('best')) {
-        this.addAttributeForHotOrBest(options.sort, options.user)
+      } else if (sortColumn === 'hot' || sortColumn === 'best') {
+        this.addAttributeForHotOrBest(sortColumn, options.user)
       }
     }
 
@@ -303,8 +326,8 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
     if (options.isCount === true) {
       this.setCountAttribute()
     } else {
-      if (exists(options.sort)) {
-        this.setSort(options.sort)
+      if (exists(sortColumn)) {
+        this.setSort(sortColumn, sortDirection)
       }
 
       if (exists(options.count)) {
@@ -359,6 +382,13 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
     )
   }
 
+  private joinChannel () {
+    if (this.builtChannelJoin) return
+    this.builtChannelJoin = true
+
+    this.joins.push('INNER JOIN "actor" "channelActor" ON "videoChannel"."id" = "channelActor"."videoChannelId"')
+  }
+
   private whereStateAvailable (options: {
     includeScheduledLive: boolean
   }) {
@@ -405,9 +435,27 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
     this.replacements.host = host
   }
 
-  private whereAccountId (accountId: number) {
-    this.and.push('"account"."id" = :accountId')
-    this.replacements.accountId = accountId
+  private whereAccountId (options: {
+    accountId: number
+    includeCollaborations: boolean
+  }) {
+    if (options.includeCollaborations !== true) {
+      this.and.push('"account"."id" = :accountId')
+      this.replacements.accountId = options.accountId
+      return
+    }
+
+    this.joins.push(
+      'LEFT JOIN "videoChannelCollaborator" ON "videoChannelCollaborator"."channelId" = "videoChannel".id ' +
+        'AND "videoChannelCollaborator"."state" = :channelCollaboratorState ' +
+        // Ensure we join with max 1 collaborator to not duplicate rows
+        'AND "videoChannelCollaborator"."accountId" = :accountId'
+    )
+
+    this.and.push('("account"."id" = :accountId OR "videoChannelCollaborator"."accountId" = :accountId)')
+
+    this.replacements.accountId = options.accountId
+    this.replacements.channelCollaboratorState = VideoChannelCollaboratorState.ACCEPTED
   }
 
   private whereChannelId (channelId: number) {
@@ -416,34 +464,82 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
   }
 
   private whereChannelOneOf (channelOneOf: string[]) {
-    this.joins.push('INNER JOIN "actor" "channelActor" ON "videoChannel"."actorId" = "channelActor"."id"')
+    this.joinChannel()
+
     this.and.push('"channelActor"."preferredUsername" IN (:channelOneOf)')
     this.replacements.channelOneOf = channelOneOf
   }
 
-  private whereFollowerActorId (options: { actorId: number, orLocalVideos: boolean }) {
-    let query = '(' +
-      '  EXISTS (' + // Videos shared by actors we follow
-      '    SELECT 1 FROM "videoShare" ' +
-      '    INNER JOIN "actorFollow" "actorFollowShare" ON "actorFollowShare"."targetActorId" = "videoShare"."actorId" ' +
-      '    AND "actorFollowShare"."actorId" = :followerActorId AND "actorFollowShare"."state" = \'accepted\' ' +
-      '    WHERE "videoShare"."videoId" = "video"."id"' +
-      '  )' +
-      '  OR' +
-      '  EXISTS (' + // Videos published by channels or accounts we follow
-      '    SELECT 1 from "actorFollow" ' +
-      '    WHERE ("actorFollow"."targetActorId" = "account"."actorId" OR "actorFollow"."targetActorId" = "videoChannel"."actorId") ' +
-      '    AND "actorFollow"."actorId" = :followerActorId ' +
-      '    AND "actorFollow"."state" = \'accepted\'' +
-      '  )'
+  private whereFollowerActorId (options: { sortColumn: string, actorId: number, orLocalVideos: boolean, isCount: boolean }) {
+    const complexSorts = new Set([
+      'trending',
+      'hot',
+      'best',
+      'match',
+      'localVideoFilesSize'
+    ])
+    const isComplexSort = options.sortColumn && complexSorts.has(options.sortColumn)
 
-    if (options.orLocalVideos) {
-      query += '  OR "video"."remote" IS FALSE'
+    // EXISTS doesn't work very well with COUNT queries or complex sorts where PostgreSQL has to compute follow constraint for many rows
+    // So we use a CTE instead
+    if (options.isCount || isComplexSort) {
+      // Don't use CTE on purpose, that seems to be slower in this case
+      const targetActorIdQuery =
+        `SELECT "targetActorId" FROM "actorFollow" WHERE "actorFollow"."actorId" = :followerActorId AND "actorFollow"."state" = 'accepted'`
+
+      let cteQuery = '"videoCandidates" AS (' +
+        `SELECT "videoShare"."videoId" FROM "videoShare" WHERE "videoShare"."actorId" IN (${targetActorIdQuery}) ` +
+        `UNION ` +
+        `SELECT "video"."id" FROM "video" INNER JOIN "videoChannel" ON "videoChannel"."id" = "video"."channelId" ` +
+        `  INNER JOIN "actor" "channelActor" ON "videoChannel"."id" = "channelActor"."videoChannelId" ` +
+        `  WHERE "channelActor"."id" IN (${targetActorIdQuery}) ` +
+        `UNION ` +
+        `SELECT "video"."id" FROM "video" INNER JOIN "videoChannel" ON "videoChannel"."id" = "video"."channelId" ` +
+        `  INNER JOIN "account" ON "account"."id" = "videoChannel"."accountId" ` +
+        `  INNER JOIN "actor" "accountActor" ON "account"."id" = "accountActor"."accountId" ` +
+        `  WHERE "accountActor"."id" IN (${targetActorIdQuery}) `
+
+      if (options.orLocalVideos) {
+        cteQuery += 'UNION SELECT "video"."id" FROM "video" WHERE "remote" IS FALSE'
+      }
+
+      cteQuery += ')'
+
+      this.cte.push(cteQuery)
+
+      this.joins.push('INNER JOIN "videoCandidates" ON "video"."id" = "videoCandidates"."videoId"')
+    } else {
+      this.joinChannel()
+
+      let query = ''
+
+      query = '(' +
+        '  EXISTS (' + // Videos shared by actors (instances, channels) we follow
+        '    SELECT 1 FROM "videoShare" ' +
+        '    INNER JOIN "actorFollow" "actorFollowShare" ON "actorFollowShare"."targetActorId" = "videoShare"."actorId" ' +
+        '    AND "actorFollowShare"."actorId" = :followerActorId AND "actorFollowShare"."state" = \'accepted\' ' +
+        '    WHERE "videoShare"."videoId" = "video"."id"' +
+        '    UNION ALL ' +
+        '    SELECT 1 from "actorFollow" ' + // Videos published by accounts we follow
+        '    WHERE "actorFollow"."targetActorId" = "accountActor"."id" ' +
+        '    AND "actorFollow"."actorId" = :followerActorId ' +
+        '    AND "actorFollow"."state" = \'accepted\'' +
+        '    UNION ALL ' +
+        '    SELECT 1 from "actorFollow" ' + // Videos published by channels we follow
+        '    WHERE "actorFollow"."targetActorId" = "channelActor"."id" ' +
+        '    AND "actorFollow"."actorId" = :followerActorId ' +
+        '    AND "actorFollow"."state" = \'accepted\'' +
+        '    LIMIT 1' +
+        '  )'
+
+      if (options.orLocalVideos) {
+        query += '  OR "video"."remote" IS FALSE'
+      }
+
+      query += ')'
+      this.and.push(query)
     }
 
-    query += ')'
-
-    this.and.push(query)
     this.replacements.followerActorId = options.actorId
   }
 
@@ -763,12 +859,12 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
     this.attributes.push(attribute)
   }
 
-  private setSort (sort: string) {
-    if (sort === '-originallyPublishedAt' || sort === 'originallyPublishedAt') {
+  private setSort (column: string, direction: 'ASC' | 'DESC') {
+    if (column === 'originallyPublishedAt') {
       this.attributes.push('COALESCE("video"."originallyPublishedAt", "video"."publishedAt") AS "publishedAtForOrder"')
     }
 
-    if (sort === '-localVideoFilesSize' || sort === 'localVideoFilesSize') {
+    if (column === 'localVideoFilesSize') {
       this.attributes.push(
         '(' +
           'CASE ' +
@@ -791,32 +887,31 @@ export class VideosIdListQueryBuilder extends AbstractRunQuery {
       )
     }
 
-    this.sort = this.buildOrder(sort)
+    this.sort = this.buildOrder(column, direction)
   }
 
-  private buildOrder (value: string) {
-    const { direction, field } = buildSortDirectionAndField(value)
-    if (field.match(/^[a-zA-Z."]+$/) === null) throw new Error('Invalid sort column ' + field)
+  private buildOrder (column: string, direction: 'ASC' | 'DESC') {
+    if (column.match(/^[a-zA-Z."]+$/) === null) throw new Error('Invalid sort column ' + column)
 
-    if (field.toLowerCase() === 'random') return 'ORDER BY RANDOM()'
-    if (field.toLowerCase() === 'total') return `ORDER BY "total" ${direction}`
+    if (column === 'random') return 'ORDER BY RANDOM()'
+    if (column === 'total') return `ORDER BY "total" ${direction}`
 
-    if ([ 'trending', 'hot', 'best' ].includes(field.toLowerCase())) { // Sort by aggregation
+    if ([ 'trending', 'hot', 'best' ].includes(column)) { // Sort by aggregation
       return `ORDER BY "score" ${direction}, "video"."views" ${direction}`
     }
 
     let firstSort: string
 
-    if (field.toLowerCase() === 'match') { // Search
+    if (column === 'match') { // Search
       firstSort = '"similarity"'
-    } else if (field === 'originallyPublishedAt') {
+    } else if (column === 'originallyPublishedAt') {
       firstSort = '"publishedAtForOrder"'
-    } else if (field === 'localVideoFilesSize') {
+    } else if (column === 'localVideoFilesSize') {
       firstSort = '"localVideoFilesSize"'
-    } else if (field.includes('.')) {
-      firstSort = field
+    } else if (column.includes('.')) {
+      firstSort = column
     } else {
-      firstSort = `"video"."${field}"`
+      firstSort = `"video"."${column}"`
     }
 
     return `ORDER BY ${firstSort} ${direction}, "video"."id" ASC`

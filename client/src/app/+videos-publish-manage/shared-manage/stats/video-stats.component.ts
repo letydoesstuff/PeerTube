@@ -1,12 +1,12 @@
-import { NgFor, NgIf } from '@angular/common'
+import { CommonModule } from '@angular/common'
 import { Component, LOCALE_ID, OnInit, inject } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { ActivatedRoute } from '@angular/router'
-import { Notifier, PeerTubeRouterService } from '@app/core'
+import { Notifier, PeerTubeRouterService, ServerService } from '@app/core'
 import { GlobalIconComponent } from '@app/shared/shared-icons/global-icon.component'
 import { NumberFormatterPipe } from '@app/shared/shared-main/common/number-formatter.pipe'
 import { LiveVideoService } from '@app/shared/shared-video-live/live-video.service'
-import { NgbNav, NgbNavContent, NgbNavItem, NgbNavLink, NgbNavLinkBase, NgbNavOutlet } from '@ng-bootstrap/ng-bootstrap'
+import { NgbNavModule } from '@ng-bootstrap/ng-bootstrap'
 import { secondsToTime } from '@peertube/peertube-core-utils'
 import {
   HttpStatusCode,
@@ -63,20 +63,14 @@ ChartJSDefaults.color = getComputedStyle(document.documentElement).getPropertyVa
   ],
   providers: [ NumberFormatterPipe ],
   imports: [
-    NgFor,
-    NgIf,
+    CommonModule,
     HelpComponent,
     EmbedComponent,
     SelectOptionsComponent,
     FormsModule,
-    NgbNav,
-    NgbNavItem,
-    NgbNavLink,
-    NgbNavLinkBase,
-    NgbNavContent,
+    NgbNavModule,
     ChartModule,
     ButtonComponent,
-    NgbNavOutlet,
     GlobalIconComponent
   ]
 })
@@ -89,6 +83,7 @@ export class VideoStatsComponent implements OnInit {
   private numberFormatter = inject(NumberFormatterPipe)
   private liveService = inject(LiveVideoService)
   private manageController = inject(VideoManageController)
+  private serverService = inject(ServerService)
 
   // Cannot handle date filters
   globalStatsCards: Card[] = []
@@ -185,6 +180,10 @@ export class VideoStatsComponent implements OnInit {
         ? new Date(params.endDate)
         : undefined
 
+      if (!this.statsStartDate && !this.statsEndDate) {
+        this.currentDateFilter = 'all'
+      }
+
       this.loadChart()
       this.loadOverallStats()
     })
@@ -204,9 +203,9 @@ export class VideoStatsComponent implements OnInit {
     this.activeGraphId = newActive
 
     if (newActive === 'countries') {
-      this.chartHeight = `${Math.max(this.countries.length * 20, 300)}px`
+      this.chartHeight = `${Math.max(this.countries.length * 25, 300)}px`
     } else if (newActive === 'regions') {
-      this.chartHeight = `${Math.max(this.regions.length * 20, 300)}px`
+      this.chartHeight = `${Math.max(this.regions.length * 25, 300)}px`
     } else {
       this.chartHeight = '300px'
     }
@@ -262,7 +261,7 @@ export class VideoStatsComponent implements OnInit {
           this.buildOverallStatCard(res)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -281,7 +280,7 @@ export class VideoStatsComponent implements OnInit {
           this.dateFilters = this.dateFilters.concat(newFilters)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -295,7 +294,7 @@ export class VideoStatsComponent implements OnInit {
         error: err => {
           if (err.status === HttpStatusCode.NOT_FOUND_404) return
 
-          this.notifier.error(err.message)
+          this.notifier.handleError(err)
         }
       })
   }
@@ -413,7 +412,7 @@ export class VideoStatsComponent implements OnInit {
         this.chartOptions[this.activeGraphId] = this.buildChartOptions(this.activeGraphId)
       },
 
-      error: err => this.notifier.error(err.message)
+      error: err => this.notifier.handleError(err)
     })
   }
 
@@ -752,5 +751,19 @@ export class VideoStatsComponent implements OnInit {
       minute: 'numeric',
       second: 'numeric'
     })
+  }
+
+  // ---------------------------------------------------------------------------
+
+  hasMaxViewsAge () {
+    return this.getMaxViewsAge() !== -1
+  }
+
+  getMaxViewsAgeDate () {
+    return new Date(Date.now() - this.getMaxViewsAge())
+  }
+
+  private getMaxViewsAge () {
+    return this.serverService.getHTMLConfig().views.videos.local.maxAge
   }
 }

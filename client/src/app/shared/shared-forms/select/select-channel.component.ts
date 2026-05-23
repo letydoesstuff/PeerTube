@@ -1,9 +1,9 @@
-import { CommonModule } from '@angular/common'
 import { Component, forwardRef, input, OnChanges } from '@angular/core'
 import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from '@angular/forms'
 import { VideoChannel } from '@app/shared/shared-main/channel/video-channel.model'
 import { SelectChannelItem, SelectOptionsItem } from '../../../../types/select-options-item.model'
 import { SelectOptionsComponent } from './select-options.component'
+import { CollaboratorStateComponent } from '@app/shared/shared-main/channel/collaborator-state.component'
 
 @Component({
   selector: 'my-select-channel',
@@ -17,7 +17,17 @@ import { SelectOptionsComponent } from './select-options.component'
     (ngModelChange)="onModelChange()"
 
     [filter]="channels && channels.length > 5"
-  ></my-select-options>
+  >
+    <ng-template #itemExtra let-item>
+      @if (item.collaborate) {
+        @if (item.editor) {
+          <my-collaborator-state class="lh-1 ms-2" type="accepted" disableTooltip="true"></my-collaborator-state>
+        } @else if (item.owner) {
+          <my-collaborator-state class="lh-1 ms-2" type="owner" disableTooltip="true"></my-collaborator-state>
+        }
+      }
+    </ng-template>
+  </my-select-options>
   `,
   providers: [
     {
@@ -26,7 +36,7 @@ import { SelectOptionsComponent } from './select-options.component'
       multi: true
     }
   ],
-  imports: [ FormsModule, CommonModule, SelectOptionsComponent ]
+  imports: [ FormsModule, SelectOptionsComponent, CollaboratorStateComponent ]
 })
 export class SelectChannelComponent implements ControlValueAccessor, OnChanges {
   readonly inputId = input.required<string>()
@@ -37,11 +47,11 @@ export class SelectChannelComponent implements ControlValueAccessor, OnChanges {
 
   ngOnChanges () {
     this.channels = this.items().map(c => {
-      const avatarPath = c.avatarPath
-        ? c.avatarPath
+      const avatarFileUrl = c.avatarFileUrl
+        ? c.avatarFileUrl
         : VideoChannel.GET_DEFAULT_AVATAR_URL(21)
 
-      return Object.assign({}, c, { imageUrl: avatarPath })
+      return Object.assign({}, c, { imageUrl: avatarFileUrl })
     })
   }
 

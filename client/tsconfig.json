@@ -4,7 +4,7 @@
     "outDir": "./dist/out-tsc",
     "sourceMap": true,
     "declaration": false,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "module": "es2020",
     "esModuleInterop": true,
     "experimentalDecorators": true,
@@ -19,30 +19,13 @@
     "typeRoots": [
       "node_modules/@types"
     ],
-    "lib": [
-      "ES2021.Intl",
-      "es2018",
-      "es2017",
-      "es2016",
-      "es2015",
-      "dom"
-    ],
     "baseUrl": "./",
     "paths": {
-      "video.js": [
-        "node_modules/video.js/core"
-      ],
       "@app/*": [
         "src/app/*"
       ],
       "@root-helpers/*": [
         "src/root-helpers/*"
-      ],
-      "fs": [
-        "src/shims/noop.ts"
-      ],
-      "crypto": [
-        "src/shims/noop.ts"
       ]
     }
   },

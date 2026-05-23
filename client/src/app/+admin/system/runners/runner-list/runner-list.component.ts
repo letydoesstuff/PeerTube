@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnInit, inject, viewChild } from '@angular/core'
 import { ConfirmService, Notifier } from '@app/core'
 import { PTDatePipe } from '@app/shared/shared-main/common/date.pipe'
@@ -12,7 +11,6 @@ import { RunnerService } from '../runner.service'
   selector: 'my-runner-list',
   templateUrl: './runner-list.component.html',
   imports: [
-    CommonModule,
     ActionDropdownComponent,
     PTDatePipe,
     TableComponent,
@@ -69,7 +67,7 @@ export class RunnerListComponent implements OnInit {
           this.notifier.success($localize`Runner removed.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

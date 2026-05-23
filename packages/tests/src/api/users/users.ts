@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
-import { AbuseState, HttpStatusCode, UserAdminFlag, UserRole, VideoPlaylistType } from '@peertube/peertube-models'
+import { AbuseState, HttpStatusCode, UserAdminFlag, UserNewFeatureInfo, UserRole, VideoPlaylistType } from '@peertube/peertube-models'
 import { cleanupTests, createSingleServer, PeerTubeServer, setAccessTokensToServers } from '@peertube/peertube-server-commands'
 import { testAvatarSize } from '@tests/shared/checks.js'
 import { expect } from 'chai'
@@ -55,7 +55,7 @@ describe('Test users', function () {
         expect(user.id).to.be.a('number')
         expect(user.account.displayName).to.equal('user_1')
         expect(user.account.description).to.be.null
-        expect(user.language).to.equal('en')
+        expect(user.language).to.be.null
       }
 
       expect(userMe.adminFlags).to.equal(UserAdminFlag.BYPASS_VIDEO_AUTO_BLACKLIST)
@@ -331,29 +331,6 @@ describe('Test users', function () {
       expect(user.noAccountSetupWarningModal).to.be.true
     })
 
-    it('Should update instance config and automatically update user language', async function () {
-      {
-        const user = await server.users.getMyInfo({ token: userToken })
-        expect(user.videoLanguages).to.be.null
-        expect(user.language).to.equal('en')
-      }
-
-      {
-        await server.config.updateExistingConfig({
-          newConfig: {
-            instance: {
-              defaultLanguage: 'es'
-            }
-          }
-        })
-      }
-
-      {
-        const user = await server.users.getMyInfo({ token: userToken })
-        expect(user.language).to.equal('es')
-      }
-    })
-
     it('Should be able to update my languages', async function () {
       await server.users.updateMe({
         token: userToken,
@@ -583,6 +560,33 @@ describe('Test users', function () {
 
       expect(setCookie).to.exist
       expect(setCookie[0]).to.include('clientLanguage=;')
+    })
+  })
+
+  describe('New features info read', function () {
+    let userToken: string
+
+    it('Should create a new user with all new features info as read', async function () {
+      userToken = await server.users.generateUserAndToken('user_features')
+
+      const { newFeaturesInfoRead } = await server.users.getMyInfo({ token: userToken })
+      expect(newFeaturesInfoRead).to.equal(UserNewFeatureInfo.CHANNEL_COLLABORATION)
+    })
+
+    it('Should update new features info read', async function () {
+      {
+        await server.users.readNewFeatureInfo({ feature: 0, token: userToken })
+
+        const { newFeaturesInfoRead } = await server.users.getMyInfo({ token: userToken })
+        expect(newFeaturesInfoRead).to.equal(UserNewFeatureInfo.CHANNEL_COLLABORATION)
+      }
+
+      {
+        await server.users.readNewFeatureInfo({ feature: 2, token: userToken })
+
+        const { newFeaturesInfoRead } = await server.users.getMyInfo({ token: userToken })
+        expect(newFeaturesInfoRead).to.equal(3)
+      }
     })
   })
 

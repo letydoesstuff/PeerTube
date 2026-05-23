@@ -1,15 +1,14 @@
-import { CommonModule } from '@angular/common'
 import { Component, inject, OnDestroy, OnInit, viewChild } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { RouterLink } from '@angular/router'
 import { AuthService, AuthUser, ConfirmService, Notifier, RestPagination, ServerService } from '@app/core'
 import { HeaderService } from '@app/header/header.service'
 import { formatICU } from '@app/helpers'
+import { ChannelToggleComponent } from '@app/shared/shared-channels/channel-toggle.component'
 import { Video } from '@app/shared/shared-main/video/video.model'
 import { VideoService } from '@app/shared/shared-main/video/video.service'
 import { TableColumnInfo, TableComponent, TableQueryParams } from '@app/shared/shared-tables/table.component'
 import { VideoPlaylistService } from '@app/shared/shared-video-playlist/video-playlist.service'
-import { ChannelToggleComponent } from '@app/shared/standalone-channels/channel-toggle.component'
 import { NgbTooltipModule } from '@ng-bootstrap/ng-bootstrap'
 import { arrayify, pick } from '@peertube/peertube-core-utils'
 import { VideoChannel, VideoExistInPlaylist, VideoPrivacy, VideoPrivacyType, VideosExistInPlaylists } from '@peertube/peertube-models'
@@ -33,7 +32,7 @@ import { VideoNSFWBadgeComponent } from '../../shared/shared-video/video-nsfw-ba
 import { VideoStateBadgeComponent } from '../../shared/shared-video/video-state-badge.component'
 import { VideoChangeOwnershipComponent } from './modals/video-change-ownership.component'
 
-type ColumnName = 'duration' | 'name' | 'privacy' | 'sensitive' | 'playlists' | 'insights' | 'published' | 'state' | 'comments'
+type ColumnName = 'duration' | 'name' | 'language' | 'privacy' | 'sensitive' | 'playlists' | 'insights' | 'published' | 'state' | 'comments'
 type CommonFilter = 'live' | 'vod' | 'private' | 'internal' | 'unlisted' | 'password-protected' | 'public'
 
 type VideoType = 'live' | 'vod'
@@ -48,7 +47,6 @@ type QueryParams = TableQueryParams & {
   templateUrl: './my-videos.component.html',
   styleUrls: [ './my-videos.component.scss' ],
   imports: [
-    CommonModule,
     FormsModule,
     AdvancedInputFilterComponent,
     ButtonComponent,
@@ -57,7 +55,6 @@ type QueryParams = TableQueryParams & {
     VideoCellComponent,
     RouterLink,
     NumberFormatterPipe,
-    VideoChangeOwnershipComponent,
     VideoStateBadgeComponent,
     ChannelToggleComponent,
     SelectCheckboxComponent,
@@ -97,8 +94,6 @@ export class MyVideosComponent implements OnInit, OnDestroy {
     transcoding: false
   }
 
-  moreVideoActions: DropdownAction<{ video: Video }>[][] = []
-
   user: AuthUser
   channels: (VideoChannel & { selected: boolean })[] = []
 
@@ -135,7 +130,8 @@ export class MyVideosComponent implements OnInit, OnDestroy {
       { id: 'insights', label: $localize`Insights`, selected: true, sortable: true, sortKey: 'views' },
       { id: 'comments', label: $localize`Comments`, selected: true, sortable: true },
       { id: 'published', label: $localize`Published`, selected: true, sortable: true, sortKey: 'publishedAt' },
-      { id: 'state', label: $localize`State`, selected: true, sortable: false }
+      { id: 'state', label: $localize`State`, selected: true, sortable: false },
+      { id: 'language', label: $localize`Language`, selected: false, sortable: false }
     ]
 
     this.filterItems = [
@@ -183,7 +179,7 @@ export class MyVideosComponent implements OnInit, OnDestroy {
         : new Set<string>()
 
       this.user = this.auth.getUser()
-      this.channels = this.user.videoChannels.map(c => ({
+      this.channels = [ ...this.user.videoChannels, ...this.user.videoChannelCollaborations ].map(c => ({
         ...c,
 
         selected: enabledChannels.has(c.name)
@@ -281,6 +277,7 @@ export class MyVideosComponent implements OnInit, OnDestroy {
       restPagination: pagination,
       sort,
       search,
+      includeCollaborations: true,
 
       channelNameOneOf: channelNameOneOf.length !== 0
         ? channelNameOneOf
@@ -322,21 +319,11 @@ export class MyVideosComponent implements OnInit, OnDestroy {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
   private buildActions () {
-    this.moreVideoActions = [
-      [
-        {
-          label: $localize`Change ownership`,
-          handler: ({ video }) => this.videoChangeOwnershipModal().show(video),
-          iconName: 'ownership-change'
-        }
-      ]
-    ]
-
     this.bulkActions = [
       [
         {

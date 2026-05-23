@@ -1,4 +1,4 @@
-import { NgClass, NgIf } from '@angular/common'
+import { NgClass } from '@angular/common'
 import { ChangeDetectorRef, Component, ElementRef, OnInit, inject, viewChild } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { VideoCaptionEdit, VideoCaptionWithPathEdit } from '@app/+videos-publish-manage/shared-manage/common/video-caption-edit.model'
@@ -11,7 +11,7 @@ import { VideoCaptionService } from '@app/shared/shared-main/video-caption/video
 import { EmbedComponent } from '@app/shared/shared-main/video/embed.component'
 import { NgbModal, NgbModalRef } from '@ng-bootstrap/ng-bootstrap'
 import { millisecondsToVttTime, sortBy, timeToInt } from '@peertube/peertube-core-utils'
-import { HTMLServerConfig, VideoConstant } from '@peertube/peertube-models'
+import { HTMLServerConfig, ConstantLabel } from '@peertube/peertube-models'
 import { parse } from '@plussub/srt-vtt-parser'
 import { PeerTubePlayer } from '../../../../standalone/embed-player-api/player'
 import { ConfirmService, Notifier, ServerService } from '../../../core'
@@ -42,7 +42,6 @@ type Segment = {
     ReactiveFormsModule,
     GlobalIconComponent,
     NgClass,
-    NgIf,
     PeertubeCheckboxComponent,
     EmbedComponent,
     EditButtonComponent,
@@ -75,7 +74,7 @@ export class VideoCaptionEditModalComponent extends FormReactive implements OnIn
 
   activeSegment: Segment
 
-  videoCaptionLanguages: VideoConstant<string>[] = []
+  videoCaptionLanguages: ConstantLabel<string>[] = []
 
   timestampParser = this.webvttToMS.bind(this)
   timestampFormatter = millisecondsToVttTime
@@ -341,7 +340,6 @@ export class VideoCaptionEditModalComponent extends FormReactive implements OnIn
 
   updateCaption () {
     if (this.segmentToUpdate) {
-      console.log(this.segmentToUpdate)
       this.notifier.error($localize`A segment is being edited. Save or cancel your edits first.`)
       return
     }

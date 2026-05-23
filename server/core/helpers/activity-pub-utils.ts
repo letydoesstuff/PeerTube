@@ -2,10 +2,10 @@ import { arrayify } from '@peertube/peertube-core-utils'
 import { ContextType } from '@peertube/peertube-models'
 import { ACTIVITY_PUB, REMOTE_SCHEME } from '@server/initializers/constants.js'
 import { isArray } from './custom-validators/misc.js'
+import { logger } from './logger.js'
 import { buildDigest } from './peertube-crypto.js'
 import type { signJsonLDObject } from './peertube-jsonld.js'
 import { doJSONRequest } from './requests.js'
-import { logger } from './logger.js'
 
 export type ContextFilter = <T>(arg: T) => Promise<T>
 
@@ -57,8 +57,8 @@ export async function getApplicationActorOfHost (host: string) {
   return found?.href || undefined
 }
 
-export function getAPPublicValue (): 'https://www.w3.org/ns/activitystreams#Public' {
-  return 'https://www.w3.org/ns/activitystreams#Public'
+export function getAPPublicValue () {
+  return 'https://www.w3.org/ns/activitystreams#Public' as const
 }
 
 export function hasAPPublic (collection: string[] | string) {
@@ -99,6 +99,7 @@ const contextStore: { [id in ContextType]: (string | { [id: string]: string })[]
     },
 
     Infohash: 'pt:Infohash',
+
     SensitiveTag: 'pt:SensitiveTag',
 
     tileWidth: {
@@ -127,9 +128,13 @@ const contextStore: { [id in ContextType]: (string | { [id: string]: string })[]
     schedules: 'sc:eventSchedule',
     startDate: 'sc:startDate',
 
+    embedUrl: 'sc:embedUrl',
+
     uploadDate: 'sc:uploadDate',
 
     hasParts: 'sc:hasParts',
+
+    playerSettings: 'pt:playerSettings',
 
     views: {
       '@type': 'sc:Number',
@@ -146,12 +151,6 @@ const contextStore: { [id in ContextType]: (string | { [id: string]: string })[]
     fps: {
       '@type': 'sc:Number',
       '@id': 'pt:fps'
-    },
-
-    // Keep for federation compatibility
-    commentsEnabled: {
-      '@type': 'sc:Boolean',
-      '@id': 'pt:commentsEnabled'
     },
 
     canReply: 'pt:canReply',
@@ -236,6 +235,8 @@ const contextStore: { [id in ContextType]: (string | { [id: string]: string })[]
   }),
 
   Actor: buildContext({
+    playerSettings: 'pt:playerSettings',
+
     playlists: {
       '@id': 'pt:playlists',
       '@type': '@id'
@@ -307,6 +308,15 @@ const contextStore: { [id in ContextType]: (string | { [id: string]: string })[]
     hasPart: 'sc:hasPart',
     endOffset: 'sc:endOffset',
     startOffset: 'sc:startOffset'
+  }),
+
+  PlayerSettings: buildContext({
+    PlayerSettings: {
+      '@type': '@id',
+      '@id': 'pt:PlayerSettings'
+    },
+
+    theme: 'pt:theme'
   })
 }
 

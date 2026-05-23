@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
+import { VideoCreateResult } from '@peertube/peertube-models'
 import {
   CommentsCommand,
   PeerTubeServer,
@@ -13,7 +14,6 @@ import {
 } from '@peertube/peertube-server-commands'
 import { dateIsValid, testImage } from '@tests/shared/checks.js'
 import { expect } from 'chai'
-import { VideoCreateResult } from '../../../../models/src/videos/video-create-result.model.js'
 
 describe('Test video comments', function () {
   let server: PeerTubeServer
@@ -92,7 +92,7 @@ describe('Test video comments', function () {
       expect(comment.account.host).to.equal(server.host)
 
       for (const avatar of comment.account.avatars) {
-        await testImage({ url: server.url + avatar.path, name: `avatar-resized-${avatar.width}x${avatar.width}.png` })
+        await testImage({ url: avatar.fileUrl, name: `avatar-resized-${avatar.width}x${avatar.width}.png` })
       }
 
       expect(comment.totalReplies).to.equal(0)
@@ -273,6 +273,8 @@ describe('Test video comments', function () {
         expect(data[0].account.name).to.equal('root')
         expect(data[0].account.displayName).to.equal('root')
         expect(data[0].account.avatars).to.have.lengthOf(4)
+        expect(data[0].video.uuid).to.equal(videoUUID)
+        expect(data[0].video.channel.name).to.equal('root_channel')
       }
 
       for (const fn of listFunctions()) {
@@ -412,7 +414,6 @@ describe('Test video comments', function () {
 
     it('Should start with 0 comments', async function () {
       const video = await server.videos.get({ id: testVideoUUID })
-      expect(video.commentsEnabled).to.be.true
       expect(video.comments).to.equal(0)
     })
 
@@ -454,6 +455,8 @@ describe('Test video comments', function () {
     it('Should federate comments', async function () {
       video1 = await server.videos.quickUpload({ name: 'video on server 1' })
       video2 = await server2.videos.quickUpload({ name: 'video on server 2' })
+
+      await waitJobs([ server, server2 ])
 
       await server2.comments.createThread({ videoId: video1.uuid, text: 'comment on server 2' })
       await server2.comments.createThread({ videoId: video2.uuid, text: 'comment on server 2' })

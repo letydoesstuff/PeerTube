@@ -1,4 +1,4 @@
-import { getLocaleDirection, NgClass, NgFor, NgIf } from '@angular/common'
+import { getLocaleDirection, NgClass } from '@angular/common'
 import { Component, ElementRef, inject, input, LOCALE_ID, OnChanges, OnInit, output, SimpleChanges, viewChild } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { Notifier, User } from '@app/core'
@@ -29,11 +29,9 @@ import { Observable } from 'rxjs'
     TextareaAutoResizeDirective,
     NgClass,
     HelpComponent,
-    NgIf,
     GlobalIconComponent,
     RemoteSubscribeComponent,
-    LoginLinkComponent,
-    NgFor
+    LoginLinkComponent
   ]
 })
 export class VideoCommentAddComponent extends FormReactive implements OnChanges, OnInit {
@@ -153,7 +151,7 @@ export class VideoCommentAddComponent extends FormReactive implements OnChanges,
       error: err => {
         this.addingComment = false
 
-        this.notifier.error(err.message)
+        this.notifier.handleError(err)
       }
     })
   }
@@ -168,7 +166,8 @@ export class VideoCommentAddComponent extends FormReactive implements OnChanges,
 
   cancelCommentReply () {
     this.cancelEdit.emit(null)
-    this.form.value['text'] = this.textareaElement().nativeElement.value = ''
+    this.form.value['text'] = ''
+    this.textareaElement().nativeElement.value = ''
   }
 
   isRTL () {

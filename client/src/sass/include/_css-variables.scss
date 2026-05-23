@@ -33,7 +33,9 @@
   --input-danger-fg: #9C221C;
   --input-danger-bg: #FEBBB2;
 
-  --input-placeholder: var(--inputPlaceholderColor, #{pvar(--fg-50)});
+  --input-placeholder-color: var(--inputPlaceholderColor, #{pvar(--fg-50)});
+  --input-placeholder-font-size: 0.875rem;
+
   --input-border-color: var(--inputBorderColor, #{pvar(--input-bg)});
   --input-border-width: 1px;
 
@@ -54,7 +56,7 @@
 
   --support-btn-fg: var(--supportButtonColor, #{pvar(--fg-300)});
   --support-btn-bg: var(--supportButtonBackgroundColor, transparent);
-  --support-btn-heart-bg: var(--supportButtonHeartColor, #{$support-button-heart});
+  --support-btn-heart-bg: var(--supportButtonHeartColor, #{pvar(--support-btn-fg)});
 
   --x-margin-content: 2rem;
 
@@ -69,8 +71,8 @@
   --alert-primary-bg: #{pvar(--primary-200)};
   --alert-primary-border-color: #{pvar(--primary-300)};
 
-  --embed-fg: #fff;
-  --embed-big-play-bg: rgba(0, 0, 0, 0.8);
+  --pt-player-fg: #fff;
+  --pt-player-big-play-bg: rgba(0, 0, 0, 0.8);
 
   --menu-fg: #{pvar(--fg-400)};
   --menu-bg: #{pvar(--bg-secondary-400)};
@@ -78,8 +80,8 @@
   --header-fg: #{pvar(--fg)};
   --header-bg: #{pvar(--bg)};
 
-  --player-overlay-fg: #{pvar(--fg-400)};
-  --player-overlay-bg: #{pvar(--bg-secondary-400)};
+  --pt-player-overlay-secondary-fg: #{pvar(--fg-400)};
+  --pt-player-overlay-secondary-bg: #{pvar(--bg-secondary-400)};
 
   // ---------------------------------------------------------------------------
 
@@ -111,7 +113,7 @@
     --is-dark: 0;
 
     --primary: #FF8F37;
-    --border-primary: #F2690D;
+    --border-primary: #{pvar(--primary-650)};
 
     --fg: hsl(0 14% 2%);
     --fg-200: hsl(0 14% 29%);
@@ -128,7 +130,7 @@
     --menu-bg: hsl(0 19% 89%);
 
     --secondary-icon-color: hsl(0, 9%, 51%);
-    --input-placeholder: hsl(0, 9%, 51%);
+    --input-placeholder-color: hsl(0, 9%, 51%);
 
     --input-check-active-fg: #{pvar(--bg)};
     --input-check-active-bg: #{pvar(--fg-250)};
@@ -144,7 +146,7 @@
 
     --primary: #FD9C50;
     --on-primary: #111;
-    --border-primary: #F2690D;
+    --border-primary: #{pvar(--primary-350)};
 
     --input-bg: #{pvar(--bg-secondary-450)};
 

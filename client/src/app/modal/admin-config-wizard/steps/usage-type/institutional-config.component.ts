@@ -1,5 +1,5 @@
 import { CdkStepperModule } from '@angular/cdk/stepper'
-import { CommonModule } from '@angular/common'
+
 import { Component, inject, model, OnInit } from '@angular/core'
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms'
 import {
@@ -13,6 +13,7 @@ import { SelectOptionsComponent } from '@app/shared/shared-forms/select/select-o
 import { ColorPickerModule } from 'primeng/colorpicker'
 import { SelectOptionsItem } from 'src/types'
 import { AuthType, EnabledDisabled, UsageType } from './usage-type.model'
+import { GlobalIconComponent } from '@app/shared/shared-icons/global-icon.component'
 
 type Form = {
   keepOriginalVideo: FormControl<EnabledDisabled>
@@ -25,13 +26,13 @@ type Form = {
   selector: 'my-institutional-config',
   templateUrl: './institutional-config.component.html',
   imports: [
-    CommonModule,
     FormsModule,
     ReactiveFormsModule,
     ColorPickerModule,
     CdkStepperModule,
-    SelectOptionsComponent
-  ]
+    SelectOptionsComponent,
+    GlobalIconComponent
+]
 })
 export class InstitutionalConfigComponent implements OnInit {
   private formReactiveService = inject(FormReactiveService)

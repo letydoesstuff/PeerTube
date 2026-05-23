@@ -1,5 +1,6 @@
-import { HttpStatusCode, VideoChangeOwnershipStatus } from '@peertube/peertube-models'
+import { HttpStatusCode, VideoChangeOwnershipStatus, VideoChannelActivityAction } from '@peertube/peertube-models'
 import { canVideoBeFederated } from '@server/lib/activitypub/videos/federate.js'
+import { VideoChannelActivityModel } from '@server/models/video/video-channel-activity.js'
 import { MVideoFullLight } from '@server/types/models/index.js'
 import express from 'express'
 import { logger } from '../../../helpers/logger.js'
@@ -23,27 +24,31 @@ import { VideoModel } from '../../../models/video/video.js'
 
 const ownershipVideoRouter = express.Router()
 
-ownershipVideoRouter.post('/:videoId/give-ownership',
+ownershipVideoRouter.post(
+  '/:videoId/give-ownership',
   authenticate,
   asyncMiddleware(videosChangeOwnershipValidator),
   asyncRetryTransactionMiddleware(giveVideoOwnership)
 )
 
-ownershipVideoRouter.get('/ownership',
+ownershipVideoRouter.get(
+  '/ownership',
   authenticate,
   paginationValidator,
   setDefaultPagination,
   asyncRetryTransactionMiddleware(listVideoOwnership)
 )
 
-ownershipVideoRouter.post('/ownership/:id/accept',
+ownershipVideoRouter.post(
+  '/ownership/:id/accept',
   authenticate,
   asyncMiddleware(videosTerminateChangeOwnershipValidator),
   asyncMiddleware(videosAcceptChangeOwnershipValidator),
   asyncRetryTransactionMiddleware(acceptOwnership)
 )
 
-ownershipVideoRouter.post('/ownership/:id/refuse',
+ownershipVideoRouter.post(
+  '/ownership/:id/refuse',
   authenticate,
   asyncMiddleware(videosTerminateChangeOwnershipValidator),
   asyncRetryTransactionMiddleware(refuseOwnership)
@@ -58,32 +63,40 @@ export {
 // ---------------------------------------------------------------------------
 
 async function giveVideoOwnership (req: express.Request, res: express.Response) {
-  const videoInstance = res.locals.videoAll
+  const video = res.locals.videoAll
   const initiatorAccountId = res.locals.oauth.token.User.Account.id
-  const nextOwner = res.locals.nextOwner
+  const nextOwner = res.locals.videoChangeOwnershipNextOwner
 
-  await sequelizeTypescript.transaction(t => {
-    return VideoChangeOwnershipModel.findOrCreate({
+  await sequelizeTypescript.transaction(async t => {
+    await VideoChangeOwnershipModel.findOrCreate({
       where: {
         initiatorAccountId,
         nextOwnerAccountId: nextOwner.id,
-        videoId: videoInstance.id,
+        videoId: video.id,
         status: VideoChangeOwnershipStatus.WAITING
       },
       defaults: {
         initiatorAccountId,
         nextOwnerAccountId: nextOwner.id,
-        videoId: videoInstance.id,
+        videoId: video.id,
         status: VideoChangeOwnershipStatus.WAITING
       },
       transaction: t
     })
+
+    await VideoChannelActivityModel.addVideoOwnershipChangeActivity({
+      action: VideoChannelActivityAction.SEND_OWNERSHIP_REQUEST,
+      user: res.locals.oauth.token.User,
+      channel: video.VideoChannel,
+      video,
+      targetAccount: nextOwner,
+      transaction: t
+    })
   })
 
-  logger.info('Ownership change for video %s created.', videoInstance.name)
-  return res.type('json')
-            .status(HttpStatusCode.NO_CONTENT_204)
-            .end()
+  logger.info('Ownership change for video %s created.', video.name)
+
+  return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
 }
 
 async function listVideoOwnership (req: express.Request, res: express.Response) {
@@ -91,8 +104,8 @@ async function listVideoOwnership (req: express.Request, res: express.Response) 
 
   const resultList = await VideoChangeOwnershipModel.listForApi(
     currentAccountId,
-    req.query.start || 0,
-    req.query.count || 10,
+    req.query.start,
+    req.query.count,
     req.query.sort || 'createdAt'
   )
 
@@ -122,7 +135,18 @@ function acceptOwnership (req: express.Request, res: express.Response) {
     videoChangeOwnership.status = VideoChangeOwnershipStatus.ACCEPTED
     await videoChangeOwnership.save({ transaction: t })
 
-    return res.status(HttpStatusCode.NO_CONTENT_204).end()
+    for (const channel of [ oldVideoChannel, targetVideoUpdated.VideoChannel ]) {
+      await VideoChannelActivityModel.addVideoOwnershipChangeActivity({
+        action: VideoChannelActivityAction.ACCEPT_OWNERSHIP_REQUEST,
+        user: res.locals.oauth.token.User,
+        channel,
+        video: targetVideoUpdated,
+        targetAccount: videoChangeOwnership.NextOwner,
+        transaction: t
+      })
+    }
+
+    return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
   })
 }
 
@@ -133,6 +157,17 @@ function refuseOwnership (req: express.Request, res: express.Response) {
     videoChangeOwnership.status = VideoChangeOwnershipStatus.REFUSED
     await videoChangeOwnership.save({ transaction: t })
 
-    return res.status(HttpStatusCode.NO_CONTENT_204).end()
+    const channel = await VideoChannelModel.loadAndPopulateAccount(videoChangeOwnership.Video.channelId, t)
+
+    await VideoChannelActivityModel.addVideoOwnershipChangeActivity({
+      action: VideoChannelActivityAction.REFUSE_OWNERSHIP_REQUEST,
+      user: res.locals.oauth.token.User,
+      channel,
+      video: videoChangeOwnership.Video,
+      targetAccount: videoChangeOwnership.NextOwner,
+      transaction: t
+    })
+
+    return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
   })
 }

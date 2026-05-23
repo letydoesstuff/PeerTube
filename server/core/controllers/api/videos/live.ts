@@ -1,15 +1,24 @@
 import { pick } from '@peertube/peertube-core-utils'
-import { HttpStatusCode, LiveVideoCreate, LiveVideoUpdate, ThumbnailType, UserRight, VideoState } from '@peertube/peertube-models'
+import {
+  HttpStatusCode,
+  LiveVideoCreate,
+  LiveVideoUpdate,
+  UserRight,
+  VideoChannelActivityAction,
+  VideoState
+} from '@peertube/peertube-models'
 import { uuidToShort } from '@peertube/peertube-node-utils'
 import { exists, isArray } from '@server/helpers/custom-validators/misc.js'
 import { retryTransactionWrapper } from '@server/helpers/database-utils.js'
 import { createReqFiles } from '@server/helpers/express-utils.js'
 import { getFormattedObjects } from '@server/helpers/utils.js'
+import { getVideoThumbnailFile } from '@server/helpers/video.js'
 import { ASSETS_PATH, MIMETYPES } from '@server/initializers/constants.js'
 import { sequelizeTypescript } from '@server/initializers/database.js'
 import { federateVideoIfNeeded } from '@server/lib/activitypub/videos/index.js'
 import { LocalVideoCreator } from '@server/lib/local-video-creator.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
+import { checkCanManageVideo } from '@server/middlewares/validators/shared/videos.js'
 import {
   videoLiveAddValidator,
   videoLiveFindReplaySessionValidator,
@@ -17,6 +26,7 @@ import {
   videoLiveListSessionsValidator,
   videoLiveUpdateValidator
 } from '@server/middlewares/validators/videos/video-live.js'
+import { VideoChannelActivityModel } from '@server/models/video/video-channel-activity.js'
 import { VideoLiveReplaySettingModel } from '@server/models/video/video-live-replay-setting.js'
 import { VideoLiveScheduleModel } from '@server/models/video/video-live-schedule.js'
 import { VideoLiveSessionModel } from '@server/models/video/video-live-session.js'
@@ -24,7 +34,14 @@ import { MVideoLive } from '@server/types/models/index.js'
 import express from 'express'
 import { Transaction } from 'sequelize'
 import { logger, loggerTagsFactory } from '../../../helpers/logger.js'
-import { asyncMiddleware, asyncRetryTransactionMiddleware, authenticate, optionalAuthenticate } from '../../../middlewares/index.js'
+import {
+  asyncMiddleware,
+  asyncRetryTransactionMiddleware,
+  authenticate,
+  liveSessionsSortValidator,
+  optionalAuthenticate,
+  setLiveSessionsSort
+} from '../../../middlewares/index.js'
 
 const lTags = loggerTagsFactory('api', 'live')
 
@@ -43,22 +60,33 @@ liveRouter.post(
 liveRouter.get(
   '/live/:videoId/sessions',
   authenticate,
+  liveSessionsSortValidator,
+  setLiveSessionsSort,
   asyncMiddleware(videoLiveGetValidator),
-  videoLiveListSessionsValidator,
-  asyncMiddleware(getLiveVideoSessions)
+  asyncMiddleware(videoLiveListSessionsValidator),
+  asyncMiddleware(listLiveVideoSessions)
 )
 
-liveRouter.get('/live/:videoId', optionalAuthenticate, asyncMiddleware(videoLiveGetValidator), getLiveVideo)
+liveRouter.get(
+  '/live/:videoId',
+  optionalAuthenticate,
+  asyncMiddleware(videoLiveGetValidator),
+  asyncMiddleware(getLiveVideo)
+)
 
 liveRouter.put(
   '/live/:videoId',
   authenticate,
   asyncMiddleware(videoLiveGetValidator),
-  videoLiveUpdateValidator,
+  asyncMiddleware(videoLiveUpdateValidator),
   asyncRetryTransactionMiddleware(updateLiveVideo)
 )
 
-liveRouter.get('/:videoId/live-session', asyncMiddleware(videoLiveFindReplaySessionValidator), getLiveReplaySession)
+liveRouter.get(
+  '/:videoId/live-session',
+  asyncMiddleware(videoLiveFindReplaySessionValidator),
+  getLiveReplaySession
+)
 
 // ---------------------------------------------------------------------------
 
@@ -68,10 +96,10 @@ export {
 
 // ---------------------------------------------------------------------------
 
-function getLiveVideo (req: express.Request, res: express.Response) {
+async function getLiveVideo (req: express.Request, res: express.Response) {
   const videoLive = res.locals.videoLive
 
-  return res.json(videoLive.toFormattedJSON(canSeePrivateLiveInformation(res)))
+  return res.json(videoLive.toFormattedJSON(await canSeePrivateLiveInformation(req, res)))
 }
 
 function getLiveReplaySession (req: express.Request, res: express.Response) {
@@ -80,22 +108,28 @@ function getLiveReplaySession (req: express.Request, res: express.Response) {
   return res.json(session.toFormattedJSON())
 }
 
-async function getLiveVideoSessions (req: express.Request, res: express.Response) {
+async function listLiveVideoSessions (req: express.Request, res: express.Response) {
   const videoLive = res.locals.videoLive
 
-  const data = await VideoLiveSessionModel.listSessionsOfLiveForAPI({ videoId: videoLive.videoId, count: 100 })
+  const data = await VideoLiveSessionModel.listSessionsOfLiveForAPI({
+    videoId: videoLive.videoId,
+    count: 100,
+    sort: req.query.sort
+  })
 
   return res.json(getFormattedObjects(data, data.length))
 }
 
-function canSeePrivateLiveInformation (res: express.Response) {
-  const user = res.locals.oauth?.token.User
-  if (!user) return false
-
-  if (user.hasRight(UserRight.GET_ANY_LIVE)) return true
-
-  const video = res.locals.videoAll
-  return video.VideoChannel.Account.userId === user.id
+function canSeePrivateLiveInformation (req: express.Request, res: express.Response) {
+  return checkCanManageVideo({
+    user: res.locals.oauth?.token.User,
+    video: res.locals.videoAll,
+    right: UserRight.GET_ANY_LIVE,
+    req,
+    res: null,
+    checkIsLocal: true,
+    checkIsOwner: false
+  })
 }
 
 async function updateLiveVideo (req: express.Request, res: express.Response) {
@@ -122,10 +156,18 @@ async function updateLiveVideo (req: express.Request, res: express.Response) {
           videoLive.LiveSchedules = await VideoLiveScheduleModel.addToLiveId(videoLive.id, body.schedules.map(s => s.startAt), t)
         }
       }
+
+      video.VideoLive = await videoLive.save({ transaction: t })
+
+      await VideoChannelActivityModel.addVideoActivity({
+        action: VideoChannelActivityAction.UPDATE,
+        user: res.locals.oauth.token.User,
+        channel: video.VideoChannel,
+        video,
+        transaction: t
+      })
     })
   })
-
-  video.VideoLive = await videoLive.save()
 
   await federateVideoIfNeeded(video, false)
 
@@ -156,24 +198,7 @@ async function updateReplaySettings (videoLive: MVideoLive, body: LiveVideoUpdat
 async function addLiveVideo (req: express.Request, res: express.Response) {
   const videoInfo: LiveVideoCreate = req.body
 
-  const thumbnails = [ { type: ThumbnailType.MINIATURE, field: 'thumbnailfile' }, { type: ThumbnailType.PREVIEW, field: 'previewfile' } ]
-    .map(({ type, field }) => {
-      if (req.files?.[field]?.[0]) {
-        return {
-          path: req.files[field][0].path,
-          type,
-          automaticallyGenerated: false,
-          keepOriginal: false
-        }
-      }
-
-      return {
-        path: ASSETS_PATH.DEFAULT_LIVE_BACKGROUND,
-        type,
-        automaticallyGenerated: true,
-        keepOriginal: true
-      }
-    })
+  const thumbnailfile = getVideoThumbnailFile(req.files)
 
   const localVideoCreator = new LocalVideoCreator({
     channel: res.locals.videoChannel,
@@ -195,7 +220,18 @@ async function addLiveVideo (req: express.Request, res: express.Response) {
     },
     videoFile: undefined,
     user: res.locals.oauth.token.User,
-    thumbnails
+
+    thumbnail: thumbnailfile
+      ? {
+        path: thumbnailfile.path,
+        automaticallyGenerated: false,
+        keepOriginal: false
+      }
+      : {
+        path: ASSETS_PATH.DEFAULT_LIVE_BACKGROUND,
+        automaticallyGenerated: true,
+        keepOriginal: true
+      }
   })
 
   const { video } = await localVideoCreator.create()

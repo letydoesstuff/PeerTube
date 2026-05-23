@@ -1,5 +1,5 @@
 import { CdkStepperModule } from '@angular/cdk/stepper'
-import { CommonModule } from '@angular/common'
+
 import { booleanAttribute, Component, inject, input, numberAttribute, OnChanges, output } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { HtmlRendererService, Notifier, ServerService } from '@app/core'
@@ -20,7 +20,6 @@ import { InstanceLogoService } from '@app/shared/shared-instance/instance-logo.s
   templateUrl: './admin-config-wizard-preview.component.html',
   styleUrls: [ '../shared/admin-config-wizard-modal-common.scss' ],
   imports: [
-    CommonModule,
     FormsModule,
     ReactiveFormsModule,
     ColorPickerModule,
@@ -86,13 +85,13 @@ export class AdminConfigWizardPreviewComponent implements OnChanges {
     this.updating = true
 
     this.adminConfig.updateCustomConfig(this.config)
-      .pipe(() => {
-        const avatar = this.instanceInfo().avatar
-        if (avatar) return this.instanceLogo.updateAvatar(avatar)
-
-        return this.instanceLogo.deleteAvatar()
-      })
       .pipe(
+        switchMap(() => {
+          const avatar = this.instanceInfo().avatar
+          if (avatar) return this.instanceLogo.updateAvatar(avatar)
+
+          return this.instanceLogo.deleteAvatar()
+        }),
         switchMap(() => this.server.resetConfig()),
         switchMap(() => {
           return from(this.plugins)
@@ -109,7 +108,7 @@ export class AdminConfigWizardPreviewComponent implements OnChanges {
         },
 
         error: err => {
-          this.notifier.error(err.message)
+          this.notifier.handleError(err)
           this.updating = false
         }
       })

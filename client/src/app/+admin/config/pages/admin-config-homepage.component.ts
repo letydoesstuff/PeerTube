@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, inject, OnInit } from '@angular/core'
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { ActivatedRoute } from '@angular/router'
@@ -20,7 +19,6 @@ type Form = {
   templateUrl: './admin-config-homepage.component.html',
   styleUrls: [ './admin-config-common.scss' ],
   imports: [
-    CommonModule,
     FormsModule,
     ReactiveFormsModule,
     CustomMarkupHelpComponent,
@@ -61,7 +59,7 @@ export class AdminConfigHomepageComponent implements OnInit, CanComponentDeactiv
           this.notifier.success($localize`Homepage updated.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

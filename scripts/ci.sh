@@ -51,7 +51,7 @@ if [ "$1" = "types-package" ]; then
     cp -r packages/types-generator/dist /tmp/types-generator/dist
 
     (cd /tmp/types-generator/dist && npm install)
-    (cd /tmp/types-generator/tests && npx --package typescript tsc --noEmit --esModuleInterop --moduleResolution node16 --module Node16 ./test.ts)
+    (cd /tmp/types-generator/tests && npx --package typescript tsc --noEmit --module commonjs --esModuleInterop ./test.ts)
 
     rm -r /tmp/types-generator
 elif [ "$1" = "client" ]; then
@@ -132,7 +132,7 @@ elif [ "$1" = "api-5" ]; then
 
     MOCHA_PARALLEL=true runJSTest "$1" $((2*$speedFactor)) $transcodingFiles $runnersFiles
 elif [ "$1" = "external-plugins" ]; then
-    npm run install-dependencies:transcription --workspace=@peertube/tests
+    pnpm run --filter=@peertube/tests install-dependencies:transcription
 
     npm run build:server
     npm run build:tests
@@ -150,7 +150,7 @@ elif [ "$1" = "lint" ]; then
 
     ( cd client && npm run lint )
 elif [ "$1" = "transcription" ]; then
-    npm run install-dependencies:transcription --workspace=@peertube/tests
+    pnpm run --filter=@peertube/tests install-dependencies:transcription
 
     npm run build:server
     npm run build:tests

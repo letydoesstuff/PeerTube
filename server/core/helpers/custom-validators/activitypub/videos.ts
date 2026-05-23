@@ -33,7 +33,7 @@ export function sanitizeAndCheckVideoTorrentUpdateActivity (activity: any) {
 }
 
 export function sanitizeAndCheckVideoTorrentObject (video: VideoObject) {
-  if (!video || video.type !== 'Video') return false
+  if (video?.type !== 'Video') return false
 
   const fail = (field: string) => {
     logger.debug(`Video field is not valid to PeerTube: ${field}`, { video })
@@ -49,9 +49,6 @@ export function sanitizeAndCheckVideoTorrentObject (video: VideoObject) {
   if (!setValidStoryboard(video)) return fail('preview (storyboard)')
   if (!setValidLicence(video)) return fail('licence')
 
-  // TODO: compat with < 6.1, remove in 8.0
-  if (!video.uuid && video['identifier']) video.uuid = video['identifier']
-
   // Default attributes
   if (!isVideoStateValid(video.state)) video.state = VideoState.PUBLISHED
   if (!isBooleanValid(video.waitTranscoding)) video.waitTranscoding = false
@@ -66,8 +63,6 @@ export function sanitizeAndCheckVideoTorrentObject (video: VideoObject) {
     if (!isVideoCommentsPolicyValid(video.commentsPolicy)) {
       video.commentsPolicy = VideoCommentPolicy.DISABLED
     }
-  } else if (video.commentsEnabled === true) { // Fallback to deprecated attribute
-    video.commentsPolicy = VideoCommentPolicy.ENABLED
   } else {
     video.commentsPolicy = VideoCommentPolicy.DISABLED
   }
@@ -90,6 +85,10 @@ export function sanitizeAndCheckVideoTorrentObject (video: VideoObject) {
   if (exists(video.originallyPublishedAt) && !isDateValid(video.originallyPublishedAt)) return fail('originallyPublishedAt')
   if (exists(video.uploadDate) && !isDateValid(video.uploadDate)) return fail('uploadDate')
   if (exists(video.content) && !isRemoteVideoContentValid(video.mediaType, video.content)) return fail('mediaType/content')
+
+  if (exists(video.audience) && !isActivityPubUrlValid(video.audience)) return fail('audience')
+
+  if (exists(video.embedUrl) && !isActivityPubUrlValid(video.embedUrl)) return fail('embedUrl')
 
   if (video.attributedTo.length === 0) return fail('attributedTo')
 
@@ -129,8 +128,7 @@ export function isRemoteVideoUrlValid (url: any) {
 }
 
 export function isAPVideoFileUrlMetadataObject (url: any): url is ActivityVideoFileMetadataUrlObject {
-  return url &&
-    url.type === 'Link' &&
+  return url?.type === 'Link' &&
     url.mediaType === 'application/json' &&
     isArray(url.rel) && url.rel.includes('metadata')
 }
@@ -141,11 +139,15 @@ export function isAPVideoTrackerUrlObject (url: any): url is ActivityTrackerUrlO
     isActivityPubUrlValid(url.href)
 }
 
-export function isAPCaptionUrlObject (url: any): url is ActivityCaptionUrlObject {
-  return url &&
-    url.type === 'Link' &&
-    (url.mediaType === 'text/vtt' || url.mediaType === 'application/x-mpegURL') &&
-    isActivityPubUrlValid(url.href)
+export function setAPCaptionUrlObject (url: any): url is ActivityCaptionUrlObject {
+  if (url?.type !== 'Link') return false
+  if (!isActivityPubUrlValid(url.href)) return false
+
+  if (!url.mediaType && url.href.endsWith('.vtt')) {
+    url.mediaType = 'text/vtt'
+  }
+
+  return url.mediaType === 'text/vtt' || url.mediaType === 'application/x-mpegURL'
 }
 
 // ---------------------------------------------------------------------------
@@ -182,10 +184,10 @@ function setValidRemoteCaptions (video: VideoObject) {
         caption.url = []
       }
     } else {
-      caption.url = arrayify(caption.url).filter(u => isAPCaptionUrlObject(u))
+      caption.url = arrayify(caption.url).filter(u => setAPCaptionUrlObject(u))
     }
 
-    return isRemoteStringIdentifierValid(caption)
+    return caption.url.length > 0 && isRemoteStringIdentifierValid(caption)
   })
 
   return true
@@ -210,7 +212,7 @@ function setValidRemoteIcon (video: any) {
   video.icon = video.icon.filter(icon => {
     return icon.type === 'Image' &&
       isActivityPubUrlValid(icon.url) &&
-      icon.mediaType === 'image/jpeg' &&
+      !!MIMETYPES.IMAGE.MIMETYPE_EXT[icon.mediaType] &&
       validator.default.isInt(icon.width + '', { min: 0 }) &&
       validator.default.isInt(icon.height + '', { min: 0 })
   })
@@ -251,12 +253,12 @@ function setValidStoryboard (video: VideoObject) {
   if (!video.preview) return true
   if (!Array.isArray(video.preview)) return false
 
-  video.preview = video.preview.filter(p => isStorybordValid(p))
+  video.preview = video.preview.filter(p => isStoryboardValid(p))
 
   return true
 }
 
-function isStorybordValid (preview: ActivityPubStoryboard) {
+function isStoryboardValid (preview: ActivityPubStoryboard) {
   if (!preview) return false
 
   if (
@@ -268,7 +270,7 @@ function isStorybordValid (preview: ActivityPubStoryboard) {
   }
 
   preview.url = preview.url.filter(u => {
-    return u.mediaType === 'image/jpeg' &&
+    return !!MIMETYPES.IMAGE.MIMETYPE_EXT[u.mediaType] &&
       isActivityPubUrlValid(u.href) &&
       validator.default.isInt(u.width + '', { min: 0 }) &&
       validator.default.isInt(u.height + '', { min: 0 }) &&

@@ -100,6 +100,16 @@ function runTest (withObjectStorage: boolean) {
       server,
       remoteServer
     } = await prepareImportExportTests({ emails, objectStorage, withBlockedServer: false }))
+
+    // Create collaboration to ensure we don't export them
+    const userToken = await server.users.generateUserAndToken('user')
+    const { id } = await server.channelCollaborators.invite({ target: 'noah', channel: 'user_channel', token: userToken })
+    await server.channelCollaborators.accept({ id, channel: 'user_channel', token: noahToken })
+    await server.videos.quickUpload({
+      name: 'collab video',
+      token: userToken,
+      channelId: await server.channels.getIdOf({ channelName: 'user_channel' })
+    })
   })
 
   it('Should export root account', async function () {
@@ -455,6 +465,7 @@ function runTest (withObjectStorage: boolean) {
         expect(secondaryChannel.displayName).to.equal('noah display name')
         expect(secondaryChannel.description).to.equal('noah description')
         expect(secondaryChannel.support).to.equal('noah support')
+        expect(secondaryChannel.playerSettings.theme).to.equal('galaxy')
 
         expect(secondaryChannel.avatars).to.have.lengthOf(4)
         expect(secondaryChannel.banners).to.have.lengthOf(2)
@@ -554,6 +565,8 @@ function runTest (withObjectStorage: boolean) {
         expect(publicVideo.source.metadata?.streams).to.exist
         expect(publicVideo.source.resolution).to.equal(720)
         expect(publicVideo.source.size).to.equal(218910)
+
+        expect(publicVideo.playerSettings.theme).to.equal('lucide')
       }
 
       {

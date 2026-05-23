@@ -1,9 +1,10 @@
+import { InvalidGrantError } from '@node-oauth/oauth2-server'
 import { ResultList, ScopedToken, TokenSession } from '@peertube/peertube-models'
 import { buildUUID } from '@peertube/peertube-node-utils'
 import { logger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { OTP } from '@server/initializers/constants.js'
-import { getAuthNameFromRefreshGrant, getBypassFromExternalAuth, getBypassFromPasswordGrant } from '@server/lib/auth/external-auth.js'
+import { getAuthNameFromRefreshGrant, consumeBypassFromExternalAuth, getBypassFromPasswordGrant } from '@server/lib/auth/external-auth.js'
 import { BypassLogin, revokeToken } from '@server/lib/auth/oauth-model.js'
 import { handleOAuthToken, MissingTwoFactorError } from '@server/lib/auth/oauth.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
@@ -119,6 +120,8 @@ async function handleToken (req: express.Request, res: express.Response, next: e
     if (err instanceof MissingTwoFactorError) {
       res.set(OTP.HEADER_NAME, OTP.HEADER_REQUIRED_VALUE)
       logger.debug('Missing two factor error', { err })
+    } else if (err instanceof InvalidGrantError) {
+      logger.debug('Invalid grant', { err })
     } else {
       logger.warn('Login error', { err })
     }
@@ -193,7 +196,7 @@ async function buildByPassLogin (req: express.Request, grantType: string): Promi
 
   if (req.body.externalAuthToken) {
     // Consistency with the getBypassFromPasswordGrant promise
-    return getBypassFromExternalAuth(req.body.username, req.body.externalAuthToken)
+    return consumeBypassFromExternalAuth(req.body.username, req.body.externalAuthToken)
   }
 
   return getBypassFromPasswordGrant(req.body.username, req.body.password)

@@ -31,8 +31,7 @@ export class APVideoCreator extends APVideoAbstractBuilder {
       const videoCreated = await video.save({ transaction: t }) as MVideoFullLight
       videoCreated.VideoChannel = channel
 
-      await this.setThumbnail(videoCreated, t)
-      await this.setPreview(videoCreated, t)
+      await this.setThumbnails(videoCreated, t)
       await this.setWebVideoFiles(videoCreated, t)
       await this.setStreamingPlaylists(videoCreated, t)
       await this.setTags(videoCreated, t)
@@ -62,7 +61,8 @@ export class APVideoCreator extends APVideoAbstractBuilder {
       return { autoBlacklisted, videoCreated }
     })
 
-    await this.updateChaptersOutsideTransaction(videoCreated)
+    await this.updateChapters(videoCreated)
+    await this.upsertPlayerSettings(videoCreated)
 
     return { autoBlacklisted, videoCreated }
   }

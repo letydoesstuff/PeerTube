@@ -1,15 +1,20 @@
 import { CustomConfig, HttpStatusCode } from '@peertube/peertube-models'
-import { isConfigLogoTypeValid } from '@server/helpers/custom-validators/config.js'
+import { isConfigLogoTypeValid, isLogoImageFile } from '@server/helpers/custom-validators/config.js'
 import { isIntOrNull } from '@server/helpers/custom-validators/misc.js'
+import { isPlayerThemeValid } from '@server/helpers/custom-validators/player-settings.js'
 import { isNumberArray, isStringArray } from '@server/helpers/custom-validators/search.js'
 import { isVideoCommentsPolicyValid, isVideoLicenceValid, isVideoPrivacyValid } from '@server/helpers/custom-validators/videos.js'
+import { cleanUpReqFiles } from '@server/helpers/express-utils.js'
+import { guessLanguageFromReq } from '@server/helpers/i18n.js'
 import { CONFIG, isEmailEnabled } from '@server/initializers/config.js'
+import { CONSTRAINTS_FIELDS } from '@server/initializers/constants.js'
 import express from 'express'
 import { body, param } from 'express-validator'
+import { getBrowseVideosDefaultScopeError, getBrowseVideosDefaultSortError } from '../../helpers/custom-validators/browse-videos.js'
 import { isThemeNameValid } from '../../helpers/custom-validators/plugins.js'
 import { isUserNSFWPolicyValid, isUserVideoQuotaDailyValid, isUserVideoQuotaValid } from '../../helpers/custom-validators/users.js'
 import { isThemeRegistered } from '../../lib/plugins/theme-utils.js'
-import { areValidationErrors, updateActorImageValidatorFactory } from './shared/index.js'
+import { areValidationErrors } from './shared/index.js'
 
 export const customConfigUpdateValidator = [
   body('instance.name').exists(),
@@ -30,6 +35,7 @@ export const customConfigUpdateValidator = [
   body('instance.social.mastodonLink').exists(),
   body('instance.social.blueskyLink').exists(),
   body('instance.defaultLanguage').exists(),
+  body('instance.social.xLink').exists(),
 
   body('instance.isNSFW').isBoolean(),
   body('instance.languages').custom(isStringArray),
@@ -40,11 +46,6 @@ export const customConfigUpdateValidator = [
   body('instance.customizations.javascript').exists(),
 
   body('services.twitter.username').exists(),
-
-  body('cache.previews.size').isInt(),
-  body('cache.captions.size').isInt(),
-  body('cache.torrents.size').isInt(),
-  body('cache.storyboards.size').isInt(),
 
   body('signup.enabled').isBoolean(),
   body('signup.limit').isInt(),
@@ -145,6 +146,7 @@ export const customConfigUpdateValidator = [
   body('defaults.p2p.webapp.enabled').isBoolean(),
   body('defaults.p2p.embed.enabled').isBoolean(),
   body('defaults.player.autoPlay').isBoolean(),
+  body('defaults.player.theme').custom(isPlayerThemeValid),
 
   body('email.body.signature').exists(),
   body('email.subject.prefix').exists(),
@@ -159,6 +161,7 @@ export const customConfigUpdateValidator = [
     if (!checkInvalidLiveConfig(req.body, req, res)) return
     if (!checkInvalidVideoStudioConfig(req.body, req, res)) return
     if (!checkInvalidSearchConfig(req.body, req, res)) return
+    if (!checkInvalidBrowseVideosConfig(req.body, req, res)) return
 
     return next()
   }
@@ -186,7 +189,18 @@ export const updateOrDeleteLogoValidator = [
   }
 ]
 
-export const updateInstanceLogoValidator = updateActorImageValidatorFactory('logofile')
+export const updateInstanceLogoValidator = [
+  body('logofile').custom((value, { req }) => isLogoImageFile(req.files, 'logofile')).withMessage(
+    'This file is not supported or too large. Please, make sure it is of the following type : ' +
+      CONSTRAINTS_FIELDS.LOGO.IMAGE.EXTNAME.join(', ')
+  ),
+
+  (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (areValidationErrors(req, res)) return cleanUpReqFiles(req)
+
+    return next()
+  }
+]
 
 // ---------------------------------------------------------------------------
 // Private
@@ -249,6 +263,26 @@ function checkInvalidSearchConfig (customConfig: CustomConfig, req: express.Requ
 
   if (customConfig.search.searchIndex.enabled === true && customConfig.search.remoteUri.users === false) {
     res.fail({ message: req.t('You cannot enable search index without enabling remote URI search for users.') })
+    return false
+  }
+
+  return true
+}
+
+function checkInvalidBrowseVideosConfig (customConfig: CustomConfig, req: express.Request, res: express.Response) {
+  const sortError = getBrowseVideosDefaultSortError(
+    customConfig.client.browseVideos.defaultSort,
+    customConfig.trending.videos.algorithms.enabled,
+    guessLanguageFromReq(req, res)
+  )
+  if (sortError) {
+    res.fail({ message: sortError })
+    return false
+  }
+
+  const scopeError = getBrowseVideosDefaultScopeError(customConfig.client.browseVideos.defaultScope, guessLanguageFromReq(req, res))
+  if (scopeError) {
+    res.fail({ message: scopeError })
     return false
   }
 

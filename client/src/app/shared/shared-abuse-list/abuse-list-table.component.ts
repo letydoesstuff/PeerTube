@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common'
 import { Component, OnDestroy, OnInit, inject, input, viewChild } from '@angular/core'
 import { ConfirmService, HooksService, MarkdownService, Notifier, PluginService } from '@app/core'
 import { formatICU } from '@app/helpers'
@@ -35,7 +34,6 @@ const debugLogger = debug('peertube:moderation:AbuseListTableComponent')
   templateUrl: './abuse-list-table.component.html',
   styleUrls: [ '../shared-moderation/moderation.scss', './abuse-list-table.component.scss' ],
   imports: [
-    CommonModule,
     AdvancedInputFilterComponent,
     NgbTooltip,
     ActionDropdownComponent,
@@ -192,7 +190,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
           this.table().loadData()
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -201,7 +199,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
       .subscribe({
         next: () => this.table().loadData(),
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -399,7 +397,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
                 this.updateAbuseState(abuse, AbuseState.ACCEPTED)
               },
 
-              error: err => this.notifier.error(err.message)
+              error: err => this.notifier.handleError(err)
             })
         }
       },
@@ -415,7 +413,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
                 this.updateAbuseState(abuse, AbuseState.ACCEPTED)
               },
 
-              error: err => this.notifier.error(err.message)
+              error: err => this.notifier.handleError(err)
             })
         }
       },
@@ -437,7 +435,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
                 this.updateAbuseState(abuse, AbuseState.ACCEPTED)
               },
 
-              error: err => this.notifier.error(err.message)
+              error: err => this.notifier.handleError(err)
             })
         }
       }
@@ -472,7 +470,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
                 this.updateAbuseState(abuse, AbuseState.ACCEPTED)
               },
 
-              error: err => this.notifier.error(err.message)
+              error: err => this.notifier.handleError(err)
             })
         }
       }
@@ -487,7 +485,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
           account.mutedByInstance = true
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 
@@ -498,7 +496,7 @@ export class AbuseListTableComponent implements OnInit, OnDestroy {
           this.notifier.success($localize`${host} muted by your platform.`)
         },
 
-        error: err => this.notifier.error(err.message)
+        error: err => this.notifier.handleError(err)
       })
   }
 

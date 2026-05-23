@@ -1,4 +1,4 @@
-import { ActorImage, LogoType, VideoCommentPolicyType } from '../index.js'
+import { ActorImage, LogoType, PlayerTheme, VideoCommentPolicyType } from '../index.js'
 import { ClientScriptJSON } from '../plugins/plugin-package-json.model.js'
 import { NSFWPolicyType } from '../videos/nsfw-policy.type.js'
 import { VideoPrivacyType } from '../videos/video-privacy.enum.js'
@@ -32,11 +32,20 @@ export interface RegisteredIdAndPassAuthConfig {
   weight: number
 }
 
+export interface FileConstraints {
+  size: {
+    max: number
+  }
+  extensions: string[]
+}
+
 export interface ServerConfig {
   serverVersion: string
   serverCommit?: string
 
   client: {
+    newFeaturesInfo: boolean
+
     header: {
       hideInstanceName: boolean
     }
@@ -48,6 +57,11 @@ export interface ServerConfig {
       resumableUpload: {
         maxChunkSize: number
       }
+    }
+
+    browseVideos: {
+      defaultSort: string
+      defaultScope: string
     }
 
     menu: {
@@ -79,8 +93,6 @@ export interface ServerConfig {
     publish: {
       downloadEnabled: boolean
 
-      // TODO: remove, deprecated in 6.2
-      commentsEnabled: boolean
       commentsPolicy: VideoCommentPolicyType
 
       privacy: VideoPrivacyType
@@ -98,6 +110,7 @@ export interface ServerConfig {
     }
 
     player: {
+      theme: PlayerTheme
       autoPlay: boolean
     }
   }
@@ -126,6 +139,7 @@ export interface ServerConfig {
       externalLink: string
       mastodonLink: string
       blueskyLink: string
+      xLink: string
     }
 
     defaultClientRoute: string
@@ -179,6 +193,7 @@ export interface ServerConfig {
 
     customization: {
       primaryColor: string
+      onPrimaryColor: string
       foregroundColor: string
       backgroundColor: string
       backgroundSecondaryColor: string
@@ -306,42 +321,26 @@ export interface ServerConfig {
   }
 
   avatar: {
-    file: {
-      size: {
-        max: number
-      }
-      extensions: string[]
-    }
+    file: FileConstraints
   }
 
   banner: {
-    file: {
-      size: {
-        max: number
-      }
-      extensions: string[]
-    }
+    file: FileConstraints
+  }
+
+  logo: {
+    file: FileConstraints
   }
 
   video: {
-    image: {
-      size: {
-        max: number
-      }
-      extensions: string[]
-    }
+    image: FileConstraints
     file: {
       extensions: string[]
     }
   }
 
   videoCaption: {
-    file: {
-      size: {
-        max: number
-      }
-      extensions: string[]
-    }
+    file: FileConstraints
   }
 
   user: {
@@ -401,6 +400,16 @@ export interface ServerConfig {
 
   views: {
     videos: {
+      remote: {
+        // milliseconds
+        maxAge: number
+      }
+
+      local: {
+        // milliseconds
+        maxAge: number
+      }
+
       watchingInterval: {
         // milliseconds
         anonymous: number
@@ -413,6 +422,9 @@ export interface ServerConfig {
 
   storyboards: {
     enabled: boolean
+    remoteRunners: {
+      enabled: boolean
+    }
   }
 
   videoTranscription: {
@@ -429,6 +441,15 @@ export interface ServerConfig {
 
   nsfwFlagsSettings: {
     enabled: boolean
+  }
+
+  fieldsConstraints: {
+    users: {
+      password: {
+        minLength: number
+        maxLength: number
+      }
+    }
   }
 }
 

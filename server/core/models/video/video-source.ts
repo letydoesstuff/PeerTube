@@ -31,10 +31,13 @@ export class VideoSourceModel extends SequelizeModel<VideoSourceModel> {
   @UpdatedAt
   declare updatedAt: Date
 
+  // The name of the uploaded file
   @AllowNull(false)
   @Column
   declare inputFilename: string
 
+  // The name of the file stored on disk
+  // null means we don't have the file
   @AllowNull(true)
   @Column
   declare keptOriginalFilename: string
@@ -66,10 +69,6 @@ export class VideoSourceModel extends SequelizeModel<VideoSourceModel> {
   @AllowNull(true)
   @Column
   declare storage: FileStorageType
-
-  @AllowNull(true)
-  @Column
-  declare fileUrl: string
 
   @ForeignKey(() => VideoModel)
   @Column
@@ -139,10 +138,8 @@ export class VideoSourceModel extends SequelizeModel<VideoSourceModel> {
 
   toFormattedJSON (this: MVideoSource): VideoSource {
     return {
-      filename: this.inputFilename,
       inputFilename: this.inputFilename,
 
-      fileUrl: this.fileUrl,
       fileDownloadUrl: this.getFileDownloadUrl(),
 
       resolution: {
