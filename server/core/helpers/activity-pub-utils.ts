@@ -253,10 +253,6 @@ const contextStore: { [id in ContextType]: (string | { [id: string]: string })[]
       '@type': 'sc:Text',
       '@id': 'pt:support'
     },
-    indexable: {
-      '@id': 'toot:indexable',
-      '@type': 'sc:Boolean'
-    },
 
     lemmy: 'https://join-lemmy.org/ns#',
     postingRestrictedToMods: 'lemmy:postingRestrictedToMods',
@@ -397,8 +393,6 @@ function buildContext (contextValue?: ContextValue) {
     {
       pt: 'https://joinpeertube.org/ns#',
       sc: 'http://schema.org/',
-
-      toot: 'http://joinmastodon.org/ns#',
 
       ...contextValue
     }

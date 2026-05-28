@@ -736,7 +736,6 @@ export class ActorModel extends SequelizeModel<ActorModel> {
         publicKeyPem: this.publicKey
       },
       published: this.getCreatedAt().toISOString(),
-      indexable: /\/(?:peertube|root(?:_channel)?)$/.test(this.url) ? false : true,
 
       indexable: true,
 
