@@ -20,11 +20,11 @@ jobs:
       CI_BRANCH_BASE: develop
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: './.github/actions/reusable-prepare-peertube-build'
         with:
-          node-version: '20.x'
+          node-version: '22.x'
 
       - name: Build
         run: npm run build -- --analyze-bundle

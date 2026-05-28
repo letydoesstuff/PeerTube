@@ -738,6 +738,8 @@ export class ActorModel extends SequelizeModel<ActorModel> {
       published: this.getCreatedAt().toISOString(),
       indexable: /\/(?:peertube|root(?:_channel)?)$/.test(this.url) ? false : true,
 
+      indexable: true,
+
       icon,
 
       image

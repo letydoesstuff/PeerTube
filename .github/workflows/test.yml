@@ -65,16 +65,16 @@ jobs:
       YOUTUBE_DL_PROXY: ${{ secrets.YOUTUBE_DL_PROXY }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: './.github/actions/reusable-prepare-peertube-build'
         with:
-          node-version: '20.x'
+          node-version: '22.x'
 
       - uses: './.github/actions/reusable-prepare-peertube-run'
 
       - name: Cache fixtures
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             fixtures
@@ -85,14 +85,14 @@ jobs:
             ${{ runner.OS }}-
 
       - name: Cache PeerTube pip directory
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/pip
           key: ${{ runner.OS }}-${{ matrix.test_suite }}-pip-v1
 
       - name: Cache Hugging Face models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/huggingface
@@ -129,7 +129,7 @@ jobs:
           echo "parse-log.js script does not exist, skipping."
 
       - name: Upload logs and database
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: test-storages-${{ matrix.test_suite }}
