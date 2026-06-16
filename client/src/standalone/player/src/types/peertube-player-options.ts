@@ -92,6 +92,7 @@ export type PeerTubePlayerLoadOptions = {
   nsfwWarning?: {
     flags: number
     summary: string
+    blur?: boolean
   }
 
   nextVideo: {

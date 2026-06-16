@@ -315,13 +315,12 @@ export class PlayerOptionsBuilder {
       nsfwWarning: nsfwWarn
         ? {
           flags: video.nsfwFlags,
-          summary: video.nsfwSummary
+          summary: video.nsfwSummary,
+          blur: nsfwBlur
         }
         : undefined,
 
-      thumbnails: nsfwBlur
-        ? null
-        : video.thumbnails,
+      thumbnails: video.thumbnails,
 
       duration: video.duration,
       videoRatio: video.aspectRatio,

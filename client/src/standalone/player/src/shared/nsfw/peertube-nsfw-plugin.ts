@@ -8,6 +8,7 @@ const Plugin = videojs.getPlugin('plugin') as typeof VideojsPlugin
 export type PeerTubeNSFWPluginOptions = {
   summary: string
   flags: number
+  blur?: boolean
 }
 
 class PeerTubeNSFWPlugin extends Plugin {
@@ -19,6 +20,10 @@ class PeerTubeNSFWPlugin extends Plugin {
 
     player.ready(() => {
       player.addClass('peertube-nsfw')
+
+      if (options.blur) {
+        player.addClass('peertube-thumbnail-blur')
+      }
 
       this.nsfwInfoComponent = new PeerTubeNSFWInfoComponent(player, options)
       player.addChild(this.nsfwInfoComponent)

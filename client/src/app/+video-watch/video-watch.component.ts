@@ -905,14 +905,13 @@ export class VideoWatchComponent implements OnInit, OnDestroy {
         !video.canBypassPassword(this.authUser),
       videoPassword: () => videoPassword,
 
-      thumbnails: video.isNSFWBlurForUser(loggedInOrAnonymousUser, this.serverConfig)
-        ? null
-        : video.thumbnails,
+      thumbnails: video.thumbnails,
 
       nsfwWarning: video.isNSFWHiddenOrWarned(loggedInOrAnonymousUser, this.serverConfig)
         ? {
           flags: video.nsfwFlags,
-          summary: video.nsfwSummary
+          summary: video.nsfwSummary,
+          blur: video.isNSFWBlurForUser(loggedInOrAnonymousUser, this.serverConfig)
         }
         : undefined,
 
