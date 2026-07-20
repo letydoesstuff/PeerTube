@@ -117,11 +117,15 @@ async function autoResize (options: {
 }) {
   const { sharpInstance, metadata, newSize, destination } = options
 
-  // Portrait mode targeting a landscape, apply some effect on the image
-  const sourceIsPortrait = metadata.width <= metadata.height
+  const sourceIsPortraitOrSquare = metadata.width <= metadata.height
   const destIsPortraitOrSquare = newSize.width <= newSize.height
 
-  if (sourceIsPortrait && !destIsPortraitOrSquare) {
+  // Portrait source to landscape destination
+  // Or portrait source to landscape destination
+  if (
+    (sourceIsPortraitOrSquare && !destIsPortraitOrSquare) ||
+    (!sourceIsPortraitOrSquare && destIsPortraitOrSquare)
+  ) {
     const foregroundImage = sharpInstance.clone()
       .resize(newSize.width, newSize.height, { fit: 'inside' })
 

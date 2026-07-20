@@ -1,12 +1,11 @@
 import { AccessDeniedError } from '@node-oauth/oauth2-server'
-import { pick } from '@peertube/peertube-core-utils'
+import { pick, maskSecret } from '@peertube/peertube-core-utils'
 import { AttributesOnly } from '@peertube/peertube-typescript-utils'
 import { isUserPasswordTooLong } from '@server/helpers/custom-validators/users.js'
 import { PluginManager } from '@server/lib/plugins/plugin-manager.js'
 import { AccountModel } from '@server/models/account/account.js'
 import { AuthenticatedResultUpdaterFieldName, RegisterServerAuthenticatedResult } from '@server/types/index.js'
 import { MOAuthClient } from '@server/types/models/index.js'
-import { MOAuthTokenUser } from '@server/types/models/oauth/oauth-token.js'
 import { MUser, MUserDefault } from '@server/types/models/user/user.js'
 import express from 'express'
 import { logger } from '../../helpers/logger.js'
@@ -46,11 +45,9 @@ async function getAccessToken (bearerToken: string) {
 
   if (!bearerToken) return undefined
 
-  let tokenModel: MOAuthTokenUser
+  let tokenModel = TokensCache.Instance.getToken(bearerToken)
 
-  if (TokensCache.Instance.hasToken(bearerToken)) {
-    tokenModel = TokensCache.Instance.getByToken(bearerToken)
-  } else {
+  if (!tokenModel) {
     tokenModel = await OAuthTokenModel.getByTokenAndPopulateUser(bearerToken)
 
     if (tokenModel) TokensCache.Instance.setToken(tokenModel)
@@ -70,13 +67,13 @@ async function getAccessToken (bearerToken: string) {
 }
 
 function getClient (clientId: string, clientSecret: string) {
-  logger.debug('Getting Client (clientId: ' + clientId + ', clientSecret: ' + clientSecret + ').')
+  logger.debug('Getting Client (clientId: ' + clientId + ', clientSecret: ' + maskSecret(clientSecret) + ').')
 
   return OAuthClientModel.getByIdAndSecret(clientId, clientSecret)
 }
 
 async function getRefreshToken (refreshToken: string) {
-  logger.debug('Getting RefreshToken (refreshToken: ' + refreshToken + ').')
+  logger.debug('Getting RefreshToken (refreshToken: ' + maskSecret(refreshToken) + ').')
 
   const tokenInfo = await OAuthTokenModel.getByRefreshTokenAndPopulateClient(refreshToken)
   if (!tokenInfo) return undefined
@@ -189,7 +186,7 @@ async function revokeToken (
       redirectUrl = await PluginManager.Instance.onLogout(token.User.pluginAuth, token.authName, token.User, req)
     }
 
-    TokensCache.Instance.clearCacheByToken(token.accessToken)
+    TokensCache.Instance.deleteToken(token.accessToken)
 
     try {
       await token.destroy()
@@ -221,7 +218,7 @@ async function saveToken (
     authName = refreshTokenAuthName
   }
 
-  logger.debug(`Saving token ${token.accessToken} for client ${client.id} and user ${user.id}.`)
+  logger.debug(`Saving token ${maskSecret(token.accessToken)} for client ${client.id} and user ${user.id}.`)
 
   const tokenToCreate = {
     ...pick(token, [
