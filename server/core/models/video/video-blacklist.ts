@@ -1,12 +1,16 @@
 import { VideoBlacklist, type VideoBlacklistType_Type } from '@peertube/peertube-models'
 import { MVideoBlacklist, MVideoBlacklistFormattable } from '@server/types/models/index.js'
-import { FindOptions } from 'sequelize'
+import { FindOptions, Transaction } from 'sequelize'
 import { AllowNull, BelongsTo, Column, CreatedAt, DataType, Default, ForeignKey, Is, Table, UpdatedAt } from 'sequelize-typescript'
-import { isVideoBlacklistReasonValid, isVideoBlacklistTypeValid } from '../../helpers/custom-validators/video-blacklist.js'
+import {
+  isVideoBlacklistReasonValid,
+  isVideoBlacklistInternalNoteValid,
+  isVideoBlacklistTypeValid
+} from '../../helpers/custom-validators/video-blacklist.js'
 import { CONSTRAINTS_FIELDS } from '../../initializers/constants.js'
 import { getBlacklistSort, searchAttribute, SequelizeModel, throwIfNotValid } from '../shared/index.js'
 import { thumbnailAPIAttributes, ThumbnailModel } from './thumbnail.js'
-import { SummaryOptions, VideoChannelModel, ScopeNames as VideoChannelScopeNames } from './video-channel.js'
+import { VideoChannelModel, ScopeNames as VideoChannelScopeNames } from './video-channel.js'
 import { VideoModel } from './video.js'
 
 @Table({
@@ -23,6 +27,11 @@ export class VideoBlacklistModel extends SequelizeModel<VideoBlacklistModel> {
   @Is('VideoBlacklistReason', value => throwIfNotValid(value, isVideoBlacklistReasonValid, 'reason', true))
   @Column(DataType.STRING(CONSTRAINTS_FIELDS.VIDEO_BLACKLIST.REASON.max))
   declare reason: string
+
+  @AllowNull(true)
+  @Is('VideoBlacklistInternalNote', value => throwIfNotValid(value, isVideoBlacklistInternalNoteValid, 'internalNote', true))
+  @Column(DataType.STRING(CONSTRAINTS_FIELDS.VIDEO_BLACKLIST.INTERNAL_NOTE.max))
+  declare internalNote: string
 
   @AllowNull(false)
   @Column
@@ -79,7 +88,7 @@ export class VideoBlacklistModel extends SequelizeModel<VideoBlacklistModel> {
         where: searchAttribute(search, 'name'),
         include: [
           {
-            model: VideoChannelModel.scope({ method: [ VideoChannelScopeNames.SUMMARY, { withAccount: true } as SummaryOptions ] }),
+            model: VideoChannelModel.scope({ method: [ VideoChannelScopeNames.SUMMARY, { withAccount: true } ] }),
             required: true
           },
           {
@@ -107,11 +116,12 @@ export class VideoBlacklistModel extends SequelizeModel<VideoBlacklistModel> {
     })
   }
 
-  static loadByVideoId (id: number): Promise<MVideoBlacklist> {
+  static loadByVideoId (id: number, transaction?: Transaction): Promise<MVideoBlacklist> {
     const query = {
       where: {
         videoId: id
-      }
+      },
+      transaction
     }
 
     return VideoBlacklistModel.findOne(query)
@@ -123,6 +133,7 @@ export class VideoBlacklistModel extends SequelizeModel<VideoBlacklistModel> {
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
       reason: this.reason,
+      internalNote: this.internalNote,
       unfederated: this.unfederated,
       type: this.type,
 

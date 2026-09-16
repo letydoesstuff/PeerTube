@@ -223,7 +223,7 @@ async function listMyVideoImports (req: express.Request, res: express.Response) 
       ? user.Account.id
       : undefined,
 
-    ...pick(req.query, [ 'id', 'videoId', 'targetUrl', 'start', 'count', 'sort', 'search', 'videoChannelSyncId', 'includeCollaborations' ])
+    ...pick(req.query, [ 'id', 'videoId', 'targetUrl', 'start', 'count', 'sort', 'search', 'videoChannelSyncId', 'includeCollaborations', 'stateOneOf' ])
   })
 
   return res.json(getFormattedObjects(resultList.data, resultList.total))
@@ -308,7 +308,6 @@ async function updateMe (req: express.Request, res: express.Response) {
     'noInstanceConfigWarningModal',
     'noAccountSetupWarningModal',
     'noWelcomeModal',
-    'emailPublic',
     'p2pEnabled'
   ]
 

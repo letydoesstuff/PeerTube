@@ -1,4 +1,5 @@
 import { TokenSession } from '@peertube/peertube-models'
+import { afterCommitIfTransaction } from '@server/helpers/database-utils.js'
 import { TokensCache } from '@server/lib/auth/tokens-cache.js'
 import { MUserAccountId } from '@server/types/models/index.js'
 import { MOAuthTokenUser } from '@server/types/models/oauth/oauth-token.js'
@@ -16,12 +17,14 @@ import {
   Table,
   UpdatedAt
 } from 'sequelize-typescript'
-import { logger } from '../../helpers/logger.js'
+import { createLogger } from '../../helpers/logger.js'
 import { AccountModel } from '../account/account.js'
 import { ActorModel } from '../actor/actor.js'
 import { getSort, SequelizeModel } from '../shared/index.js'
 import { UserModel } from '../user/user.js'
 import { OAuthClientModel } from './oauth-client.js'
+
+const logger = createLogger()
 
 export type OAuthTokenInfo = {
   refreshToken: string
@@ -187,7 +190,7 @@ export class OAuthTokenModel extends SequelizeModel<OAuthTokenModel> {
           },
           user: token.User,
           token
-        } as OAuthTokenInfo
+        }
       })
       .catch(err => {
         logger.error('getRefreshToken error.', { err })
@@ -280,20 +283,26 @@ export class OAuthTokenModel extends SequelizeModel<OAuthTokenModel> {
 
   // ---------------------------------------------------------------------------
 
-  static deleteUserToken (options: {
+  static async deleteUserToken (options: {
     userId: number
     accessTokenException?: string
     transaction?: Transaction
   }) {
     const { userId, accessTokenException, transaction } = options
 
-    TokensCache.Instance.deleteUserTokens(userId, accessTokenException)
-
     const where = accessTokenException
       ? { userId, accessToken: { [Op.ne]: accessTokenException } }
       : { userId }
 
-    return OAuthTokenModel.destroy({ where, transaction })
+    // Bulk destroy does not run the afterDestroy hook, so we have to invalidate the cache ourselves
+    // It has to be done once the rows are gone
+    const destroyed = await OAuthTokenModel.destroy({ where, transaction })
+
+    afterCommitIfTransaction(transaction, () => {
+      TokensCache.Instance.deleteUserTokens(userId, accessTokenException)
+    })
+
+    return destroyed
   }
 
   toSessionFormattedJSON (activeToken: string): TokenSession {

@@ -1,71 +1,55 @@
-import retry from 'async/retry.js'
-import Bluebird from 'bluebird'
+import { wait } from '@peertube/peertube-core-utils'
+import { sequelizeTypescript } from '@server/initializers/database.js'
 import { Transaction } from 'sequelize'
 import { Model } from 'sequelize-typescript'
-import { sequelizeTypescript } from '@server/initializers/database.js'
-import { logger } from './logger.js'
+import { createLogger } from './logger.js'
 
-export function retryTransactionWrapper<T, A, B, C, D> (
-  functionToRetry: (arg1: A, arg2: B, arg3: C, arg4: D) => Promise<T>,
-  arg1: A,
-  arg2: B,
-  arg3: C,
-  arg4: D
-): Promise<T>
+const logger = createLogger()
 
-export function retryTransactionWrapper<T, A, B, C> (
-  functionToRetry: (arg1: A, arg2: B, arg3: C) => Promise<T>,
-  arg1: A,
-  arg2: B,
-  arg3: C
-): Promise<T>
-
-export function retryTransactionWrapper<T, A, B> (
-  functionToRetry: (arg1: A, arg2: B) => Promise<T>,
-  arg1: A,
-  arg2: B
-): Promise<T>
-
-export function retryTransactionWrapper<T, A> (
-  functionToRetry: (arg1: A) => Promise<T>,
-  arg1: A
-): Promise<T>
-
-export function retryTransactionWrapper<T> (
-  functionToRetry: () => Promise<T> | Bluebird<T>
-): Promise<T>
-
-export function retryTransactionWrapper<T> (
-  functionToRetry: (...args: any[]) => Promise<T>,
-  ...args: any[]
-): Promise<T> {
-  return transactionRetryer<T>(callback => {
-    functionToRetry.apply(null, args)
-      .then((result: T) => callback(null, result))
-      .catch(err => callback(err))
-  })
-    .catch(err => {
-      logger.warn(`Cannot execute ${functionToRetry.name || 'function'} with many retries.`, { err })
-      throw err
-    })
+export type RetryTransactionWrapperOptions = {
+  // Also retry when the transaction failed because of a unique constraint violation
+  retryUniqueConstraintViolation?: boolean // default false
 }
 
-export function transactionRetryer<T> (func: (err: any, data: T) => any) {
-  return new Promise<T>((res, rej) => {
-    retry(
-      {
-        times: 5,
+const RETRY_BASE_DELAY_MS = 50
+const RETRY_MAX_DELAY_MS = 1000
 
-        errorFilter: err => {
-          const willRetry = err.name === 'SequelizeDatabaseError'
-          logger.debug('Maybe retrying the transaction function.', { willRetry, err, tags: [ 'sql', 'retry' ] })
-          return willRetry
-        }
-      },
-      func,
-      (err, data) => err ? rej(err) : res(data)
-    )
-  })
+export async function retryTransactionWrapper<T> (
+  functionToRetry: () => Promise<T>,
+  options: RetryTransactionWrapperOptions = {}
+): Promise<T> {
+  const maxAttempts = 5
+  let attempts = 0
+
+  while (true) {
+    try {
+      return await functionToRetry()
+    } catch (err) {
+      attempts++
+
+      const willRetry = attempts < maxAttempts && (
+        err?.name === 'SequelizeDatabaseError' ||
+        (options?.retryUniqueConstraintViolation === true && err?.name === 'SequelizeUniqueConstraintError')
+      )
+
+      logger.debug('Maybe retrying the transaction function.', { willRetry, err, tags: [ 'sql', 'retry' ] })
+
+      if (!willRetry) {
+        logger.warn(`Cannot execute function with many retries.`, { err, attempts, stack: err?.stack })
+
+        throw err
+      }
+
+      await wait(getRetryDelayMs(attempts))
+    }
+  }
+}
+
+// Don't collide concurrent serializations
+function getRetryDelayMs (attempts: number) {
+  const maxDelay = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (attempts - 1))
+
+  return Math.floor(Math.random() * maxDelay)
 }
 
 export function saveInTransactionWithRetries<T extends Pick<Model, 'save' | 'changed'>> (

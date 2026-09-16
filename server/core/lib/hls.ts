@@ -11,7 +11,7 @@ import flatten from 'lodash-es/flatten.js'
 import PQueue from 'p-queue'
 import { basename, dirname, join } from 'path'
 import { getAudioStreamCodec, getVideoStreamCodec } from '../helpers/ffmpeg/index.js'
-import { logger, loggerTagsFactory } from '../helpers/logger.js'
+import { createLogger } from '../helpers/logger.js'
 import { doRequest, doRequestAndSaveToFile } from '../helpers/requests.js'
 import { generateRandomString } from '../helpers/utils.js'
 import { CONFIG } from '../initializers/config.js'
@@ -23,20 +23,20 @@ import { storeHLSFileFromContent } from './object-storage/index.js'
 import { generateHLSMasterPlaylistFilename, generateHlsSha256SegmentsFilename, getHLSResolutionPlaylistFilename } from './paths.js'
 import { VideoPathManager } from './video-path-manager.js'
 
-const lTags = loggerTagsFactory('hls')
+const logger = createLogger('hls')
 
 export async function updateStreamingPlaylistsInfohashesIfNeeded () {
   let playlistsToUpdateIds = new Set(await VideoStreamingPlaylistModel.listIdsByIncorrectPeerVersion())
 
   if (playlistsToUpdateIds.size !== 0) {
-    logger.info(`Will update ${playlistsToUpdateIds.size} streaming playlists infohash because of protocol version change.`, lTags())
+    logger.info(`Will update ${playlistsToUpdateIds.size} streaming playlists infohash because of protocol version change.`)
   }
 
   if (await ApplicationModel.streamingPlaylistBaseUrlChanged()) {
     const localIds = await VideoStreamingPlaylistModel.listIdsLocals()
 
     if (localIds.length !== 0) {
-      logger.info(`Will update ${localIds.length} local streaming playlists infohash because of object storage base URL change.`, lTags())
+      logger.info(`Will update ${localIds.length} local streaming playlists infohash because of object storage base URL change.`)
 
       playlistsToUpdateIds = new Set([ ...playlistsToUpdateIds, ...localIds ])
     }
@@ -49,7 +49,7 @@ export async function updateStreamingPlaylistsInfohashesIfNeeded () {
         const playlist = await VideoStreamingPlaylistModel.loadWithVideo(playlistId, t)
         const videoFiles = await VideoFileModel.listByStreamingPlaylist(playlistId, t)
 
-        playlist.assignP2PMediaLoaderInfoHashes(playlist.Video, videoFiles)
+        await playlist.buildAndSetInfoHashes(playlist.Video, videoFiles, t)
         playlist.p2pMediaLoaderPeerVersion = P2P_MEDIA_LOADER_PEER_VERSION
 
         await playlist.save({ transaction: t })
@@ -67,7 +67,7 @@ export async function updateM3U8AndShaPlaylist (video: MVideo, playlist: MStream
 
     // Refresh playlist, operations can take some time
     playlistWithFiles = await VideoStreamingPlaylistModel.loadWithVideoAndFiles(playlist.id)
-    playlistWithFiles.assignP2PMediaLoaderInfoHashes(video, playlistWithFiles.VideoFiles)
+    await playlistWithFiles.buildAndSetInfoHashes(video, playlistWithFiles.VideoFiles)
     await playlistWithFiles.save()
 
     video.setHLSPlaylist(playlistWithFiles)
@@ -164,12 +164,12 @@ function updateMasterHLSPlaylist (video: MVideo, playlistArg: MStreamingPlaylist
         content: masterPlaylistContent
       })
 
-      logger.info(`Updated master playlist file of video ${video.uuid} to object storage`, lTags(video.uuid))
+      logger.info(`Updated master playlist file of video ${video.uuid} to object storage`)
     } else {
       const masterPlaylistPath = VideoPathManager.Instance.getFSHLSOutputPath(video, playlist.playlistFilename)
       await writeFile(masterPlaylistPath, masterPlaylistContent)
 
-      logger.info(`Updated master playlist file ${masterPlaylistPath} of video ${video.uuid}`, lTags(video.uuid))
+      logger.info(`Updated master playlist file ${masterPlaylistPath} of video ${video.uuid}`)
     }
 
     return playlist.save()

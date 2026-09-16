@@ -1,12 +1,21 @@
 import { ActivityAnnounce, ActivityAudience } from '@peertube/peertube-models'
 import { Transaction } from 'sequelize'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { MActorLight, MVideo } from '../../../types/models/index.js'
 import { MVideoShare } from '../../../types/models/video/index.js'
 import { audiencify, getPublicAudience } from '../audience.js'
 import { broadcastToFollowers, getActorsInvolvedInVideo } from './shared/send-utils.js'
 
-export async function sendVideoAnnounce (byActor: MActorLight, videoShare: MVideoShare, video: MVideo, transaction: Transaction) {
+const logger = createLogger()
+
+export async function sendVideoAnnounce (options: {
+  byActor: MActorLight
+  videoShare: MVideoShare
+  video: MVideo
+  transaction: Transaction
+}) {
+  const { byActor, videoShare, video, transaction } = options
+
   const activity = buildAnnounceWithVideoAudience(byActor, videoShare, video)
 
   logger.info('Creating job to send announce %s.', videoShare.url)
@@ -39,7 +48,7 @@ export function buildAnnounceActivity (url: string, byActor: MActorLight, object
   if (!audience) audience = getPublicAudience(byActor)
 
   return audiencify({
-    type: 'Announce' as 'Announce',
+    type: 'Announce',
     id: url,
     actor: byActor.url,
     object

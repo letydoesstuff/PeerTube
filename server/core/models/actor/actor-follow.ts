@@ -31,7 +31,7 @@ import {
   Table,
   UpdatedAt
 } from 'sequelize-typescript'
-import { logger } from '../../helpers/logger.js'
+import { createLogger } from '../../helpers/logger.js'
 import {
   ACTOR_FOLLOW_SCORE,
   CONSTRAINTS_FIELDS,
@@ -48,6 +48,8 @@ import { VideoChannelModel } from '../video/video-channel.js'
 import { ActorModel, unusedActorAttributesForAPI } from './actor.js'
 import { InstanceListFollowersQueryBuilder, ListFollowersOptions } from './sql/instance-list-followers-query-builder.js'
 import { InstanceListFollowingQueryBuilder, ListFollowingOptions } from './sql/instance-list-following-query-builder.js'
+
+const logger = createLogger()
 
 @Table({
   tableName: 'actorFollow',
@@ -731,12 +733,17 @@ export class ActorFollowModel extends SequelizeModel<ActorFollowModel> {
       secondJoin = 'targetActorId'
     }
 
+    // Some remote actors (e.g. GoToSocial) don't expose a shared inbox, so fall back to their individual inbox
+    const columnUrlExpr = columnUrl === 'sharedInboxUrl'
+      ? 'COALESCE("Follows"."sharedInboxUrl", "Follows"."inboxUrl")'
+      : `"Follows"."${columnUrl}"`
+
     const selections: string[] = []
 
     selections.push(
       distinct === true
-        ? `DISTINCT("Follows"."${columnUrl}") AS "selectionUrl"`
-        : `"Follows"."${columnUrl}" AS "selectionUrl"`
+        ? `DISTINCT(${columnUrlExpr}) AS "selectionUrl"`
+        : `${columnUrlExpr} AS "selectionUrl"`
     )
 
     if (selectTotal) selections.push('COUNT(*) AS "total"')
@@ -747,7 +754,7 @@ export class ActorFollowModel extends SequelizeModel<ActorFollowModel> {
       let query = 'SELECT ' + selection + ' FROM "actor" ' +
         'INNER JOIN "actorFollow" ON "actorFollow"."' + firstJoin + '" = "actor"."id" ' +
         'INNER JOIN "actor" AS "Follows" ON "actorFollow"."' + secondJoin + '" = "Follows"."id" ' +
-        `WHERE "actor"."id" = ANY ($actorIds) AND "actorFollow"."state" = 'accepted' AND "Follows"."${columnUrl}" IS NOT NULL `
+        `WHERE "actor"."id" = ANY ($actorIds) AND "actorFollow"."state" = 'accepted' AND ${columnUrlExpr} IS NOT NULL `
 
       if (count !== undefined) query += 'LIMIT ' + count
       if (start !== undefined) query += ' OFFSET ' + start

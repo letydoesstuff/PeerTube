@@ -1,5 +1,5 @@
 import { NgClass } from '@angular/common'
-import { Component, OnInit, inject, output, viewChild } from '@angular/core'
+import { Component, OnInit, inject, output, viewChild, ChangeDetectionStrategy } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { Notifier } from '@app/core'
 import { formatICU } from '@app/helpers'
@@ -16,6 +16,7 @@ import { VideoBlockService } from './video-block.service'
   selector: 'my-video-block',
   templateUrl: './video-block.component.html',
   styleUrls: [ './video-block.component.scss' ],
+  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [ GlobalIconComponent, FormsModule, ReactiveFormsModule, NgClass, PeertubeCheckboxComponent ]
 })
 export class VideoBlockComponent extends FormReactive implements OnInit {
@@ -27,6 +28,7 @@ export class VideoBlockComponent extends FormReactive implements OnInit {
   readonly modal = viewChild<NgbModal>('modal')
 
   readonly videoBlocked = output()
+  readonly modalClosed = output()
 
   videos: Video[]
 
@@ -63,6 +65,8 @@ export class VideoBlockComponent extends FormReactive implements OnInit {
     this.videos = videos
 
     this.openedModal = this.modalService.open(this.modal(), { centered: true, keyboard: false })
+
+    this.openedModal.hidden.subscribe(() => this.modalClosed.emit())
   }
 
   hide () {

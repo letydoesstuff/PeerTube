@@ -1,6 +1,6 @@
 import { UserNotificationType, UserRight } from '@peertube/peertube-models'
 import { tu } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
 import { videoAutoBlacklistUrl } from '@server/lib/client-urls.js'
 import { UserNotificationModel } from '@server/models/user/user-notification.js'
@@ -13,6 +13,8 @@ import {
   UserNotificationModelForApi
 } from '@server/types/models/index.js'
 import { AbstractNotification } from '../common/abstract-notification.js'
+
+const logger = createLogger()
 
 export class NewAutoBlacklistForModerators extends AbstractNotification<MVideoBlacklistLightVideo> {
   private moderators: MUserDefault[]
@@ -52,15 +54,15 @@ export class NewAutoBlacklistForModerators extends AbstractNotification<MVideoBl
       template: 'video-auto-blacklist-new',
       to: { email: user.email, language: user.getLanguage() },
       subject: tu('A new video is pending moderation', user),
+      action: {
+        text: tu('Review video', user),
+        url: videoAutoBlacklistUrl
+      },
       locals: {
         channelDisplayName: channel.getDisplayName(),
         channelUrl: channel.getClientUrl(),
         videoUrl: WEBSERVER.URL + video.getWatchStaticPath(),
-        videoName: video.name,
-        action: {
-          text: tu('Review video', user),
-          url: videoAutoBlacklistUrl
-        }
+        videoName: video.name
       }
     }
   }

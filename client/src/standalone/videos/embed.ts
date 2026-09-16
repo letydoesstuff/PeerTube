@@ -9,8 +9,8 @@ import {
   VideoState
 } from '@peertube/peertube-models'
 import type { PeerTubePlayer, VideojsPlayer } from '@peertube/player'
-import { TranslationsManager } from '@root-helpers/translations-manager'
 import { PeerTubeServerError } from '@pt-types'
+import { TranslationsManager } from '@root-helpers/translations-manager'
 import type videojs from 'video.js'
 import { getParamString, logger, videoRequiresFileToken } from '../../root-helpers'
 import { PeerTubeEmbedApi } from './embed-api'
@@ -147,7 +147,7 @@ export class PeerTubeEmbed {
         : 1
 
       this.playlistTracker.setPosition(position)
-    } catch (err) {
+    } catch (err: any) {
       this.playerHTML.displayError(err.message, await this.translationsPromise)
       return undefined
     }
@@ -241,7 +241,7 @@ export class PeerTubeEmbed {
         playerSettingsPromise,
         forceAutoplay
       })
-    } catch (err) {
+    } catch (err: any) {
       if (await this.handlePasswordError(err)) {
         this.loadVideoAndBuildPlayer({ ...options })
         return
@@ -303,7 +303,11 @@ export class PeerTubeEmbed {
     ])
 
     if (allowed !== true) {
-      throw new Error('This video is not allowed to be embedded on this domain.')
+      throw new Error(
+        video.embedPrivacyPolicy.id === VideoEmbedPrivacyPolicy.DISABLED
+          ? 'Embedding is disabled for this video.'
+          : 'This video is not allowed to be embedded on this domain.'
+      )
     }
 
     const playlist = this.playlistTracker
@@ -391,7 +395,7 @@ export class PeerTubeEmbed {
     const body = document.getElementById('custom-css')
 
     if (this.playerOptionsBuilder.hasBigPlayBackgroundColor()) {
-      body.style.setProperty('--pt-player-big-play-background-color', this.playerOptionsBuilder.getBigPlayBackgroundColor())
+      body.style.setProperty('--pt-player-big-play-bg', this.playerOptionsBuilder.getBigPlayBackgroundColor())
     }
 
     if (this.playerOptionsBuilder.hasForegroundColor()) {

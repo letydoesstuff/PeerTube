@@ -1,11 +1,11 @@
 import { UserNotificationSettingValue, UserNotificationType } from '@peertube/peertube-models'
 import { tu } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { toSafeHtml } from '@server/helpers/markdown.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
-import { AccountBlocklistModel } from '@server/models/account/account-blocklist.js'
-import { getServerActor } from '@server/models/application/application.js'
-import { ServerBlocklistModel } from '@server/models/server/server-blocklist.js'
+import { getServerAccount } from '@server/models/application/application.js'
+import { AccountBlocklistModel } from '@server/models/blocklist/account-blocklist.js'
+import { ServerBlocklistModel } from '@server/models/blocklist/server-blocklist.js'
 import { UserNotificationModel } from '@server/models/user/user-notification.js'
 import { UserModel } from '@server/models/user/user.js'
 import {
@@ -16,6 +16,8 @@ import {
   UserNotificationModelForApi
 } from '@server/types/models/index.js'
 import { AbstractNotification } from '../common/index.js'
+
+const logger = createLogger()
 
 export class CommentMention extends AbstractNotification<MCommentOwnerVideo, MUserNotifSettingAccount> {
   private users: MUserDefault[]
@@ -50,7 +52,7 @@ export class CommentMention extends AbstractNotification<MCommentOwnerVideo, MUs
 
     if (this.users.length === 0) return
 
-    this.serverAccountId = (await getServerActor()).Account.id
+    this.serverAccountId = (await getServerAccount()).id
 
     const sourceAccounts = this.users.map(u => u.Account.id).concat([ this.serverAccountId ])
 
@@ -104,17 +106,17 @@ export class CommentMention extends AbstractNotification<MCommentOwnerVideo, MUs
       template: 'video-comment-mention',
       to,
       subject: tu('Mention on video {videoName}', user, { videoName: video.name }),
+      action: {
+        text: tu('View comment', user),
+        url: commentUrl
+      },
       locals: {
         comment,
         commentHtml,
         video,
         videoUrl,
         accountName,
-        accountUrl: comment.Account.getClientUrl(),
-        action: {
-          text: tu('View comment', user),
-          url: commentUrl
-        }
+        accountUrl: comment.Account.getClientUrl()
       }
     }
   }

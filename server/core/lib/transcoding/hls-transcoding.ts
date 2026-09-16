@@ -3,8 +3,9 @@ import { canCopyForHLS, getVideoStreamDuration, HLSFromTSTranscodeOptions, HLSTr
 import { retryTransactionWrapper } from '@server/helpers/database-utils.js'
 import { deleteFileAndCatch } from '@server/helpers/fs.js'
 import { sequelizeTypescript } from '@server/initializers/database.js'
-import { createTorrentAndSetInfoHash } from '@server/lib/webtorrent.js'
-import { MVideo } from '@server/types/models/index.js'
+import { createTorrentForFile } from '@server/lib/webtorrent.js'
+import { VideoInfohashModel } from '@server/models/video/video-infohash.js'
+import { MVideo, MVideoFile } from '@server/types/models/index.js'
 import { MutexInterface } from 'async-mutex'
 import { Job } from 'bullmq'
 import { ensureDir, move } from 'fs-extra/esm'
@@ -30,7 +31,7 @@ export async function generateHlsPlaylistResolutionFromTS (options: {
   preventInputFileLocking?: boolean
 }) {
   return generateHlsPlaylistCommon({
-    type: 'hls-from-ts' as 'hls-from-ts',
+    type: 'hls-from-ts',
 
     videoInputPath: options.concatenatedTsFilePath,
 
@@ -49,10 +50,12 @@ export function generateHlsPlaylistResolution (options: {
   fps: number
   inputFileMutexReleaser: MutexInterface.Releaser
   separatedAudio: boolean
-  job?: Job
+
+  job: Job
+  abortSignal: AbortSignal
 }) {
   return generateHlsPlaylistCommon({
-    type: 'hls' as 'hls',
+    type: 'hls',
 
     ...pick(options, [
       'videoInputPath',
@@ -62,7 +65,8 @@ export function generateHlsPlaylistResolution (options: {
       'fps',
       'separatedAudio',
       'inputFileMutexReleaser',
-      'job'
+      'job',
+      'abortSignal'
     ])
   })
 }
@@ -113,7 +117,8 @@ export async function onHLSVideoFileTranscoding (options: {
       await video.save()
     }
 
-    await createTorrentAndSetInfoHash(playlist, newVideoFile)
+    const { infoHash, torrentFilename } = await createTorrentForFile(playlist, newVideoFile)
+    newVideoFile.torrentFilename = torrentFilename
 
     const oldFile = await VideoFileModel.loadHLSFile({
       playlistId: playlist.id,
@@ -126,7 +131,15 @@ export async function onHLSVideoFileTranscoding (options: {
       await oldFile.destroy()
     }
 
-    const savedVideoFile = await VideoFileModel.customUpsert(newVideoFile, 'streaming-playlist', undefined)
+    const savedVideoFile = await retryTransactionWrapper(() => {
+      return sequelizeTypescript.transaction(async t => {
+        const savedVideoFile = await VideoFileModel.customUpsert(newVideoFile, 'streaming-playlist', t) as MVideoFile
+
+        await VideoInfohashModel.replaceFileInfohash(savedVideoFile.id, infoHash, t)
+
+        return savedVideoFile
+      })
+    })
 
     if (playlistGenerated) {
       await createAllCaptionPlaylistsOnFSIfNeeded(video)
@@ -162,6 +175,7 @@ async function generateHlsPlaylistCommon (options: {
   isAAC?: boolean
 
   job?: Job
+  abortSignal?: AbortSignal
 }) {
   const {
     type,
@@ -174,7 +188,8 @@ async function generateHlsPlaylistCommon (options: {
     isAAC,
     job,
     inputFileMutexReleaser,
-    preventInputFileLocking
+    preventInputFileLocking,
+    abortSignal
   } = options
 
   const transcodeDirectory = CONFIG.STORAGE.TMP_DIR
@@ -213,7 +228,7 @@ async function generateHlsPlaylistCommon (options: {
   }
 
   try {
-    await buildFFmpegVOD(job).transcode(transcodeOptions)
+    await buildFFmpegVOD({ job, abortSignal }).transcode(transcodeOptions)
 
     // Ensure the mutex is released if the ffmpeg command failed and did not release it
     if (inputFileMutexReleaser) inputFileMutexReleaser()

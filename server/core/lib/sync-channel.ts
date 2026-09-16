@@ -1,5 +1,5 @@
-import { VideoChannelSyncState, VideoImportState } from '@peertube/peertube-models'
-import { logger, loggerTagsFactory, LoggerTagsFn } from '@server/helpers/logger.js'
+import { StreamSyncState, VideoImportState } from '@peertube/peertube-models'
+import { createLogger } from '@server/helpers/logger.js'
 import { YoutubeDlImportError, YoutubeDlImportErrorCode, YoutubeDLWrapper } from '@server/helpers/youtube-dl/index.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { buildYoutubeDLImport } from '@server/lib/video-pre-import.js'
@@ -11,7 +11,7 @@ import { ServerConfigManager } from './server-config-manager.js'
 import { buildRetryImportJob } from './video-post-import.js'
 import { getLeastPrivatePrivacy } from './video.js'
 
-const rootLTags = loggerTagsFactory('channel-synchronization')
+const logger = createLogger('channel-synchronization')
 
 export async function synchronizeChannel (options: {
   channel: MChannelAccountDefault
@@ -24,127 +24,138 @@ export async function synchronizeChannel (options: {
   const channelUsername = channel.Actor.preferredUsername
 
   if (channelSync) {
-    channelSync.state = VideoChannelSyncState.PROCESSING
+    channelSync.state = StreamSyncState.PROCESSING
     channelSync.lastSyncAt = new Date()
     await channelSync.save()
   }
 
-  try {
-    const user = await UserModel.loadByChannelActorId(channel.Actor.id)
-    const youtubeDL = new YoutubeDLWrapper(
-      externalChannelUrl,
-      ServerConfigManager.Instance.getEnabledResolutions('vod'),
-      CONFIG.TRANSCODING.ALWAYS_TRANSCODE_ORIGINAL_RESOLUTION
-    )
+  // Inner functions (skipImport, buildYoutubeDLImport...) inherit these tags without having to inject them
+  return logger.withContext([ externalChannelUrl, channelUsername ], async () => {
+    try {
+      const user = await UserModel.loadByChannelActorId(channel.Actor.id)
+      const youtubeDL = new YoutubeDLWrapper(
+        externalChannelUrl,
+        ServerConfigManager.Instance.getEnabledResolutions('vod'),
+        CONFIG.TRANSCODING.ALWAYS_TRANSCODE_ORIGINAL_RESOLUTION
+      )
 
-    const lTags = loggerTagsFactory(...rootLTags().tags, externalChannelUrl, channelUsername)
+      const targetUrls = await youtubeDL.getInfoForListImport({
+        userLanguage: user.getLanguage(),
+        latestVideosCount: videosCountLimit
+      })
 
-    const targetUrls = await youtubeDL.getInfoForListImport({
-      userLanguage: user.getLanguage(),
-      latestVideosCount: videosCountLimit
-    })
+      logger.info(`Fetched ${targetUrls.length} candidate URLs.`, { targetUrls })
 
-    logger.info(
-      `Fetched ${targetUrls.length} candidate URLs.`,
-      { targetUrls, ...lTags() }
-    )
+      const children: CreateJobTypeAndPayload[] = []
+      // Ids of video imports already persisted in DB
+      // If job creation fails, these must be reverted to FAILED so they are picked up by the retry mechanism instead of staying stuck
+      const touchedVideoImportIds: number[] = []
 
-    const children: CreateJobTypeAndPayload[] = []
-    // Ids of video imports already persisted in DB
-    // If job creation fails, these must be reverted to FAILED so they are picked up by the retry mechanism instead of staying stuck
-    const touchedVideoImportIds: number[] = []
+      let buildJobErrors = 0
+      let stoppedByRateLimit = false
+      let lastAttemptedPublishedAt: Date | undefined
 
-    let buildJobErrors = 0
+      for (const targetUrl of targetUrls) {
+        logger.debug(`Import candidate: ${targetUrl}`)
 
-    for (const targetUrl of targetUrls) {
-      logger.debug(`Import candidate: ${targetUrl}`, lTags())
+        try {
+          if (await skipImport({ channel, channelSync, targetUrl })) continue
 
-      try {
-        if (await skipImport({ channel, channelSync, targetUrl, lTags })) continue
+          const { job, videoImport } = await buildYoutubeDLImport({
+            user,
+            channel,
+            targetUrl,
+            channelSync,
+            skipPublishedBeforeOrEq,
+            importDataOverride: {
+              privacy: channelSync?.videoPrivacy || getLeastPrivatePrivacy(),
+              support: channel.support
+            }
+          })
 
-        const { job, videoImport } = await buildYoutubeDLImport({
-          user,
-          channel,
-          targetUrl,
-          channelSync,
-          skipPublishedBeforeOrEq,
-          importDataOverride: {
-            privacy: getLeastPrivatePrivacy(),
-            support: channel.support
+          children.push(job)
+
+          if (videoImport.Video?.originallyPublishedAt) {
+            lastAttemptedPublishedAt = videoImport.Video.originallyPublishedAt
           }
-        })
+          touchedVideoImportIds.push(videoImport.id)
+        } catch (err) {
+          if (err instanceof YoutubeDlImportError) {
+            if (
+              err.code === YoutubeDlImportErrorCode.SKIP_PUBLICATION_DATE ||
+              err.code === YoutubeDlImportErrorCode.IS_LIVE ||
+              err.isUnavailableVideoError() ||
+              err.isAgeLimitError() ||
+              err.isRemovedVideoError()
+            ) {
+              continue
+            }
 
-        children.push(job)
-        touchedVideoImportIds.push(videoImport.id)
-      } catch (err) {
-        if (err instanceof YoutubeDlImportError) {
-          if (
-            err.code === YoutubeDlImportErrorCode.SKIP_PUBLICATION_DATE ||
-            err.code === YoutubeDlImportErrorCode.IS_LIVE ||
-            err.isUnavailableVideoError() ||
-            err.isAgeLimitError() ||
-            err.isRemovedVideoError()
-          ) {
-            continue
+            if (err.isRateLimitError()) {
+              logger.info(`Stopping synchronization due to rate limit error in channel ${channelUsername}.`, { err })
+              stoppedByRateLimit = true
+              break
+            }
           }
 
-          if (err.isRateLimitError()) {
-            logger.info(`Stopping synchronization due to rate limit error in channel ${channelUsername}.`, { err, ...lTags() })
-            break
-          }
+          buildJobErrors++
+
+          logger.error(`Cannot build import for ${targetUrl} in channel ${channelUsername}`, { err })
+        }
+      }
+
+      if (channelSync) {
+        // Remember how far we got so we retry a full sync next time
+        if (stoppedByRateLimit) {
+          if (lastAttemptedPublishedAt) channelSync.fullSyncCutoffAt = lastAttemptedPublishedAt
+        } else {
+          // Not interrupted, reset full sync date
+          channelSync.fullSyncCutoffAt = null
         }
 
-        buildJobErrors++
+        await channelSync.save()
 
-        logger.error(`Cannot build import for ${targetUrl} in channel ${channelUsername}`, { err, ...lTags() })
+        // Retry failed imports from this sync (if any)
+        const failed = await VideoImportModel.listFailedBySyncId({ channelSyncId: channelSync.id })
+        for (const videoImport of failed) {
+          logger.info(`Retrying failed video import (id: ${videoImport.id}) for channel "${channel.Actor.preferredUsername}"`)
+
+          children.push(await buildRetryImportJob(videoImport))
+          touchedVideoImportIds.push(videoImport.id)
+        }
       }
-    }
 
-    // Retry failed imports from this sync (if any)
-    if (channelSync) {
-      const failed = await VideoImportModel.listFailedBySyncId({ channelSyncId: channelSync.id })
-      for (const videoImport of failed) {
-        logger.info(
-          `Retrying failed video import (id: ${videoImport.id}) for channel "${channel.Actor.preferredUsername}"`,
-          rootLTags()
-        )
-
-        children.push(await buildRetryImportJob(videoImport))
-        touchedVideoImportIds.push(videoImport.id)
+      // Will update the channel sync status
+      const parent: CreateJobTypeAndPayload = {
+        type: 'after-video-channel-import',
+        payload: {
+          channelSyncId: channelSync?.id,
+          buildJobErrors
+        }
       }
-    }
 
-    // Will update the channel sync status
-    const parent: CreateJobTypeAndPayload = {
-      type: 'after-video-channel-import',
-      payload: {
-        channelSyncId: channelSync?.id,
-        buildJobErrors
-      }
-    }
-
-    try {
-      await JobQueue.Instance.createJobWithChildren(parent, children)
-    } catch (err) {
       try {
-        await VideoImportModel.updateStateByIds(touchedVideoImportIds, VideoImportState.FAILED, 'Failed to create the video import job')
-      } catch (updateErr) {
-        logger.error(`Failed to update state of video imports to FAILED after failing to create the video import job`, {
-          updateErr,
-          ...rootLTags()
-        })
+        await JobQueue.Instance.createJobWithChildren(parent, children)
+      } catch (err) {
+        try {
+          await VideoImportModel.updateStateByIds(touchedVideoImportIds, VideoImportState.FAILED, 'Failed to create the video import job')
+        } catch (updateErr) {
+          logger.error(`Failed to update state of video imports to FAILED after failing to create the video import job`, {
+            updateErr
+          })
+        }
+
+        throw err
       }
+    } catch (err) {
+      logger.error(`Failed to import ${externalChannelUrl} in channel ${channelUsername}`, { err })
 
-      throw err
+      if (channelSync) {
+        channelSync.state = StreamSyncState.FAILED
+        await channelSync.save()
+      }
     }
-  } catch (err) {
-    logger.error(`Failed to import ${externalChannelUrl} in channel ${channelUsername}`, { err, ...rootLTags() })
-
-    if (channelSync) {
-      channelSync.state = VideoChannelSyncState.FAILED
-      await channelSync.save()
-    }
-  }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -153,14 +164,13 @@ async function skipImport (options: {
   channel: MChannelAccountDefault
   channelSync?: MChannelSync
   targetUrl: string
-  lTags: LoggerTagsFn
 }) {
-  const { channel, channelSync, targetUrl, lTags } = options
+  const { channel, channelSync, targetUrl } = options
 
   if (await VideoImportModel.urlAlreadyImported({ channelId: channel.id, channelSyncId: channelSync?.id, targetUrl })) {
     logger.debug(
       `${targetUrl} is already imported for channel ${channel.name}, skipping video channel synchronization.`,
-      { channelSync, ...lTags() }
+      { channelSync }
     )
 
     return true

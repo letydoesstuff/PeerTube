@@ -1,5 +1,5 @@
 import { CommonModule, getLocaleDirection, NgTemplateOutlet } from '@angular/common'
-import { Component, inject, LOCALE_ID, OnDestroy, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, inject, LOCALE_ID, OnDestroy, OnInit } from '@angular/core'
 import { Params, RouterLink, RouterLinkActive } from '@angular/router'
 import { AuthService, AuthStatus, AuthUser, HooksService, MenuService, RedirectService, ServerService, UserService } from '@app/core'
 import { GlobalIconComponent, GlobalIconName } from '@app/shared/shared-icons/global-icon.component'
@@ -37,6 +37,7 @@ const debugLogger = debug('peertube:menu:MenuComponent')
   selector: 'my-menu',
   templateUrl: './menu.component.html',
   styleUrls: [ './menu.component.scss' ],
+  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [
     CommonModule,
     GlobalIconComponent,

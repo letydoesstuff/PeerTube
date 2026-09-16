@@ -8,7 +8,7 @@ import {
   UserRole,
   UserRoleType
 } from '@peertube/peertube-models'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { UserModel } from '@server/models/user/user.js'
 import { Transaction } from 'sequelize'
@@ -28,6 +28,8 @@ import { createLocalVideoChannelWithoutKeys } from './video-channel.js'
 import { createWatchLaterPlaylist } from './video-playlist.js'
 import { createPrivateAndPublicKeys } from '@server/helpers/peertube-crypto.js'
 
+const logger = createLogger()
+
 type ChannelNames = { name: string, displayName: string }
 
 export function buildUser (options: {
@@ -43,7 +45,10 @@ export function buildUser (options: {
   videoQuota?: number // Default to CONFIG.USER.VIDEO_QUOTA
   videoQuotaDaily?: number // Default to CONFIG.USER.VIDEO_QUOTA_DAILY
 
+  language?: string // Default to null (instance default language is used)
+
   pluginAuth?: string
+  pluginAuthExternalId?: string
 }): MUser {
   const {
     username,
@@ -54,7 +59,9 @@ export function buildUser (options: {
     videoQuota = CONFIG.USER.VIDEO_QUOTA,
     videoQuotaDaily = CONFIG.USER.VIDEO_QUOTA_DAILY,
     adminFlags = UserAdminFlag.NONE,
-    pluginAuth
+    language = null,
+    pluginAuth,
+    pluginAuthExternalId
   } = options
 
   return new UserModel({
@@ -67,7 +74,7 @@ export function buildUser (options: {
     videosHistoryEnabled: CONFIG.USER.HISTORY.VIDEOS.ENABLED,
 
     autoPlayVideo: CONFIG.DEFAULTS.PLAYER.AUTO_PLAY,
-    language: null,
+    language,
 
     role,
     emailVerified,
@@ -77,6 +84,7 @@ export function buildUser (options: {
     videoQuotaDaily,
 
     pluginAuth,
+    pluginAuthExternalId,
 
     newFeaturesInfoRead: Object.values(UserNewFeatureInfo).reduce((all, curr) => all | curr, 0)
   })
@@ -291,7 +299,8 @@ function createDefaultUserNotificationSettings (user: MUserId, t: Transaction | 
     newPeerTubeVersion: UserNotificationSettingValue.WEB | UserNotificationSettingValue.EMAIL,
     newPluginVersion: UserNotificationSettingValue.WEB,
     myVideoStudioEditionFinished: UserNotificationSettingValue.WEB,
-    myVideoTranscriptionGenerated: UserNotificationSettingValue.WEB
+    myVideoTranscriptionGenerated: UserNotificationSettingValue.WEB,
+    automaticBlocklist: UserNotificationSettingValue.WEB
   }
 
   return UserNotificationSettingModel.create(values, { transaction: t })

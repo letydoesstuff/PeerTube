@@ -1,8 +1,7 @@
-import { logger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { OBJECT_STORAGE_PROXY_PATHS, WEBSERVER } from '@server/initializers/constants.js'
 import { MVideoUUID } from '@server/types/models/index.js'
-import { BucketInfo, buildKey, getEndpoint, lTags } from './shared/index.js'
+import { BucketInfo, buildKey, getEndpoint, objectStorageLogger as logger } from './shared/index.js'
 
 // ---------------------------------------------------------------------------
 
@@ -31,16 +30,16 @@ function buildBaseUrl (bucketInfo: BucketInfo) {
   const endpointParsed = getEndpointParsed()
   if (!endpointParsed) return ''
 
-  let baseUrlConfig = bucketInfo.BASE_URL
-  if (baseUrlConfig && !baseUrlConfig.endsWith('/')) baseUrlConfig += '/'
+  const baseUrlConfig = bucketInfo.BASE_URL
+  if (baseUrlConfig) {
+    if (!baseUrlConfig.endsWith('/')) return `${baseUrlConfig}/`
 
-  if (CONFIG.OBJECT_STORAGE.FORCE_PATH_STYLE) {
-    const baseUrl = baseUrlConfig || `${endpointParsed.protocol}//${endpointParsed.host}/`
-
-    return baseUrl + `${bucketInfo.BUCKET_NAME}/`
+    return baseUrlConfig
   }
 
-  if (baseUrlConfig) return baseUrlConfig
+  if (CONFIG.OBJECT_STORAGE.FORCE_PATH_STYLE) {
+    return `${endpointParsed.protocol}//${endpointParsed.host}/${bucketInfo.BUCKET_NAME}/`
+  }
 
   return `${endpointParsed.protocol}//${bucketInfo.BUCKET_NAME}.${endpointParsed.host}/`
 }
@@ -55,8 +54,7 @@ function getEndpointParsed () {
       logger.error(
         `Invalid object storage endpoint URL: ${getEndpoint()}. ` +
           `If you enabled object storage, ensure object_storage.endpoint is correctly configured. ` +
-          `Otherwise, check that you have correctly moved all your videos to your local filesystem.`,
-        lTags()
+          `Otherwise, check that you have correctly moved all your videos to your local filesystem.`
       )
 
       return undefined

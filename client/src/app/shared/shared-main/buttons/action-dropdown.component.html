@@ -10,8 +10,7 @@
       class="action-button border-0"
       [ngClass]="buttonClasses"
       ngbDropdownToggle
-      aria-label="Open actions"
-      i18n-aria-label
+      [ariaLabel]="ariaLabel()"
       >
       @if (label()) {
         <span class="me-2 dropdown-toggle-label">
@@ -43,6 +42,8 @@
                   <my-global-icon [iconName]="action.iconName" [ngClass]="'icon-' + action.iconName" aria-hidden="true"></my-global-icon>
                 } @else if (action.actorAvatar) {
                   <my-actor-avatar size="24" [actor]="action.actorAvatar.actor" [actorType]="action.actorAvatar.type"></my-actor-avatar>
+                } @else if (hasAtLeastAnIconOrAvatar) {
+                  <div class="icon-placeholder"></div>
                 }
 
                 <div class="item-label">

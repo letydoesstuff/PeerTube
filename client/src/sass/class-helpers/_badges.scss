@@ -25,6 +25,10 @@ $badge-purple-dark: #50386E;
 $badge-grey-light: #CBD7E0;
 $badge-grey-dark: #2D3448;
 
+a .pt-badge {
+  text-decoration: underline;
+}
+
 .pt-badge {
   display: inline-block;
   border-radius: 4px;
@@ -51,7 +55,7 @@ $badge-grey-dark: #2D3448;
   }
 
   &.badge-secondary {
-    color: pvar(--fg-450);
+    color: pvar(--fg-400);
     background-color: pvar(--bg-secondary-400);
   }
 
@@ -102,10 +106,6 @@ $badge-grey-dark: #2D3448;
   &.badge-grey {
     color: $badge-grey-dark;
     background-color: $badge-grey-light;
-  }
-
-  &:is(a) {
-    @include disable-default-a-behaviour;
   }
 }
 

@@ -1,8 +1,10 @@
+/* eslint-disable no-loop-func */
+
 import { AdminConfigPage } from '../po/admin-config.po'
 import { LoginPage } from '../po/login.po'
 import { VideoPublishPage } from '../po/video-publish.po'
 import { VideoWatchPage } from '../po/video-watch.po'
-import { getScreenshotPath, go, isMobileDevice, isSafari, prepareWebBrowser, selectCustomSelect, waitServerUp } from '../utils'
+import { getScreenshotPath, go, isSafari, prepareWebBrowser, selectCustomSelect, waitServerUp } from '../utils'
 
 // These tests help to notice crash with invalid translated strings
 describe('Page crash', () => {
@@ -58,9 +60,9 @@ describe('Page crash', () => {
     await waitServerUp()
 
     adminConfigPage = new AdminConfigPage()
-    loginPage = new LoginPage(isMobileDevice())
+    loginPage = new LoginPage()
     videoPublishPage = new VideoPublishPage()
-    videoWatchPage = new VideoWatchPage(isMobileDevice(), isSafari())
+    videoWatchPage = new VideoWatchPage(isSafari())
 
     await prepareWebBrowser()
   })

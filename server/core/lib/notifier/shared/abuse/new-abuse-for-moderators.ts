@@ -1,6 +1,6 @@
-import { To, UserAbuse, UserNotificationType, UserRight } from '@peertube/peertube-models'
+import { MailTo, UserAbuse, UserNotificationType, UserRight } from '@peertube/peertube-models'
 import { t } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
 import { getAbuseIdentifier } from '@server/lib/activitypub/url.js'
 import { getAdminAbuseUrl } from '@server/lib/client-urls.js'
@@ -8,6 +8,8 @@ import { UserNotificationModel } from '@server/models/user/user-notification.js'
 import { UserModel } from '@server/models/user/user.js'
 import { MAbuseFull, MUserDefault, MUserWithNotificationSetting, UserNotificationModelForApi } from '@server/types/models/index.js'
 import { AbstractNotification } from '../common/abstract-notification.js'
+
+const logger = createLogger()
 
 export type NewAbusePayload = { abuse: Pick<UserAbuse, 'reason' | 'video'>, abuseInstance: MAbuseFull, reporter: string }
 
@@ -52,7 +54,7 @@ export class NewAbuseForModerators extends AbstractNotification<NewAbusePayload>
     return this.createAccountAbuseEmail(to)
   }
 
-  private createVideoAbuseEmail (to: To) {
+  private createVideoAbuseEmail (to: MailTo) {
     const video = this.payload.abuseInstance.VideoAbuse.Video
     const channel = video.VideoChannel
 
@@ -75,7 +77,7 @@ export class NewAbuseForModerators extends AbstractNotification<NewAbusePayload>
     }
   }
 
-  private createCommentAbuseEmail (to: To) {
+  private createCommentAbuseEmail (to: MailTo) {
     const comment = this.payload.abuseInstance.VideoCommentAbuse.VideoComment
 
     return {
@@ -95,7 +97,7 @@ export class NewAbuseForModerators extends AbstractNotification<NewAbusePayload>
     }
   }
 
-  private createAccountAbuseEmail (to: To) {
+  private createAccountAbuseEmail (to: MailTo) {
     const account = this.payload.abuseInstance.FlaggedAccount
     const accountUrl = account.getClientUrl()
 
@@ -114,7 +116,7 @@ export class NewAbuseForModerators extends AbstractNotification<NewAbusePayload>
     }
   }
 
-  private buildEmailAction (to: To) {
+  private buildEmailAction (to: MailTo) {
     return {
       text: t('View report #' + this.payload.abuseInstance.id, to.language),
       url: getAdminAbuseUrl(this.payload.abuseInstance)

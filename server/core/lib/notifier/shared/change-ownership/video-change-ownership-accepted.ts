@@ -1,9 +1,11 @@
 import { UserNotificationType } from '@peertube/peertube-models'
 import { t } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
 import { MUserWithNotificationSetting } from '@server/types/models/index.js'
 import { AbstractVideoChangeOwnershipResponse } from './abstract-video-change-ownership-response.js'
+
+const logger = createLogger()
 
 export class VideoChangeOwnershipAccepted extends AbstractVideoChangeOwnershipResponse {
   log () {
@@ -25,11 +27,9 @@ export class VideoChangeOwnershipAccepted extends AbstractVideoChangeOwnershipRe
         nextOwner: this.payload.NextOwner.getDisplayName(),
         videoName: this.payload.Video.name
       }),
-      locals: {
-        action: {
-          text: t('Review ownership changes', language),
-          url: WEBSERVER.URL + '/my-library/ownership'
-        }
+      action: {
+        text: t('Review ownership changes', language),
+        url: WEBSERVER.URL + '/my-library/ownership'
       }
     }
   }

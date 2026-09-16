@@ -1,5 +1,6 @@
 /* oxlint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
+import { wait } from '@peertube/peertube-core-utils'
 import { ActorImageType, CustomConfig, HttpStatusCode, LogoType, VideoCommentPolicy, VideoPrivacy } from '@peertube/peertube-models'
 import {
   PeerTubeServer,
@@ -130,6 +131,7 @@ function checkInitialConfig (server: PeerTubeServer, data: CustomConfig) {
   expect(data.import.videoChannelSynchronization.enabled).to.be.false
   expect(data.import.users.enabled).to.be.true
   expect(data.autoBlacklist.videos.ofUsers.enabled).to.be.false
+  expect(data.blocklist.publicLog.enabled).to.be.false
 
   expect(data.followers.instance.enabled).to.be.true
   expect(data.followers.instance.manualApproval).to.be.false
@@ -186,7 +188,7 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
       categories: [ 1, 2 ],
 
       isNSFW: true,
-      defaultNSFWPolicy: 'warn' as 'warn',
+      defaultNSFWPolicy: 'warn',
 
       serverCountry: 'France',
       support: {
@@ -416,6 +418,11 @@ function buildNewCustomConfig (server: PeerTubeServer): CustomConfig {
         }
       }
     },
+    blocklist: {
+      publicLog: {
+        enabled: true
+      }
+    },
     broadcastMessage: {
       enabled: true,
       level: 'error',
@@ -530,6 +537,7 @@ describe('Test config', function () {
       expect(data.views.videos.watchingInterval.users).to.equal(5000)
 
       expect(data.webrtc.stunServers).to.include('stun:stun.framasoft.org')
+      expect(data.blocklist.publicLog.enabled).to.be.false
     })
 
     it('Should have a correct config on a server with registration enabled', async function () {
@@ -943,6 +951,39 @@ describe('Test config', function () {
 
           const logos = htmlConfig.instance.logo.filter(l => l.type === 'opengraph')
           expect(logos).to.have.lengthOf(0)
+        })
+      })
+
+      describe('SVG', function () {
+        let svgUrl: string
+
+        it('Should update instance favicon with an SVG', async function () {
+          await server.config.updateInstanceLogo({ type: 'favicon', fixture: 'peertube.svg' })
+
+          const htmlConfig = await server.config.getConfig()
+
+          const favicons = htmlConfig.instance.logo.filter(l => l.type === 'favicon')
+          expect(favicons).to.have.lengthOf(1)
+          expect(favicons[0].isFallback).to.be.false
+
+          svgUrl = favicons[0].fileUrl
+          expect(svgUrl).to.match(/\.svg$/)
+
+          await testFileExistsOnFSOrNot(server, 'uploads/images', basename(svgUrl), true)
+        })
+
+        it('Should serve the SVG with a Content-Disposition attachment header', async function () {
+          const res = await makeRawRequest({ url: svgUrl, expectedStatus: HttpStatusCode.OK_200 })
+
+          expect(res.headers['content-disposition']).to.equal('attachment')
+        })
+
+        it('Should remove the SVG favicon', async function () {
+          await server.config.deleteInstanceLogo({ type: 'favicon' })
+          // Wait a bit for the file to be deleted
+          await wait(500)
+
+          await testFileExistsOnFSOrNot(server, 'uploads/images', basename(svgUrl), false)
         })
       })
 

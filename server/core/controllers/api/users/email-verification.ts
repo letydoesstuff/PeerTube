@@ -1,8 +1,9 @@
 import { HttpStatusCode } from '@peertube/peertube-models'
+import { Redis } from '@server/lib/redis.js'
 import express from 'express'
 import { CONFIG } from '../../../initializers/config.js'
 import { sendVerifyRegistrationEmail, sendVerifyRegistrationRequestEmail, sendVerifyUserChangeEmail } from '../../../lib/user.js'
-import { asyncMiddleware, buildRateLimiter } from '../../../middlewares/index.js'
+import { asyncMiddleware, buildRateLimiter, confirmTokenRateLimiter } from '../../../middlewares/index.js'
 import {
   registrationVerifyEmailValidator,
   usersAskSendRegistrationVerifyEmailValidator,
@@ -11,6 +12,7 @@ import {
 } from '../../../middlewares/validators/index.js'
 
 const askSendEmailLimiter = buildRateLimiter({
+  enabled: CONFIG.RATES_LIMIT.ASK_SEND_EMAIL.ENABLED,
   windowMs: CONFIG.RATES_LIMIT.ASK_SEND_EMAIL.WINDOW_MS,
   max: CONFIG.RATES_LIMIT.ASK_SEND_EMAIL.MAX
 })
@@ -31,10 +33,16 @@ emailVerificationRouter.post(
   asyncMiddleware(reSendRegistrationVerifyUserEmail)
 )
 
-emailVerificationRouter.post('/:id/verify-email', asyncMiddleware(usersVerifyEmailValidator), asyncMiddleware(verifyUserEmail))
+emailVerificationRouter.post(
+  '/:id/verify-email',
+  confirmTokenRateLimiter,
+  asyncMiddleware(usersVerifyEmailValidator),
+  asyncMiddleware(verifyUserEmail)
+)
 
 emailVerificationRouter.post(
   '/registrations/:registrationId/verify-email',
+  confirmTokenRateLimiter,
   asyncMiddleware(registrationVerifyEmailValidator),
   asyncMiddleware(verifyRegistrationEmail)
 )
@@ -70,6 +78,8 @@ async function verifyUserEmail (req: express.Request, res: express.Response) {
     user.pendingEmail = null
   }
 
+  await Redis.Instance.deleteUserVerifyEmailLink(user.id, req.body.isPendingEmail === true)
+
   await user.save()
 
   return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
@@ -80,6 +90,8 @@ async function verifyRegistrationEmail (req: express.Request, res: express.Respo
   registration.emailVerified = true
 
   await registration.save()
+
+  await Redis.Instance.deleteRegistrationVerifyEmailLink(registration.id)
 
   return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
 }

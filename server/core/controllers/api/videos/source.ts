@@ -1,6 +1,8 @@
 import { buildAspectRatio } from '@peertube/peertube-core-utils'
 import { HttpStatusCode, VideoChannelActivityAction, VideoState } from '@peertube/peertube-models'
 import { sequelizeTypescript } from '@server/initializers/database.js'
+import { buildNonDuplicatedFederateVideoJob } from '@server/lib/activitypub/videos/federate.js'
+import { buildNonDuplicatedVideoAutomaticTagsJob } from '@server/lib/automatic-tags/automatic-tags.js'
 import { CreateJobOptions, CreateJobTypeAndPayload, JobQueue } from '@server/lib/job-queue/index.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
 import { regenerateLocalVideoThumbnailsFromVideoIfNeeded } from '@server/lib/thumbnail.js'
@@ -14,10 +16,10 @@ import { buildNextVideoState } from '@server/lib/video-state.js'
 import { openapiOperationDoc } from '@server/middlewares/doc.js'
 import { VideoChannelActivityModel } from '@server/models/video/video-channel-activity.js'
 import { VideoModel } from '@server/models/video/video.js'
-import { MStreamingPlaylistFiles, MVideo, MVideoFile, MVideoFull } from '@server/types/models/index.js'
+import { MStreamingPlaylistFiles, MVideo, MVideoFile, MVideoFileInfoHash, MVideoFull } from '@server/types/models/index.js'
 import express from 'express'
 import { move } from 'fs-extra/esm'
-import { logger, loggerTagsFactory } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import {
   asyncMiddleware,
   authenticate,
@@ -26,7 +28,7 @@ import {
   videoSourceGetLatestValidator
 } from '../../../middlewares/index.js'
 
-const lTags = loggerTagsFactory('api', 'video')
+const logger = createLogger('api', 'video')
 
 const videoSourceRouter = express.Router()
 
@@ -89,11 +91,20 @@ function getVideoLatestSource (req: express.Request, res: express.Response) {
   return res.json(res.locals.videoSource.toFormattedJSON())
 }
 
-async function replaceVideoSourceResumable (req: express.Request, res: express.Response) {
+function replaceVideoSourceResumable (req: express.Request, res: express.Response) {
+  return logger.withContext([ res.locals.videoFull.uuid ], () => doReplaceVideoSourceResumable(req, res))
+}
+
+async function doReplaceVideoSourceResumable (req: express.Request, res: express.Response) {
   const videoPhysicalFile = res.locals.updateVideoFileResumable
   const user = res.locals.oauth.token.User
 
-  const videoFile = await buildNewFile({ path: videoPhysicalFile.path, mode: 'web-video', ffprobe: res.locals.ffprobe })
+  const videoFile = await buildNewFile({
+    path: videoPhysicalFile.path,
+    mode: 'web-video',
+    ffprobe: res.locals.ffprobe
+  }) as MVideoFileInfoHash
+
   const originalFilename = videoPhysicalFile.originalname
 
   const videoFileMutexReleaser = await VideoPathManager.Instance.lockFiles(res.locals.videoFull.uuid)
@@ -135,6 +146,8 @@ async function replaceVideoSourceResumable (req: express.Request, res: express.R
       await autoBlacklistVideoIfNeeded({
         video,
         user,
+        // The name and the description of the video did not change, so its automatic tags are still up to date
+        holdIfAutoTagPolicy: false,
         isRemote: false,
         isNew: false,
         isNewFile: true,
@@ -167,7 +180,7 @@ async function replaceVideoSourceResumable (req: express.Request, res: express.R
 
     await addVideoJobsAfterUpload(video, videoFile.withVideoOrPlaylist(video))
 
-    logger.info('Replaced video file of video %s with uuid %s.', video.name, video.uuid, lTags(video.uuid))
+    logger.info('Replaced video file of video %s with uuid %s.', video.name, video.uuid)
 
     Hooks.runAction('action:api.video.file-updated', { video, req, res })
 
@@ -190,13 +203,10 @@ async function addVideoJobsAfterUpload (video: MVideoFull, videoFile: MVideoFile
 
     await buildLocalStoryboardJobIfNeeded({ video, federate: false }),
 
-    {
-      type: 'federate-video' as const,
-      payload: {
-        videoUUID: video.uuid,
-        isNewVideoForFederation: false
-      }
-    }
+    // The video has a new file to analyze: rebuild its automatic tags before re-federating it
+    buildNonDuplicatedVideoAutomaticTagsJob({ video, moderation: 'apply' }),
+
+    buildNonDuplicatedFederateVideoJob({ video })
   ]
 
   if (video.state === VideoState.TO_MOVE_TO_EXTERNAL_STORAGE) {
@@ -205,7 +215,6 @@ async function addVideoJobsAfterUpload (video: MVideoFull, videoFile: MVideoFile
         type: 'move-to-object-storage',
         video,
         moveVideoState: {
-          isNewVideo: false,
           previousVideoState: undefined
         }
       })
@@ -217,9 +226,7 @@ async function addVideoJobsAfterUpload (video: MVideoFull, videoFile: MVideoFile
       type: 'transcoding-job-builder' as const,
       payload: {
         videoUUID: video.uuid,
-        optimizeJob: {
-          isNewVideo: false
-        }
+        optimizeJob: {}
       }
     })
   }

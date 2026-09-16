@@ -4,10 +4,11 @@ import { isPlayerChannelThemeSettingValid } from '@server/helpers/custom-validat
 import {
   isVideoChannelDescriptionValid,
   isVideoChannelDisplayNameValid,
+  isVideoChannelPublicEmailValid,
   isVideoChannelSupportValid,
   isVideoChannelUsernameValid
 } from '@server/helpers/custom-validators/video-channels.js'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONSTRAINTS_FIELDS } from '@server/initializers/constants.js'
 import { sequelizeTypescript } from '@server/initializers/database.js'
 import { JobQueue } from '@server/lib/job-queue/job-queue.js'
@@ -18,11 +19,11 @@ import { VideoChannelModel } from '@server/models/video/video-channel.js'
 import { MChannelId } from '@server/types/models/index.js'
 import { AbstractUserImporter } from './abstract-user-importer.js'
 
-const lTags = loggerTagsFactory('user-import')
+const logger = createLogger()
 
 type SanitizedObject = Pick<
   ChannelExportJSON['channels'][0],
-  'name' | 'displayName' | 'description' | 'support' | 'playerSettings' | 'archiveFiles'
+  'name' | 'displayName' | 'description' | 'support' | 'publicEmail' | 'playerSettings' | 'archiveFiles'
 >
 
 export class ChannelsImporter extends AbstractUserImporter<ChannelExportJSON, ChannelExportJSON['channels'][0], SanitizedObject> {
@@ -36,12 +37,15 @@ export class ChannelsImporter extends AbstractUserImporter<ChannelExportJSON, Ch
 
     if (!isVideoChannelDescriptionValid(channelImportData.description)) channelImportData.description = null
     if (!isVideoChannelSupportValid(channelImportData.support)) channelImportData.support = null
+    if (channelImportData.publicEmail && !isVideoChannelPublicEmailValid(channelImportData.publicEmail)) {
+      channelImportData.publicEmail = null
+    }
 
     if (channelImportData.playerSettings) {
       if (!isPlayerChannelThemeSettingValid(channelImportData.playerSettings.theme)) channelImportData.playerSettings.theme = undefined
     }
 
-    return pick(channelImportData, [ 'name', 'displayName', 'description', 'support', 'playerSettings', 'archiveFiles' ])
+    return pick(channelImportData, [ 'name', 'displayName', 'description', 'support', 'publicEmail', 'playerSettings', 'archiveFiles' ])
   }
 
   protected async importObject (channelImportData: SanitizedObject) {
@@ -49,10 +53,14 @@ export class ChannelsImporter extends AbstractUserImporter<ChannelExportJSON, Ch
     const existingChannel = await VideoChannelModel.loadLocalByNameAndPopulateAccount(channelImportData.name)
 
     if (existingChannel) {
-      logger.info(`Do not import channel ${existingChannel.name} that already exists on this PeerTube instance`, lTags())
+      logger.info(`Do not import channel ${existingChannel.name} that already exists on this PeerTube instance`)
     } else {
       const videoChannelCreated = await sequelizeTypescript.transaction(async t => {
-        return createLocalVideoChannelWithoutKeys(pick(channelImportData, [ 'displayName', 'name', 'description', 'support' ]), account, t)
+        return createLocalVideoChannelWithoutKeys(
+          pick(channelImportData, [ 'displayName', 'name', 'description', 'support', 'publicEmail' ]),
+          account,
+          t
+        )
       })
 
       await this.importPlayerSettings(videoChannelCreated, channelImportData)
@@ -77,7 +85,7 @@ export class ChannelsImporter extends AbstractUserImporter<ChannelExportJSON, Ch
         })
       }
 
-      logger.info('Video channel %s imported.', channelImportData.name, lTags())
+      logger.info('Video channel %s imported.', channelImportData.name)
     }
 
     return {

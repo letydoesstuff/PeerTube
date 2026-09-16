@@ -18,14 +18,14 @@ import {
   isVideoLanguageValid,
   isVideoLicenceValid,
   isVideoNameValid,
-  isVideoOriginallyPublishedAtValid,
   isVideoPrivacyValid,
+  isVideoPublicationDateValid,
   isVideoReplayPrivacyValid,
   isVideoSourceFilenameValid,
   isVideoSupportValid,
   isVideoTagValid
 } from '@server/helpers/custom-validators/videos.js'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { CONSTRAINTS_FIELDS } from '@server/initializers/constants.js'
 import { LocalVideoCreator } from '@server/lib/local-video-creator.js'
@@ -43,7 +43,7 @@ import { FfprobeData } from 'fluent-ffmpeg'
 import { parse } from 'path'
 import { AbstractUserImporter } from './abstract-user-importer.js'
 
-const lTags = loggerTagsFactory('user-import')
+const logger = createLogger()
 
 type ImportObject = VideoExportJSON['videos'][0]
 type SanitizedObject = Pick<
@@ -66,6 +66,7 @@ type SanitizedObject = Pick<
   | 'videoEmbedPrivacy'
   | 'waitTranscoding'
   | 'originallyPublishedAt'
+  | 'publishedAt'
   | 'tags'
   | 'live'
   | 'passwords'
@@ -103,7 +104,8 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
 
     if (!isVideoSourceFilenameValid(o.source?.inputFilename)) o.source = undefined
 
-    if (!isVideoOriginallyPublishedAtValid(o.originallyPublishedAt)) o.originallyPublishedAt = null
+    if (!o.publishedAt || !isVideoPublicationDateValid(o.publishedAt)) o.publishedAt = null
+    if (!o.originallyPublishedAt || !isVideoPublicationDateValid(o.originallyPublishedAt)) o.originallyPublishedAt = null
 
     if (!o.videoEmbedPrivacy) o.videoEmbedPrivacy = { policy: VideoEmbedPrivacyPolicy.ALL_ALLOWED, domains: [] }
     if (!isVideoEmbedPrivacyPolicyValid(o.videoEmbedPrivacy.policy)) o.videoEmbedPrivacy.policy = VideoEmbedPrivacyPolicy.ALL_ALLOWED
@@ -167,6 +169,7 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
       'videoEmbedPrivacy',
       'waitTranscoding',
       'originallyPublishedAt',
+      'publishedAt',
       'tags',
       'captions',
       'live',
@@ -183,14 +186,14 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
       : null
 
     const videoChannel = await VideoChannelModel.loadLocalByNameAndPopulateAccount(videoImportData.channel.name)
-    if (!videoChannel) throw new Error(`Channel ${videoImportData} not found`)
+    if (!videoChannel) throw new Error(`Channel ${videoImportData.channel.name} not found`)
     if (videoChannel.accountId !== this.user.Account.id) {
       throw new Error(`Channel ${videoChannel.name} is not owned by user ${this.user.username}`)
     }
 
     const existingVideo = await VideoModel.loadByNameAndChannel(videoChannel, videoImportData.name)
     if (existingVideo && Math.abs(existingVideo.duration - videoImportData.duration) <= 1) {
-      logger.info(`Do not import video ${videoImportData.name} that already exists in the account`, lTags())
+      logger.info(`Do not import video ${videoImportData.name} that already exists in the account`)
       return { duplicate: true }
     }
 
@@ -215,8 +218,6 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
     const thumbnailPath = this.getSafeArchivePathOrThrow(videoImportData.archiveFiles.thumbnail)
 
     const localVideoCreator = new LocalVideoCreator({
-      lTags,
-
       videoFile: videoFilePath
         ? { path: videoFilePath, probe: ffprobe }
         : undefined,
@@ -248,6 +249,8 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
           'originallyPublishedAt'
         ]),
 
+        originallyPublishedAt: videoImportData.originallyPublishedAt || videoImportData.publishedAt,
+
         videoPasswords: videoImportData.passwords,
         duration,
 
@@ -275,11 +278,13 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
 
     const { video } = await localVideoCreator.create()
 
-    await this.importCaptions(video, videoImportData)
-    await this.importPlayerSettings(video, videoImportData)
-    await this.importVideoEmbedPrivacyDomains(video, videoImportData)
+    await logger.withContext([ video.uuid ], async () => {
+      await this.importCaptions(video, videoImportData)
+      await this.importPlayerSettings(video, videoImportData)
+      await this.importVideoEmbedPrivacyDomains(video, videoImportData)
 
-    logger.info('Video %s imported.', video.name, lTags(video.uuid))
+      logger.info('Video %s imported.', video.name)
+    })
 
     return { duplicate: false }
   }
@@ -292,7 +297,7 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
       const relativeFilePath = videoImportData.archiveFiles?.captions?.[captionImport.language]
 
       if (!relativeFilePath) {
-        logger.warn('Cannot import caption ' + captionImport.language + ': file does not exist in the archive', lTags(video.uuid))
+        logger.warn('Cannot import caption ' + captionImport.language + ': file does not exist in the archive')
         continue
       }
 
@@ -361,7 +366,7 @@ export class VideosImporter extends AbstractUserImporter<VideoExportJSON, Import
     const acceptedResult = await Hooks.wrapFun(isLocalVideoFileAccepted, acceptParameters, 'filter:api.video.user-import.accept.result')
 
     if (acceptedResult?.accepted !== true) {
-      logger.info('Refused local video file to import.', { acceptedResult, acceptParameters, ...lTags() })
+      logger.info('Refused local video file to import.', { acceptedResult, acceptParameters })
 
       throw new Error('Video file is not accepted: ' + acceptedResult.errorMessage || 'unknown reason')
     }

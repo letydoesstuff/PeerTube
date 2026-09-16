@@ -1,6 +1,6 @@
 /* oxlint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/no-floating-promises */
 
-import { uuidRegex } from '@peertube/peertube-core-utils'
+import { uuidRegex, wait } from '@peertube/peertube-core-utils'
 import { ffprobePromise } from '@peertube/peertube-ffmpeg'
 import {
   FileStorage,
@@ -105,17 +105,22 @@ export async function completeWebVideoFilesCheck (options: {
 
       await Promise.all([
         makeRawRequest({ url: file.torrentUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
-        makeRawRequest({ url: file.torrentDownloadUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
         makeRawRequest({ url: file.metadataUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
-        makeRawRequest({ url: file.fileUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
-        makeRawRequest({
-          url: file.fileDownloadUrl,
-          token,
-          expectedStatus: objectStorageBaseUrl
-            ? HttpStatusCode.FOUND_302
-            : HttpStatusCode.OK_200
-        })
+        makeRawRequest({ url: file.fileUrl, token, expectedStatus: HttpStatusCode.OK_200 })
       ])
+
+      if (video.downloadEnabled) {
+        await Promise.all([
+          makeRawRequest({ url: file.torrentDownloadUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
+          makeRawRequest({
+            url: file.fileDownloadUrl,
+            token,
+            expectedStatus: objectStorageBaseUrl
+              ? HttpStatusCode.FOUND_302
+              : HttpStatusCode.OK_200
+          })
+        ])
+      }
     }
 
     expect(file.resolution.id).to.equal(attributeFile.resolution)
@@ -345,7 +350,14 @@ export async function checkVideoFilesWereRemoved (options: {
     const existingFiles = await readdir(directoryPath)
     for (const existingFile of existingFiles) {
       for (const shouldNotExist of directories[directory]) {
-        expect(existingFile, `File ${existingFile} should not exist in ${directoryPath}`).to.not.contain(shouldNotExist)
+        if (existingFile === shouldNotExist) {
+          // Allow 1000ms more for the file to be removed, because sometimes the file is still being removed when we check it
+          await wait(1000)
+
+          if (await pathExists(join(directoryPath, existingFile))) {
+            expect(existingFile, `File ${existingFile} should not exist in ${directoryPath}`).to.not.equal(shouldNotExist)
+          }
+        }
       }
     }
   }

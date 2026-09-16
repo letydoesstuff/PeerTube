@@ -1,7 +1,6 @@
 import { arrayify } from '@peertube/peertube-core-utils'
 import {
   ActivityPubActor,
-  ActivityPubActorType,
   ActivityUpdate,
   ActivityUpdateObject,
   CacheFileObject,
@@ -14,7 +13,7 @@ import { isRedundancyAccepted } from '@server/lib/redundancy.js'
 import { isCacheFileObjectValid } from '../../../helpers/custom-validators/activitypub/cache-file.js'
 import { sanitizeAndCheckVideoTorrentObject } from '../../../helpers/custom-validators/activitypub/videos.js'
 import { retryTransactionWrapper } from '../../../helpers/database-utils.js'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { sequelizeTypescript } from '../../../initializers/database.js'
 import { ActorModel } from '../../../models/actor/actor.js'
 import { APProcessorOptions } from '../../../types/activitypub-processor.model.js'
@@ -26,8 +25,10 @@ import { createOrUpdateCacheFile } from '../cache-file.js'
 import { upsertAPPlayerSettings } from '../player-settings.js'
 import { createOrUpdateVideoPlaylist } from '../playlists/index.js'
 import { forwardVideoRelatedActivity } from '../send/shared/send-utils.js'
-import { APVideoUpdater, canVideoBeFederated, getOrCreateAPVideo, maybeGetOrCreateAPVideo } from '../videos/index.js'
 import { checkUrlsSameHost, isLocalUrl } from '../url.js'
+import { APVideoUpdater, canVideoBeFederated, getOrCreateAPVideo, maybeGetOrCreateAPVideo } from '../videos/index.js'
+
+const logger = createLogger()
 
 async function processUpdateActivity (options: APProcessorOptions<ActivityUpdate<ActivityUpdateObject>>) {
   const { activity, byActor } = options
@@ -36,10 +37,10 @@ async function processUpdateActivity (options: APProcessorOptions<ActivityUpdate
   const objectType = object.type
 
   if (objectType === 'Video') {
-    return retryTransactionWrapper(processUpdateVideo, byActor, activity)
+    return retryTransactionWrapper(() => processUpdateVideo(byActor, activity as ActivityUpdate<VideoObject | string>))
   }
 
-  if (isActorTypeValid(objectType as ActivityPubActorType)) {
+  if (isActorTypeValid(objectType)) {
     // An actor can only update itself: the object id must be the actor that signed the activity
     const actorObjectId = getAPId(object as ActivityPubActor)
     if (actorObjectId !== byActor.url) {
@@ -49,21 +50,21 @@ async function processUpdateActivity (options: APProcessorOptions<ActivityUpdate
 
     // We need more attributes
     const byActorFull = await ActorModel.loadByUrlAndPopulateAccountAndChannel(byActor.url)
-    return retryTransactionWrapper(processUpdateActor, byActorFull, object)
+    return retryTransactionWrapper(() => processUpdateActor(byActorFull, object as ActivityPubActor))
   }
 
   if (objectType === 'CacheFile') {
     // We need more attributes
     const byActorFull = await ActorModel.loadByUrlAndPopulateAccountAndChannel(byActor.url)
-    return retryTransactionWrapper(processUpdateCacheFile, byActorFull, activity, object)
+    return retryTransactionWrapper(() => processUpdateCacheFile(byActorFull, activity as ActivityUpdate<CacheFileObject | string>, object))
   }
 
   if (objectType === 'Playlist') {
-    return retryTransactionWrapper(processUpdatePlaylist, byActor, activity, object)
+    return retryTransactionWrapper(() => processUpdatePlaylist(byActor, activity as ActivityUpdate<PlaylistObject | string>, object))
   }
 
   if (objectType === 'PlayerSettings') {
-    return retryTransactionWrapper(processUpdatePlayerSettings, byActor, object)
+    return retryTransactionWrapper(() => processUpdatePlayerSettings(byActor, object))
   }
 
   return undefined

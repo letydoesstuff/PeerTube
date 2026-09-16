@@ -1,26 +1,19 @@
-import {
-  ManageVideoTorrentPayload,
-  VideoFileStream,
-  VideoPrivacy,
-  VideoPrivacyType,
-  VideoState,
-  VideoStateType
-} from '@peertube/peertube-models'
+import { VideoFileStream, VideoState, VideoStateType } from '@peertube/peertube-models'
 import { CONFIG } from '@server/initializers/config.js'
 import { VideoJobInfoModel } from '@server/models/video/video-job-info.js'
 import { VideoModel } from '@server/models/video/video.js'
-import { MVideo, MVideoFile, MVideoFull, MVideoUUID } from '@server/types/models/index.js'
+import { MVideo, MVideoFile, MVideoUUID } from '@server/types/models/index.js'
+import { buildNonDuplicatedFederateVideoJob } from './activitypub/videos/federate.js'
+import { buildNonDuplicatedVideoAutomaticTagsJob } from './automatic-tags/automatic-tags.js'
 import { CreateJobOptions, CreateJobTypeAndPayload, JobQueue } from './job-queue/job-queue.js'
 import { VideoStoryboardJobHandler } from './runners/index.js'
 import { createTranscriptionTaskIfNeeded } from './video-captions.js'
-import { moveFilesIfPrivacyChanged } from './video-privacy.js'
 
 export async function buildMoveVideoJob (options: {
   video: MVideoUUID
   type: 'move-to-object-storage' | 'move-to-file-system'
 
   moveVideoState?: {
-    isNewVideo: boolean
     previousVideoState: VideoStateType
   }
 }) {
@@ -60,13 +53,7 @@ export async function buildLocalStoryboardJobIfNeeded (options: {
   }
 
   if (federate === true) {
-    return {
-      type: 'federate-video' as 'federate-video',
-      payload: {
-        videoUUID: video.uuid,
-        isNewVideoForFederation: false
-      }
-    }
+    return buildNonDuplicatedFederateVideoJob({ video })
   }
 
   return undefined
@@ -118,6 +105,10 @@ export async function addVideoJobsAfterCreation (options: {
 
     await buildLocalStoryboardJobIfNeeded({ video, federate: false }),
 
+    // Before the notify/federate jobs so an auto tag block policy is applied before the video is announced
+    // And before the transcoding jobs so a plugin auto tagger analyzes the input file while it is still untouched
+    buildNonDuplicatedVideoAutomaticTagsJob({ video, moderation: 'apply' }),
+
     {
       type: 'notify',
       payload: {
@@ -126,13 +117,7 @@ export async function addVideoJobsAfterCreation (options: {
       }
     },
 
-    {
-      type: 'federate-video' as 'federate-video',
-      payload: {
-        videoUUID: video.uuid,
-        isNewVideoForFederation: true
-      }
-    }
+    buildNonDuplicatedFederateVideoJob({ video })
   ]
 
   // No transcoding, move the file directly on object storage
@@ -142,7 +127,6 @@ export async function addVideoJobsAfterCreation (options: {
         type: 'move-to-object-storage',
         video,
         moveVideoState: {
-          isNewVideo: true,
           previousVideoState: undefined
         }
       })
@@ -154,9 +138,7 @@ export async function addVideoJobsAfterCreation (options: {
       type: 'transcoding-job-builder' as 'transcoding-job-builder',
       payload: {
         videoUUID: video.uuid,
-        optimizeJob: {
-          isNewVideo: true
-        }
+        optimizeJob: {}
       }
     })
   }
@@ -168,64 +150,4 @@ export async function addVideoJobsAfterCreation (options: {
   if (generateTranscription === true) {
     await createTranscriptionTaskIfNeeded(video)
   }
-}
-
-export async function addVideoJobsAfterUpdate (options: {
-  video: MVideoFull
-  isNewVideoForFederation: boolean
-
-  nameChanged: boolean
-  oldPrivacy: VideoPrivacyType
-}) {
-  const { video, nameChanged, oldPrivacy, isNewVideoForFederation } = options
-  const jobs: CreateJobTypeAndPayload[] = []
-
-  const filePathChanged = await moveFilesIfPrivacyChanged(video, oldPrivacy)
-  const hls = video.getHLSPlaylist()
-
-  if (filePathChanged && hls) {
-    hls.assignP2PMediaLoaderInfoHashes(video, hls.VideoFiles)
-    await hls.save()
-  }
-
-  if (!video.isLive && (nameChanged || filePathChanged)) {
-    for (const file of (video.VideoFiles || [])) {
-      const payload: ManageVideoTorrentPayload = { action: 'update-metadata', videoId: video.id, videoFileId: file.id }
-
-      jobs.push({ type: 'manage-video-torrent', payload })
-    }
-
-    const hls = video.getHLSPlaylist()
-
-    for (const file of (hls?.VideoFiles || [])) {
-      const payload: ManageVideoTorrentPayload = { action: 'update-metadata', streamingPlaylistId: hls.id, videoFileId: file.id }
-
-      jobs.push({ type: 'manage-video-torrent', payload })
-    }
-  }
-
-  jobs.push({
-    type: 'federate-video',
-    payload: {
-      videoUUID: video.uuid,
-      isNewVideoForFederation
-    }
-  })
-
-  const wasConfidentialVideoForNotification = new Set<VideoPrivacyType>([
-    VideoPrivacy.PRIVATE,
-    VideoPrivacy.UNLISTED
-  ]).has(oldPrivacy)
-
-  if (wasConfidentialVideoForNotification) {
-    jobs.push({
-      type: 'notify',
-      payload: {
-        action: 'new-video',
-        videoUUID: video.uuid
-      }
-    })
-  }
-
-  return JobQueue.Instance.createSequentialJobFlow(...jobs)
 }

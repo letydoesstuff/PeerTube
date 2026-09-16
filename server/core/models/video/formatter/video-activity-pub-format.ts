@@ -26,7 +26,7 @@ import {
   getLocalVideoPlayerSettingsActivityPubUrl,
   getLocalVideoSharesActivityPubUrl
 } from '../../../lib/activitypub/url.js'
-import { MStreamingPlaylistFiles, MUserId, MVideo, MVideoAP, MVideoFile } from '../../../types/models/index.js'
+import { MStreamingPlaylistAP, MUserId, MVideo, MVideoAP, MVideoFileInfoHash } from '../../../types/models/index.js'
 import { sortByResolutionDesc } from './shared/index.js'
 import { getCategoryLabel, getLanguageLabel, getLicenceLabel } from './video-api-format.js'
 
@@ -49,13 +49,13 @@ export function videoModelToActivityPubObject (video: MVideoAP): VideoObject {
       type: 'Link',
       mediaType: 'text/html',
       href: WEBSERVER.URL + video.getWatchStaticPath()
-    } as ActivityUrlObject,
+    },
 
     {
       type: 'Link',
       mediaType: 'text/html',
       href: video.url
-    } as ActivityUrlObject,
+    },
 
     ...buildVideoFileUrls({ video, files: video.VideoFiles }),
 
@@ -65,7 +65,7 @@ export function videoModelToActivityPubObject (video: MVideoAP): VideoObject {
   ]
 
   return {
-    type: 'Video' as 'Video',
+    type: 'Video',
     id: video.url,
     name: video.name,
     duration: getActivityStreamDuration(video.duration),
@@ -203,7 +203,7 @@ function buildPreviewAPAttribute (video: MVideoAP): ActivityPubStoryboard[] {
 
 function buildVideoFileUrls (options: {
   video: MVideo
-  files: MVideoFile[]
+  files: MVideoFileInfoHash[]
   user?: MUserId
 }): ActivityUrlObject[] {
   const { video, files } = options
@@ -231,7 +231,7 @@ function buildVideoFileUrls (options: {
       fps: file.fps
     })
 
-    if (file.hasTorrent()) {
+    if (file.canBuildMagnetUri()) {
       urls.push({
         type: 'Link',
         mediaType: 'application/x-bittorrent' as 'application/x-bittorrent',
@@ -269,9 +269,9 @@ function buildStreamingPlaylistUrls (video: MVideoAP): ActivityPlaylistUrlObject
     }))
 }
 
-function buildStreamingPlaylistTags (video: MVideoAP, playlist: MStreamingPlaylistFiles) {
+function buildStreamingPlaylistTags (video: MVideoAP, playlist: MStreamingPlaylistAP) {
   return [
-    ...playlist.p2pMediaLoaderInfohashes.map(i => ({ type: 'Infohash' as 'Infohash', name: i })),
+    ...(playlist.InfoHashes ?? []).map(i => ({ type: 'Infohash' as 'Infohash', name: i.toP2PMediaLoaderInfohash() })),
 
     {
       type: 'Link',
@@ -310,19 +310,15 @@ function buildTags (video: MVideoAP): (ActivitySensitiveTagObject | ActivityHash
     : []
 
   return [
-    ...tags.map(t =>
-      ({
-        type: 'Hashtag' as 'Hashtag',
-        name: t.name
-      }) as ActivityHashTagObject
-    ),
+    ...tags.map((t): ActivityHashTagObject => ({
+      type: 'Hashtag',
+      name: t.name
+    })),
 
-    ...nsfwFlagsToString(video.nsfwFlags).map(f =>
-      ({
-        type: 'SensitiveTag' as 'SensitiveTag',
-        name: f
-      }) as ActivitySensitiveTagObject
-    )
+    ...nsfwFlagsToString(video.nsfwFlags).map((f): ActivitySensitiveTagObject => ({
+      type: 'SensitiveTag',
+      name: f
+    }))
   ]
 }
 

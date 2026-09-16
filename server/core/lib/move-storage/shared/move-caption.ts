@@ -1,49 +1,40 @@
-import { retryTransactionWrapper } from '@server/helpers/database-utils.js'
-import { logger, LoggerTags, loggerTagsFactory } from '@server/helpers/logger.js'
-import { sequelizeTypescript } from '@server/initializers/database.js'
-import { federateVideoIfNeeded } from '@server/lib/activitypub/videos/federate.js'
+import { createLogger } from '@server/helpers/logger.js'
+import { scheduleVideoFederation } from '@server/lib/activitypub/videos/federate.js'
 import { VideoPathManager } from '@server/lib/video-path-manager.js'
 import { VideoCaptionModel } from '@server/models/video/video-caption.js'
 import { VideoStreamingPlaylistModel } from '@server/models/video/video-streaming-playlist.js'
-import { VideoModel } from '@server/models/video/video.js'
 import { MStreamingPlaylistVideoUUID, MVideoCaption } from '@server/types/models/index.js'
+
+const logger = createLogger()
 
 export async function moveCaptionToStorage (options: {
   captionId: number
-  loggerTags: LoggerTags['tags']
 
   moveCaptionFiles: (captions: MVideoCaption[], hls: MStreamingPlaylistVideoUUID) => Promise<void>
 }) {
   const {
-    loggerTags,
     captionId,
     moveCaptionFiles
   } = options
 
-  const lTagsBase = loggerTagsFactory(...loggerTags)
-
   const caption = await VideoCaptionModel.loadWithVideo(captionId)
 
   if (!caption) {
-    logger.info(`Can't process caption ${captionId}, caption does not exist anymore.`, lTagsBase())
+    logger.info(`Can't process caption ${captionId}, caption does not exist anymore.`)
     return
   }
 
-  const fileMutexReleaser = await VideoPathManager.Instance.lockFiles(caption.Video.uuid)
+  await logger.withContext([ caption.Video.uuid ], async () => {
+    const fileMutexReleaser = await VideoPathManager.Instance.lockFiles(caption.Video.uuid)
 
-  const hls = await VideoStreamingPlaylistModel.loadHLSByVideoWithVideo(caption.videoId)
+    const hls = await VideoStreamingPlaylistModel.loadHLSByVideoWithVideo(caption.videoId)
 
-  try {
-    await moveCaptionFiles([ caption ], hls)
+    try {
+      await moveCaptionFiles([ caption ], hls)
 
-    await retryTransactionWrapper(() => {
-      return sequelizeTypescript.transaction(async t => {
-        const videoFull = await VideoModel.loadFull(caption.Video.id, t)
-
-        await federateVideoIfNeeded(videoFull, false, t)
-      })
-    })
-  } finally {
-    fileMutexReleaser()
-  }
+      scheduleVideoFederation({ video: caption.Video })
+    } finally {
+      fileMutexReleaser()
+    }
+  })
 }

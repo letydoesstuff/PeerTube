@@ -3,7 +3,7 @@ import { exists } from '@server/helpers/custom-validators/misc.js'
 import { Redis as IoRedis, RedisOptions } from 'ioredis'
 import { readFileSync } from 'node:fs'
 import { ConnectionOptions } from 'node:tls'
-import { logger, loggerTagsFactory } from '../helpers/logger.js'
+import { createLogger } from '../helpers/logger.js'
 import { generateRandomString } from '../helpers/utils.js'
 import { CONFIG } from '../initializers/config.js'
 import {
@@ -18,7 +18,7 @@ import {
   WEBSERVER
 } from '../initializers/constants.js'
 
-const lTags = loggerTagsFactory('redis')
+const logger = createLogger('redis')
 
 type StatKind = 'views' | 'downloads'
 
@@ -26,6 +26,7 @@ class Redis {
   private static instance: Redis
   private initialized = false
   private connected = false
+  private quitting = false
   private client: IoRedis
   private prefix: string
 
@@ -38,39 +39,56 @@ class Redis {
     this.initialized = true
 
     const redisMode = CONFIG.REDIS.SENTINEL.ENABLED ? 'sentinel' : 'standalone'
-    logger.info(`Connecting to Redis in "${redisMode}" mode...`, lTags())
+    logger.info(`Connecting to Redis in "${redisMode}" mode...`)
 
     this.client = new IoRedis(Redis.getRedisClientOptions('', { enableAutoPipelining: true }, true))
-    this.client.on('error', err => logger.error('Redis failed to connect', { err, ...lTags() }))
+    this.client.on('error', err => logger.error('Redis failed to connect', { err }))
     this.client.on('connect', () => {
-      logger.info('Connected to redis.', lTags())
+      logger.info('Connected to redis.')
 
       this.connected = true
     })
     this.client.on('reconnecting', ms => {
-      logger.error(`Reconnecting to redis in ${ms}.`, lTags())
+      logger.error(`Reconnecting to redis in ${ms}.`)
     })
     this.client.on('close', () => {
-      logger.error('Connection to redis has closed.', lTags())
+      // Expected when we shut down PeerTube
+      if (this.quitting !== true) logger.error('Connection to redis has closed.')
+
       this.connected = false
     })
 
     this.client.on('end', () => {
-      logger.error('Connection to redis has closed and no more reconnects will be done.', lTags())
+      if (this.quitting === true) {
+        logger.info('Connection to redis has closed.')
+        return
+      }
+
+      logger.error('Connection to redis has closed and no more reconnects will be done.')
     })
 
     this.prefix = 'redis-' + WEBSERVER.HOST + '-'
   }
 
+  async quit () {
+    if (this.initialized !== true) return
+
+    this.initialized = false
+    this.quitting = true
+
+    await this.client.quit()
+  }
+
   static getRedisClientOptions (name?: string, options: RedisOptions = {}, logOptions = false): RedisOptions {
     const connectionName = [ 'PeerTube', name ].join('')
     const connectTimeout = 20000 // Could be slow since node use sync call to compile PeerTube
+    const keepAlive = 30000 // Probe idle connections so dead sockets are detected instead of hanging until ETIMEDOUT
 
     if (CONFIG.REDIS.SENTINEL.ENABLED) {
       if (logOptions) {
         logger.info(
           `Using sentinel redis options`,
-          { sentinels: CONFIG.REDIS.SENTINEL.SENTINELS, name: CONFIG.REDIS.SENTINEL.MASTER_NAME, ...lTags() }
+          { sentinels: CONFIG.REDIS.SENTINEL.SENTINELS, name: CONFIG.REDIS.SENTINEL.MASTER_NAME }
         )
       }
 
@@ -98,6 +116,7 @@ class Redis {
         sentinels: CONFIG.REDIS.SENTINEL.SENTINELS,
         name: CONFIG.REDIS.SENTINEL.MASTER_NAME,
         sentinelTLS,
+        keepAlive,
         ...options
       }
     }
@@ -105,7 +124,7 @@ class Redis {
     if (logOptions) {
       logger.info(
         `Using standalone redis options`,
-        { db: CONFIG.REDIS.DB, host: CONFIG.REDIS.HOSTNAME, port: CONFIG.REDIS.PORT, path: CONFIG.REDIS.SOCKET, ...lTags() }
+        { db: CONFIG.REDIS.DB, host: CONFIG.REDIS.HOSTNAME, port: CONFIG.REDIS.PORT, path: CONFIG.REDIS.SOCKET }
       )
     }
 
@@ -133,6 +152,7 @@ class Redis {
       port: CONFIG.REDIS.PORT,
       path: CONFIG.REDIS.SOCKET,
       showFriendlyErrorStack: true,
+      keepAlive,
       tls,
       ...options
     }
@@ -190,6 +210,33 @@ class Redis {
     return this.getValue(this.generateTwoFactorRequestKey(userId, requestToken))
   }
 
+  /* ************ Login failures ************ */
+
+  // Failures are tracked per source IP
+  // Each IP's contribution to the account lock is capped at MAX_PER_IP so a single IP cannot lock an account by themselves
+  async addLoginFailure (userId: number, ip: string) {
+    const key = this.generateLoginFailureKey(userId)
+    const field = this.generateLoginFailureIPField(ip)
+
+    await this.incrementHashField(key, field)
+    await this.setExpiration(key, CONFIG.RATES_LIMIT.LOGIN_LOCKOUT.WINDOW_MS)
+
+    // Let the caller know the (capped) total so it can detect the exact failure that triggers the lock
+    return this.getLoginFailures(userId)
+  }
+
+  async getLoginFailures (userId: number) {
+    const failuresPerIP = await this.getHash(this.generateLoginFailureKey(userId))
+
+    return Object.values(failuresPerIP).reduce((total, value) => {
+      return total + Math.min(parseInt(value, 10), CONFIG.RATES_LIMIT.LOGIN_LOCKOUT.MAX_PER_IP)
+    }, 0)
+  }
+
+  deleteLoginFailures (userId: number) {
+    return this.removeValue(this.generateLoginFailureKey(userId))
+  }
+
   /* ************ Email verification ************ */
 
   async setUserVerifyEmailVerificationString (userId: number, isPendingEmail: boolean) {
@@ -204,6 +251,10 @@ class Redis {
     return this.getValue(this.generateUserVerifyEmailKey(userId, isPendingEmail))
   }
 
+  deleteUserVerifyEmailLink (userId: number, isPendingEmail: boolean) {
+    return this.removeValue(this.generateUserVerifyEmailKey(userId, isPendingEmail))
+  }
+
   async setRegistrationVerifyEmailVerificationString (registrationId: number) {
     const generatedString = await generateRandomString(32)
 
@@ -214,6 +265,10 @@ class Redis {
 
   async getRegistrationVerifyEmailLink (registrationId: number) {
     return this.getValue(this.generateRegistrationVerifyEmailKey(registrationId))
+  }
+
+  deleteRegistrationVerifyEmailLink (registrationId: number) {
+    return this.removeValue(this.generateRegistrationVerifyEmailKey(registrationId))
   }
 
   /* ************ Contact form per IP ************ */
@@ -479,6 +534,14 @@ class Redis {
     return 'two-factor-request-' + userId + '-' + token
   }
 
+  private generateLoginFailureKey (userId: number) {
+    return 'login-failure-' + userId
+  }
+
+  private generateLoginFailureIPField (ip: string) {
+    return sha256(CONFIG.SECRETS.PEERTUBE + '-' + ip)
+  }
+
   private generateUserVerifyEmailKey (userId: number, isPendingEmail: boolean) {
     return 'verify-email-user-' + userId + (isPendingEmail ? '-pending' : '')
   }
@@ -528,7 +591,7 @@ class Redis {
     try {
       return JSON.parse(value)
     } catch (err) {
-      logger.warn('Cannot parse Redis key %s.', key, { err, ...lTags() })
+      logger.warn('Cannot parse Redis key %s.', key, { err })
       return null
     }
   }
@@ -551,6 +614,14 @@ class Redis {
 
   private increment (key: string) {
     return this.client.incr(this.prefix + key)
+  }
+
+  private incrementHashField (key: string, field: string) {
+    return this.client.hincrby(this.prefix + key, field, 1)
+  }
+
+  private getHash (key: string) {
+    return this.client.hgetall(this.prefix + key)
   }
 
   private async exists (key: string) {

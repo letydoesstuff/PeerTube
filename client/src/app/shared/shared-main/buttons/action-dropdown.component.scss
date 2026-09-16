@@ -99,3 +99,10 @@ button {
 
   @include margin-left(0.5rem !important);
 }
+
+.icon-placeholder {
+  min-width: 22px;
+  max-width: 22px;
+
+  @include margin-right(0.5rem);
+}

@@ -336,12 +336,13 @@ function register (...) {
     getWeight: () => 60,
 
     // Optional function called by PeerTube when the user clicked on the logout button
-    onLogout: user => {
+    // The logout request is also provided, so you can read its headers or its cookies (PeerTube >= 8.3)
+    onLogout: (user, req) => {
       console.log('User %s logged out.', user.username')
     },
 
     // Optional function called by PeerTube when the access token or refresh token are generated/refreshed
-    hookTokenValidity: ({ token, type }) => {
+    hookTokenValidity: ({ token, type, user }) => {
       if (type === 'access') return { valid: true }
       if (type === 'refresh') return { valid: false }
     },
@@ -353,7 +354,17 @@ function register (...) {
           username: 'user'
           email: 'user@example.com'
           role: 2
-          displayName: 'User display name'
+          displayName: 'User display name',
+
+          // Stable identifier of this user in your own system (e.g. LDAP `uid`/`entryUUID`)
+          // When provided, PeerTube links the local account using this id instead of relying only on the
+          // email address, which is more robust if the email changes on your side later on
+          // PeerTube >= 8.3
+          externalId: 'user-1234',
+
+          // Interface/email language of the user, must be one of PeerTube's available locales
+          // PeerTube >= 8.3
+          language: 'fr'
         }
       }
 
@@ -401,6 +412,13 @@ function register (...) {
       role: 2
       displayName: 'User display name',
 
+      // Stable identifier of this user at the identity provider (OIDC `sub` claim, SAML `NameID`...)
+      // When provided, PeerTube links/looks up the local account using this id instead of relying only on the
+      // email address, which is more robust across identity provider email changes and avoids account
+      // confusion from email collisions
+      // PeerTube >= 8.3
+      externalId: 'a1b2c3d4-external-provider-subject-id',
+
       // Custom admin flags (bypass video auto moderation etc.)
       // https://github.com/Chocobozzz/PeerTube/blob/develop/packages/models/src/users/user-flag.model.ts
       // PeerTube >= 5.1
@@ -410,6 +428,10 @@ function register (...) {
       videoQuota: 1024 * 1024 * 1024, // 1GB
       // PeerTube >= 5.1
       videoQuotaDaily: -1, // Unlimited
+
+      // Interface/email language of the user, must be one of PeerTube's available locales
+      // PeerTube >= 8.3
+      language: 'fr',
 
       // Update the user profile if it already exists
       // Default behaviour is no update
@@ -534,6 +556,69 @@ async function register ({
 During live transcode input options are applied once for each target resolution.
 Plugins are responsible for detecting such situation and applying input options only once if necessary.
 
+#### Add automatic tags to videos and comments
+
+**PeerTube >= 8.3**
+
+PeerTube can automatically tags videos and comments (using watched words lists, or the core `external-link` tag).
+Admins and video owners are able to use these tags to automatically block videos or to hold comments for review.
+
+Your plugin can add its own automatic tags using `registerVideoAutoTagger` and `registerCommentAutoTagger`:
+
+```js
+async function register ({
+  registerVideoAutoTagger,
+  registerCommentAutoTagger,
+  peertubeHelpers
+}) {
+  registerCommentAutoTagger({
+    // Tags this auto tagger can assign
+    autoTagNames: [ 'spam' ],
+
+    // Only comment.text is provided
+    handler: async ({ comment }) => {
+      if (await isSpam(comment.text)) return { tags: [ 'spam' ] }
+
+      return { tags: [] }
+    }
+  })
+
+  registerVideoAutoTagger({
+    autoTagNames: [ 'short-video' ],
+
+    // Only video.id, video.name and video.description are provided
+    handler: async ({ video }) => {
+      const files = await peertubeHelpers.videos.getFiles(video.id)
+      const file = [ ...(files?.webVideo?.videoFiles || []), ...(files?.hls?.videoFiles || []) ][0]
+
+      // A live video has no file yet
+      if (!file) return { tags: [] }
+
+      // Download the file if it is stored in object storage
+      const duration = await peertubeHelpers.videos.withFile({ videoId: video.id, videoFileId: file.id }, async path => {
+        const probe = await peertubeHelpers.videos.ffprobe(path)
+
+        return probe.format.duration
+      })
+
+      return { tags: duration < 10 ? [ 'short-video' ] : [] }
+    }
+  })
+}
+```
+
+How auto taggers work:
+ * Names declared in `autoTagNames` are shown in the automatic tag policy settings, so admins (videos and comments) and video owners (comments) can select them
+ * The handler can only assign tags declared in `autoTagNames`. PeerTube ignores any other tag the handler returns
+ * Video tags are assigned to the instance. Comment tags are assigned to both the instance and the video owner
+ * Auto taggers run in a job, outside of any database transaction, so they can take time to return (for example to analyze video files or call an external service)
+ * Video auto taggers run when a local or remote video is created or updated, imported, or when its source file is replaced. A live video has no file yet when its auto taggers run
+ * Comment auto taggers run when a local or remote comment is created
+
+To remove an auto tagger, pass the same options object (the `handler` reference is used for comparison) to `unregisterVideoAutoTagger` or `unregisterCommentAutoTagger`.
+
+You can read the automatic tags of an object using `peertubeHelpers.automaticTags.getServerVideoAutomaticTags({ videoId })`, `peertubeHelpers.automaticTags.getServerCommentAutomaticTags({ commentId })` or `peertubeHelpers.automaticTags.getAccountCommentAutomaticTags({ commentId, accountId })`.
+
 #### Server helpers
 
 PeerTube provides your plugin some helpers. For example:
@@ -552,6 +637,26 @@ async function register ({
   // Load a video
   {
     const video = await peertubeHelpers.videos.loadByUrl('...')
+  }
+
+  // Update video metadata (thumbnail/preview files and the video channel are not supported)
+  {
+    await peertubeHelpers.videos.updateVideo({
+      videoId: '...',
+      attributes: {
+        name: 'New video name',
+        support: 'New support text'
+      }
+    })
+  }
+
+  // Send an email
+  {
+    await peertubeHelpers.email.createJob({
+      to: { email: 'admin@example.com', language: 'en' },
+      subject: 'Hello from my plugin',
+      text: 'Plugin body text'
+    })
   }
 }
 ```
@@ -1254,7 +1359,8 @@ If you want to create an antispam/moderation plugin, you could use the following
  * `filter:api.video-thread.create.accept.result`: to accept or not local thread
  * `filter:api.video-comment-reply.create.accept.result`: to accept or not local replies
  * `filter:api.video-threads.list.result`: to change/hide the text of threads
- * `filter:api.video-thread-comments.list.result`: to change/hide the text of replies
+ * `filter:api.video-thread-comments.list.result`: to change/hide the text of replies. Since PeerTube 8.3 this hook only receives a truncated view of the thread, and its `total` is the number of direct replies of the root comment
+ * `filter:api.video-comment-replies.list.result`: to change/hide the text of the replies loaded after the thread (PeerTube >= 8.3)
  * `filter:video.auto-blacklist.result`: to automatically blacklist local or remote videos
  * `filter:admin-users-list.bulk-actions.create.result`: to add bulk actions in the admin users list
  * `filter:admin-video-comments-list.actions.create.result`: to add actions in the admin video comments list

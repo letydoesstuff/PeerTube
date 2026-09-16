@@ -1,7 +1,7 @@
 import { browserSleep, FIXTURE_URLS, go } from '../utils'
 
 export class VideoWatchPage {
-  constructor (private isMobileDevice: boolean, private isSafari: boolean) {
+  constructor (private isSafari: boolean) {
   }
 
   waitWatchVideoName (videoName: string, maxTime?: number) {
@@ -176,7 +176,7 @@ export class VideoWatchPage {
     await displayName().waitForDisplayed()
     await displayName().setValue(name)
 
-    return $('.new-playlist-block input[type=submit]').click()
+    return $('my-playlist-create-block input[type=submit]').click()
   }
 
   async saveToPlaylist (name: string) {

@@ -1,6 +1,6 @@
 /* oxlint-disable @typescript-eslint/no-unused-expressions,@typescript-eslint/require-await */
 
-import { getHLS, removeFragmentedMP4Ext, uuidRegex, wait } from '@peertube/peertube-core-utils'
+import { generateSwarmId, getHLS, removeFragmentedMP4Ext, uuidRegex, wait } from '@peertube/peertube-core-utils'
 import {
   FileStorage,
   HttpStatusCode,
@@ -93,19 +93,24 @@ export async function checkPlaylistInfohash (options: {
   const { sqlCommand, video, files } = options
   const hls = getHLS(video)
 
-  const version = 2
+  const peerProtocolVersion = 'v2'
 
-  for (let i = 0; i < files.length; i++) {
-    const str = files[0].resolution.id === VideoResolution.H_NOVIDEO && files.length !== 0
-      ? `v${version}-${hls.playlistUrl}-secondary-0`
-      : `v${version}-${hls.playlistUrl}-main-${i}`
+  for (const file of files) {
+    const isAudioOnly = file.resolution.id === VideoResolution.H_NOVIDEO
+
+    const str = generateSwarmId({
+      peerProtocolVersion,
+      streamType: isAudioOnly ? 'secondary' : 'main',
+      videoUUID: video.uuid,
+      resolution: isAudioOnly ? 0 : file.resolution.id
+    })
 
     const infohash = generateP2PMediaLoaderHash(str)
     const dbInfohashes = await sqlCommand.getPlaylistInfohash(hls.id)
 
     expect(dbInfohashes).to.include(infohash)
 
-    await checkTrackerInfohash(video.account.host, infohash)
+    await checkTrackerInfohash(video.account.host, Buffer.from(infohash, 'ascii').toString('hex'))
   }
 }
 
@@ -185,7 +190,7 @@ export async function checkResolutionsInMasterPlaylist (options: {
   if (splittedAudio && hasAudio && hasVideo) {
     expect(masterPlaylist).to.match(
       new RegExp(
-        `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="(group_Audio|audio)",NAME="(Audio|audio_0)"(,AUTOSELECT=YES)?,DEFAULT=YES,URI="[^.]*0.m3u8"`
+        `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="(group_Audio|audio)",NAME="(Audio|audio_0)"(,AUTOSELECT=YES)?,DEFAULT=YES(,CHANNELS="2")?,URI="[^.]*0.m3u8"`
       )
     )
   }
@@ -243,10 +248,10 @@ export async function completeCheckHlsPlaylist (options: {
   }
 
   for (const server of options.servers) {
-    const videoDetails = await server.videos.getWithToken({ id: videoUUID })
-    const isOrigin = videoDetails.account.host === server.host
+    const video = await server.videos.getWithToken({ id: videoUUID })
+    const isOrigin = video.account.host === server.host
 
-    const requiresAuth = videoDetails.privacy.id === VideoPrivacy.PRIVATE || videoDetails.privacy.id === VideoPrivacy.INTERNAL
+    const requiresAuth = video.privacy.id === VideoPrivacy.PRIVATE || video.privacy.id === VideoPrivacy.INTERNAL
 
     const privatePath = requiresAuth
       ? 'private/'
@@ -255,18 +260,18 @@ export async function completeCheckHlsPlaylist (options: {
       ? server.accessToken
       : undefined
 
-    const baseUrl = `http://${videoDetails.account.host}`
+    const baseUrl = `http://${video.account.host}`
 
-    expect(videoDetails.streamingPlaylists).to.have.lengthOf(1)
+    expect(video.streamingPlaylists).to.have.lengthOf(1)
 
-    const hlsPlaylist = videoDetails.streamingPlaylists.find(p => p.type === VideoStreamingPlaylistType.HLS)
+    const hlsPlaylist = video.streamingPlaylists.find(p => p.type === VideoStreamingPlaylistType.HLS)
     expect(hlsPlaylist).to.not.be.undefined
 
     const hlsFiles = hlsPlaylist.files
     expect(hlsFiles).to.have.lengthOf(hlsResolutions.length)
 
-    if (hlsOnly) expect(videoDetails.files).to.have.lengthOf(0)
-    else expect(videoDetails.files).to.have.lengthOf(webVideoResolutions.length)
+    if (hlsOnly) expect(video.files).to.have.lengthOf(0)
+    else expect(video.files).to.have.lengthOf(webVideoResolutions.length)
 
     // Check JSON files
     for (const resolution of hlsResolutions) {
@@ -281,7 +286,7 @@ export async function completeCheckHlsPlaylist (options: {
         objectStorageBaseUrl,
         requiresAuth,
         server,
-        videoDetails,
+        video,
         privatePath,
         baseUrl,
         token
@@ -290,7 +295,7 @@ export async function completeCheckHlsPlaylist (options: {
 
     // Check captions
     for (const caption of captions) {
-      await checkHLSCaption({ caption, objectStorageBaseUrl, videoDetails, privatePath, baseUrl, token })
+      await checkHLSCaption({ caption, objectStorageBaseUrl, video, privatePath, baseUrl, token })
     }
 
     // Check master playlist
@@ -367,7 +372,7 @@ export async function completeCheckHlsPlaylist (options: {
     if (isOrigin) {
       const sqlCommand = new SQLCommand(server)
 
-      await checkPlaylistInfohash({ video: videoDetails, sqlCommand, files: hlsFiles })
+      await checkPlaylistInfohash({ video: video, sqlCommand, files: hlsFiles })
       await sqlCommand.cleanup()
     }
   }
@@ -441,7 +446,7 @@ async function checkHLSResolution (options: {
   objectStorageBaseUrl: string | undefined
   requiresAuth: boolean
   server: PeerTubeServer
-  videoDetails: VideoDetails
+  video: VideoDetails
   privatePath: string
   baseUrl: string
   token: string | undefined
@@ -455,7 +460,7 @@ async function checkHLSResolution (options: {
     objectStorageBaseUrl,
     requiresAuth,
     server,
-    videoDetails,
+    video,
     privatePath,
     baseUrl,
     token
@@ -502,42 +507,46 @@ async function checkHLSResolution (options: {
   if (objectStorageBaseUrl && requiresAuth) {
     expect(file.fileUrl).to.match(
       new RegExp(
-        `${server.url}/object-storage-proxy/streaming-playlists/hls/${privatePath}${videoDetails.uuid}/${nameReg}-fragmented.mp4`
+        `${server.url}/object-storage-proxy/streaming-playlists/hls/${privatePath}${video.uuid}/${nameReg}-fragmented.mp4`
       )
     )
   } else if (objectStorageBaseUrl) {
     expectStartWith(file.fileUrl, objectStorageBaseUrl)
   } else {
     expect(file.fileUrl).to.match(
-      new RegExp(`${baseUrl}/static/streaming-playlists/hls/${privatePath}${videoDetails.uuid}/${nameReg}-fragmented.mp4`)
+      new RegExp(`${baseUrl}/static/streaming-playlists/hls/${privatePath}${video.uuid}/${nameReg}-fragmented.mp4`)
     )
   }
 
   await Promise.all([
     makeRawRequest({ url: file.torrentUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
-    makeRawRequest({ url: file.torrentDownloadUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
     makeRawRequest({ url: file.metadataUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
-    makeRawRequest({ url: file.fileUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
-
-    makeRawRequest({
-      url: file.fileDownloadUrl,
-      token,
-      expectedStatus: objectStorageBaseUrl
-        ? HttpStatusCode.FOUND_302
-        : HttpStatusCode.OK_200
-    })
+    makeRawRequest({ url: file.fileUrl, token, expectedStatus: HttpStatusCode.OK_200 })
   ])
+
+  if (video.downloadEnabled) {
+    await Promise.all([
+      makeRawRequest({ url: file.torrentDownloadUrl, token, expectedStatus: HttpStatusCode.OK_200 }),
+      makeRawRequest({
+        url: file.fileDownloadUrl,
+        token,
+        expectedStatus: objectStorageBaseUrl
+          ? HttpStatusCode.FOUND_302
+          : HttpStatusCode.OK_200
+      })
+    ])
+  }
 }
 
 async function checkHLSCaption (options: {
   caption: VideoCaption
   objectStorageBaseUrl: string | undefined
-  videoDetails: VideoDetails
+  video: VideoDetails
   privatePath: string
   baseUrl: string
   token: string | undefined
 }) {
-  const { caption, objectStorageBaseUrl, videoDetails, privatePath, baseUrl, token } = options
+  const { caption, objectStorageBaseUrl, video, privatePath, baseUrl, token } = options
 
   expect(caption.fileUrl).to.exist
   expect(caption.m3u8Url).to.exist
@@ -549,7 +558,7 @@ async function checkHLSCaption (options: {
     const nameReg = basename(caption.fileUrl).replace(/\.vtt$/, '.m3u8')
 
     expect(caption.m3u8Url).to.match(
-      new RegExp(`${baseUrl}/static/streaming-playlists/hls/${privatePath}${videoDetails.uuid}/${nameReg}`)
+      new RegExp(`${baseUrl}/static/streaming-playlists/hls/${privatePath}${video.uuid}/${nameReg}`)
     )
   }
 
@@ -557,6 +566,6 @@ async function checkHLSCaption (options: {
 
   const { text } = await makeRawRequest({ url: caption.m3u8Url, token, expectedStatus: HttpStatusCode.OK_200 })
   expect(text).to.match(new RegExp(`^#EXTM3U`))
-  expect(text).to.include(`#EXT-X-TARGETDURATION:${videoDetails.duration}`)
+  expect(text).to.include(`#EXT-X-TARGETDURATION:${video.duration}`)
   expect(text).to.include(caption.fileUrl)
 }

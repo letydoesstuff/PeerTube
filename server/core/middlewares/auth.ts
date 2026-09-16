@@ -1,11 +1,14 @@
 import { HttpStatusCode, HttpStatusCodeType, ServerErrorCodeType } from '@peertube/peertube-models'
-import { getAccessToken } from '@server/lib/auth/oauth-model.js'
+import { getAccessToken } from '@server/lib/auth/oauth-token.js'
+import { UpdateTokenSessionScheduler } from '@server/lib/schedulers/update-token-session-scheduler.js'
 import { RunnerModel } from '@server/models/runner/runner.js'
 import express from 'express'
 import { Socket } from 'socket.io'
-import { logger } from '../helpers/logger.js'
-import { handleOAuthAuthenticate } from '../lib/auth/oauth.js'
-import { UpdateTokenSessionScheduler } from '@server/lib/schedulers/update-token-session-scheduler.js'
+import { addLoggerContextTags, createLogger } from '../helpers/logger.js'
+import { CONFIG } from '../initializers/config.js'
+import { handleOAuthAuthenticate } from '../lib/auth/oauth-handlers.js'
+
+const logger = createLogger()
 
 export function authenticate (req: express.Request, res: express.Response, next: express.NextFunction) {
   handleOAuthAuthenticate(req, res)
@@ -18,6 +21,9 @@ export function authenticate (req: express.Request, res: express.Response, next:
         lastActivityIP: req.ip,
         lastActivityDevice: req.header('user-agent')
       })
+
+      // A global middleware create the context
+      if (CONFIG.LOG.TAG_REQUESTS) addLoggerContextTags(token.User.username)
 
       return next()
     })

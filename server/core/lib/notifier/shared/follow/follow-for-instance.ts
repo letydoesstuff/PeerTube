@@ -1,6 +1,6 @@
 import { UserNotificationType, UserRight } from '@peertube/peertube-models'
 import { t } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
 import { isBlockedByServerOrAccount } from '@server/lib/blocklist.js'
@@ -8,6 +8,8 @@ import { UserNotificationModel } from '@server/models/user/user-notification.js'
 import { UserModel } from '@server/models/user/user.js'
 import { MActorFollowFull, MUserDefault, MUserWithNotificationSetting, UserNotificationModelForApi } from '@server/types/models/index.js'
 import { AbstractNotification } from '../common/abstract-notification.js'
+
+const logger = createLogger()
 
 export class FollowForInstance extends AbstractNotification<MActorFollowFull> {
   private admins: MUserDefault[]
@@ -59,11 +61,9 @@ export class FollowForInstance extends AbstractNotification<MActorFollowFull> {
       to,
       subject: t('New follower for {instanceName}', language, { instanceName: CONFIG.INSTANCE.NAME }),
       text,
-      locals: {
-        action: {
-          text: t('Review followers', language),
-          url: WEBSERVER.URL + '/admin/follows/followers-list'
-        }
+      action: {
+        text: t('Review followers', language),
+        url: WEBSERVER.URL + '/admin/follows/followers-list'
       }
     }
   }

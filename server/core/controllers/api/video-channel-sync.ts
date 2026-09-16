@@ -1,6 +1,6 @@
-import { HttpStatusCode, VideoChannelActivityAction, VideoChannelSyncState } from '@peertube/peertube-models'
+import { HttpStatusCode, VideoChannelActivityAction, StreamSyncState } from '@peertube/peertube-models'
 import { auditLoggerFactory, getAuditIdFromRes, VideoChannelSyncAuditView } from '@server/helpers/audit-logger.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { sequelizeTypescript } from '@server/initializers/database.js'
 import {
   apiRateLimiter,
@@ -15,6 +15,8 @@ import { VideoChannelActivityModel } from '@server/models/video/video-channel-ac
 import { VideoChannelSyncModel } from '@server/models/video/video-channel-sync.js'
 import { MChannelSyncFormattable } from '@server/types/models/index.js'
 import express from 'express'
+
+const logger = createLogger()
 
 const videoChannelSyncRouter = express.Router()
 const auditLogger = auditLoggerFactory('channel-syncs')
@@ -44,7 +46,8 @@ async function createVideoChannelSync (req: express.Request, res: express.Respon
   const syncCreated: MChannelSyncFormattable = new VideoChannelSyncModel({
     externalChannelUrl: req.body.externalChannelUrl,
     videoChannelId: req.body.videoChannelId,
-    state: VideoChannelSyncState.WAITING_FIRST_RUN
+    videoPrivacy: req.body.videoPrivacy,
+    state: StreamSyncState.WAITING_FIRST_RUN
   })
 
   await sequelizeTypescript.transaction(async transaction => {

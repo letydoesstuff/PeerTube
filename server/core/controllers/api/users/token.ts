@@ -1,12 +1,14 @@
 import { InvalidGrantError } from '@node-oauth/oauth2-server'
-import { ResultList, ScopedToken, TokenSession } from '@peertube/peertube-models'
+import { ResultList, TokenSession } from '@peertube/peertube-models'
 import { buildUUID } from '@peertube/peertube-node-utils'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { OTP } from '@server/initializers/constants.js'
-import { getAuthNameFromRefreshGrant, consumeBypassFromExternalAuth, getBypassFromPasswordGrant } from '@server/lib/auth/external-auth.js'
-import { BypassLogin, revokeToken } from '@server/lib/auth/oauth-model.js'
-import { handleOAuthToken, MissingTwoFactorError } from '@server/lib/auth/oauth.js'
+import { BypassLogin } from '@server/lib/auth/bypass-login.model.js'
+import { consumeBypassFromExternalAuth, getAuthNameFromRefreshGrant, getBypassFromPasswordGrant } from '@server/lib/auth/external-auth.js'
+import { MissingTwoFactorError } from '@server/lib/auth/oauth-errors.js'
+import { handleOAuthClient, handleOAuthToken } from '@server/lib/auth/oauth-handlers.js'
+import { revokeToken } from '@server/lib/auth/oauth-token.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
 import {
   asyncMiddleware,
@@ -20,11 +22,15 @@ import {
 } from '@server/middlewares/index.js'
 import { manageTokenSessionsValidator, revokeTokenSessionValidator } from '@server/middlewares/validators/token.js'
 import { OAuthTokenModel } from '@server/models/oauth/oauth-token.js'
+import cookieParser from 'cookie-parser'
 import express from 'express'
+
+const logger = createLogger()
 
 const tokensRouter = express.Router()
 
 const loginRateLimiter = buildRateLimiter({
+  enabled: CONFIG.RATES_LIMIT.LOGIN.ENABLED,
   windowMs: CONFIG.RATES_LIMIT.LOGIN.WINDOW_MS,
   max: CONFIG.RATES_LIMIT.LOGIN.MAX
 })
@@ -40,6 +46,8 @@ tokensRouter.post(
   '/revoke-token',
   openapiOperationDoc({ operationId: 'revokeOAuthToken' }),
   authenticate,
+  // Ensure cookies are available for auth plugins `onLogout`
+  cookieParser(),
   asyncMiddleware(handleTokenRevocation)
 )
 
@@ -61,6 +69,8 @@ tokensRouter.post(
   authenticate,
   asyncMiddleware(manageTokenSessionsValidator),
   asyncMiddleware(revokeTokenSessionValidator),
+  // The API router is mounted before the global cookie parser, so parse them here for auth plugins `onLogout`
+  cookieParser(),
   asyncMiddleware(revokeTokenSession)
 )
 
@@ -89,18 +99,20 @@ async function handleToken (req: express.Request, res: express.Response, next: e
   const grantType = req.body.grant_type
 
   try {
+    const client = await handleOAuthClient(req)
+
     const bypassLogin = await buildByPassLogin(req, grantType)
 
     const refreshTokenAuthName = grantType === 'refresh_token'
       ? await getAuthNameFromRefreshGrant(req.body.refresh_token)
       : undefined
 
-    const options = {
+    const token = await handleOAuthToken({
+      req,
+      client,
       refreshTokenAuthName,
       bypassLogin
-    }
-
-    const token = await handleOAuthToken(req, options)
+    })
 
     res.set('Cache-Control', 'no-store')
     res.set('Pragma', 'no-cache')
@@ -177,7 +189,7 @@ function getScopedTokens (req: express.Request, res: express.Response) {
 
   return res.json({
     feedToken: user.feedToken
-  } as ScopedToken)
+  })
 }
 
 async function renewScopedTokens (req: express.Request, res: express.Response) {
@@ -188,7 +200,7 @@ async function renewScopedTokens (req: express.Request, res: express.Response) {
 
   return res.json({
     feedToken: user.feedToken
-  } as ScopedToken)
+  })
 }
 
 async function buildByPassLogin (req: express.Request, grantType: string): Promise<BypassLogin> {

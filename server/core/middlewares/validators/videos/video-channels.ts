@@ -1,14 +1,15 @@
-import { HttpStatusCode, UserRight, VideosImportInChannelCreate } from '@peertube/peertube-models'
+import { HttpStatusCode, UserRight, VIDEO_CHANNEL_STATS_DAYS_OPTIONS, VideosImportInChannelCreate } from '@peertube/peertube-models'
 import { isUrlValid } from '@server/helpers/custom-validators/activitypub/misc.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { loadReservedActorName } from '@server/lib/local-actor.js'
 import { MChannelAccountDefault } from '@server/types/models/index.js'
 import express from 'express'
 import { body, param, query } from 'express-validator'
-import { isBooleanValid, isIdValid, toBooleanOrNull } from '../../../helpers/custom-validators/misc.js'
+import { isBooleanValid, isIdValid, toBooleanOrNull, toIntOrNull } from '../../../helpers/custom-validators/misc.js'
 import {
   isVideoChannelDescriptionValid,
   isVideoChannelDisplayNameValid,
+  isVideoChannelPublicEmailValid,
   isVideoChannelSupportValid,
   isVideoChannelUsernameValid
 } from '../../../helpers/custom-validators/video-channels.js'
@@ -27,6 +28,9 @@ export const videoChannelsAddValidator = [
   body('support')
     .optional()
     .custom(isVideoChannelSupportValid),
+  body('publicEmail')
+    .optional()
+    .custom(isVideoChannelPublicEmailValid),
 
   async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (areValidationErrors(req, res)) return
@@ -63,6 +67,9 @@ export const videoChannelsUpdateValidator = [
   body('support')
     .optional()
     .custom(isVideoChannelSupportValid),
+  body('publicEmail')
+    .optional()
+    .custom(isVideoChannelPublicEmailValid),
   body('bulkVideosSupportUpdate')
     .optional()
     .custom(isBooleanValid).withMessage('Should have a valid bulkVideosSupportUpdate boolean field'),
@@ -107,6 +114,12 @@ export const listAccountChannelsValidator = [
   query('withStats')
     .optional()
     .customSanitizer(toBooleanOrNull),
+
+  query('statsDays')
+    .optional()
+    .customSanitizer(toIntOrNull)
+    .isIn(VIDEO_CHANNEL_STATS_DAYS_OPTIONS)
+    .withMessage(`Should have a valid statsDays value (${VIDEO_CHANNEL_STATS_DAYS_OPTIONS.join(', ')})`),
 
   query('includeCollaborations')
     .optional()

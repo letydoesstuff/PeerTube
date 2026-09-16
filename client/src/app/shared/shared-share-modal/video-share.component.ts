@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, input, model, viewChild } from '@angular/core'
+import { Component, ElementRef, inject, input, model, output, viewChild, ChangeDetectionStrategy } from '@angular/core'
 import { HooksService, ServerService } from '@app/core'
 import { VideoDetails } from '@app/shared/shared-main/video/video-details.model'
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap'
@@ -12,6 +12,7 @@ import { Customizations } from './video-share.model'
 @Component({
   selector: 'my-video-share',
   templateUrl: './video-share.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [
     GlobalIconComponent,
     SharePlaylistComponent,
@@ -31,6 +32,8 @@ export class VideoShareComponent {
   readonly videoCaptions = input<VideoCaption[]>([])
   readonly playlist = input<VideoPlaylist>(null)
   readonly playlistPosition = model<number>(null)
+
+  readonly modalClosed = output()
 
   customizations: Customizations
 
@@ -87,9 +90,13 @@ export class VideoShareComponent {
 
     this.onUpdate()
 
-    this.modalService.open(this.modal(), { centered: true }).shown.subscribe(() => {
+    const activeModal = this.modalService.open(this.modal(), { centered: true })
+
+    activeModal.shown.subscribe(() => {
       this.hooks.runAction('action:modal.share.shown', 'video-watch', { video: this.video(), playlist: this.playlist() })
     })
+
+    activeModal.hidden.subscribe(() => this.modalClosed.emit())
   }
 
   onUpdate () {

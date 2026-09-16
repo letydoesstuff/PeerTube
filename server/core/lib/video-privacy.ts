@@ -1,26 +1,18 @@
 import { FileStorage, VideoPrivacy, VideoPrivacyType } from '@peertube/peertube-models'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { DIRECTORIES } from '@server/initializers/constants.js'
 import { MVideo, MVideoFile, MVideoFull } from '@server/types/models/index.js'
 import { move } from 'fs-extra/esm'
 import { join } from 'path'
 import { updateHLSFilesACL, updateWebVideoFileACL } from './object-storage/index.js'
 
-const lTags = loggerTagsFactory('video-privacy')
+const logger = createLogger('video-privacy')
 
 const validPrivacySet = new Set<VideoPrivacyType>([
   VideoPrivacy.PRIVATE,
   VideoPrivacy.INTERNAL,
   VideoPrivacy.PASSWORD_PROTECTED
 ])
-
-export function setVideoPrivacy (video: MVideo, newPrivacy: VideoPrivacyType) {
-  if (video.privacy === VideoPrivacy.PRIVATE && newPrivacy !== VideoPrivacy.PRIVATE) {
-    video.publishedAt = new Date()
-  }
-
-  video.privacy = newPrivacy
-}
 
 export function isVideoInPrivateDirectory (privacy: VideoPrivacyType) {
   return validPrivacySet.has(privacy)
@@ -48,6 +40,22 @@ export async function moveFilesIfPrivacyChanged (video: MVideoFull, oldPrivacy: 
   return false
 }
 
+// Return true if the video was private/unlisted/password protected and now is public/internal
+export function isNewVideoForSubscription (options: {
+  currentPrivacy: VideoPrivacyType
+  newPrivacy: VideoPrivacyType
+  firstPublishedAt: Date
+}) {
+  const { currentPrivacy, newPrivacy, firstPublishedAt } = options
+
+  if (currentPrivacy !== VideoPrivacy.PRIVATE) return false
+  if (firstPublishedAt) return false
+
+  if (newPrivacy !== VideoPrivacy.PUBLIC && newPrivacy !== VideoPrivacy.INTERNAL) return false
+
+  return true
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -72,7 +80,7 @@ async function moveFiles (options: {
       try {
         await updateWebVideoFileACL(video, file)
       } catch (err) {
-        logger.error(objectStorageErrorMsg, { err, ...lTags('object-storage', video.uuid) })
+        logger.error(objectStorageErrorMsg, { err })
       }
     }
   }
@@ -86,7 +94,7 @@ async function moveFiles (options: {
       try {
         await updateHLSFilesACL(video)
       } catch (err) {
-        logger.error(objectStorageErrorMsg, { err, ...lTags('object-storage', video.uuid) })
+        logger.error(objectStorageErrorMsg, { err })
       }
     }
   }

@@ -24,6 +24,15 @@ export class SQLCommand {
     return parseInt(total, 10)
   }
 
+  async getVideoField (uuid: string, field: string) {
+    const rows = await this.selectQuery<{ value: any }>(
+      `SELECT ${this.escapeColumnName(field)} AS value FROM "video" WHERE uuid = :uuid`,
+      { uuid }
+    )
+
+    return rows[0]?.value
+  }
+
   async getInternalFileUrl (fileId: number) {
     return this.selectQuery<{ fileUrl: string }>(`SELECT "fileUrl" FROM "videoFile" WHERE id = :fileId`, { fileId })
       .then(rows => rows[0].fileUrl)
@@ -98,6 +107,15 @@ export class SQLCommand {
     await this.updateQuery(`UPDATE "user" SET email = :email WHERE "username" = :username`, { email, username })
   }
 
+  async getUserExternalId (username: string) {
+    const rows = await this.selectQuery<{ pluginAuthExternalId: string }>(
+      `SELECT "pluginAuthExternalId" FROM "user" WHERE "username" = :username`,
+      { username }
+    )
+
+    return rows[0]?.pluginAuthExternalId
+  }
+
   // ---------------------------------------------------------------------------
 
   async setImportUrl (videoImportId: number, importUrl: string) {
@@ -153,12 +171,13 @@ export class SQLCommand {
   // ---------------------------------------------------------------------------
 
   async getPlaylistInfohash (playlistId: number) {
-    const query = 'SELECT "p2pMediaLoaderInfohashes" FROM "videoStreamingPlaylist" WHERE id = :playlistId'
+    const query = `SELECT CONVERT_FROM("infohash", 'SQL_ASCII') AS "infohash" ` +
+      `FROM "videoInfohash" WHERE "videoStreamingPlaylistId" = :playlistId`
 
-    const result = await this.selectQuery<{ p2pMediaLoaderInfohashes: string }>(query, { playlistId })
+    const result = await this.selectQuery<{ infohash: string }>(query, { playlistId })
     if (!result || result.length === 0) return []
 
-    return result[0].p2pMediaLoaderInfohashes
+    return result.map(r => r.infohash)
   }
 
   // ---------------------------------------------------------------------------

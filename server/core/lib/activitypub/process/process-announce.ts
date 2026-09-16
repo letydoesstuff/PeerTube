@@ -1,7 +1,7 @@
 import { ActivityAnnounce } from '@peertube/peertube-models'
 import { getAPId } from '@server/lib/activitypub/activity.js'
 import { retryTransactionWrapper } from '../../../helpers/database-utils.js'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { sequelizeTypescript } from '../../../initializers/database.js'
 import { VideoShareModel } from '../../../models/video/video-share.js'
 import { APProcessorOptions } from '../../../types/activitypub-processor.model.js'
@@ -11,6 +11,8 @@ import { forwardVideoRelatedActivity } from '../send/shared/send-utils.js'
 import { checkUrlsSameHost } from '../url.js'
 import { maybeGetOrCreateAPVideo } from '../videos/index.js'
 
+const logger = createLogger()
+
 async function processAnnounceActivity (options: APProcessorOptions<ActivityAnnounce>) {
   const { activity, byActor: actorAnnouncer } = options
   // Only notify if it is not from a fetcher job
@@ -19,7 +21,7 @@ async function processAnnounceActivity (options: APProcessorOptions<ActivityAnno
   // Announces by accounts are not supported
   if (actorAnnouncer.type !== 'Application' && actorAnnouncer.type !== 'Group') return
 
-  return retryTransactionWrapper(processVideoShare, actorAnnouncer, activity, notify)
+  return retryTransactionWrapper(() => processVideoShare(actorAnnouncer, activity, notify))
 }
 
 // ---------------------------------------------------------------------------

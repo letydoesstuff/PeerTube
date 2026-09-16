@@ -1,4 +1,11 @@
-import { ActivityPubActor, ActivityUrlObject, VideoChannel, VideoChannelSummary, VideoPrivacy } from '@peertube/peertube-models'
+import {
+  ActivityPubActor,
+  ActivityUrlObject,
+  VIDEO_CHANNEL_STATS_DAYS_DEFAULT,
+  VideoChannel,
+  VideoChannelSummary,
+  VideoPrivacy
+} from '@peertube/peertube-models'
 import { AttributesOnly } from '@peertube/peertube-typescript-utils'
 import { CONFIG } from '@server/initializers/config.js'
 import { getLocalActorPlayerSettingsActivityPubUrl } from '@server/lib/activitypub/url.js'
@@ -28,6 +35,7 @@ import {
 import {
   isVideoChannelDescriptionValid,
   isVideoChannelDisplayNameValid,
+  isVideoChannelPublicEmailValid,
   isVideoChannelSupportValid
 } from '../../helpers/custom-validators/video-channels.js'
 import { CONSTRAINTS_FIELDS, WEBSERVER } from '../../initializers/constants.js'
@@ -42,7 +50,7 @@ import {
   MChannelSummaryFormattable,
   type MChannel
 } from '../../types/models/video/index.js'
-import { AccountModel, ScopeNames as AccountModelScopeNames, SummaryOptions as AccountSummaryOptions } from '../account/account.js'
+import { AccountModel, ScopeNames as AccountModelScopeNames } from '../account/account.js'
 import { ActorImageModel } from '../actor/actor-image.js'
 import { ActorModel, actorSummaryAttributes } from '../actor/actor.js'
 import { ServerModel, serverSummaryAttributes } from '../server/server.js'
@@ -105,7 +113,7 @@ export type SummaryOptions = {
     if (options.withAccount === true) {
       include.push({
         model: AccountModel.scope({
-          method: [ AccountModelScopeNames.SUMMARY, { withAccountBlockerIds: options.withAccountBlockerIds } as AccountSummaryOptions ]
+          method: [ AccountModelScopeNames.SUMMARY, { withAccountBlockerIds: options.withAccountBlockerIds } ]
         }),
         required: true
       })
@@ -175,6 +183,12 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
   @Is('VideoChannelSupport', value => throwIfNotValid(value, isVideoChannelSupportValid, 'support', true))
   @Column(DataType.STRING(CONSTRAINTS_FIELDS.VIDEO_CHANNELS.SUPPORT.max))
   declare support: string
+
+  @AllowNull(true)
+  @Default(null)
+  @Is('VideoChannelPublicEmail', value => throwIfNotValid(value, isVideoChannelPublicEmailValid, 'publicEmail', true))
+  @Column(DataType.STRING(400))
+  declare publicEmail: string
 
   @CreatedAt
   declare createdAt: Date
@@ -356,7 +370,7 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
 
   static listLocalsForSitemap (sort: string): Promise<MChannelHost[]> {
     const query = {
-      attributes: [],
+      attributes: [ 'updatedAt' ],
       offset: 0,
       order: getSort(sort),
       include: [
@@ -394,10 +408,11 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
   static listByAccountForAPI (
     options: Pick<ListVideoChannelsOptions, 'accountId' | 'includeCollaborations' | 'search' | 'start' | 'count' | 'sort'> & {
       withStats?: boolean
+      statsDays?: number
     }
   ) {
     const listOptions = options.withStats
-      ? { ...options, statsDaysPrior: 30 }
+      ? { ...options, statsDaysPrior: options.statsDays ?? VIDEO_CHANNEL_STATS_DAYS_DEFAULT }
       : options
 
     return this.listForApi(listOptions)
@@ -542,6 +557,7 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
   toFormattedJSON (this: MChannelFormattable): VideoChannel {
     const viewsPerDayString = this.get('viewsPerDay') as string
     const videosCount = this.get('videosCount') as number
+    const viewsGroupInterval = this.get('viewsGroupInterval') as VideoChannel['viewsGroupInterval']
 
     let viewsPerDay: { date: Date, views: number }[]
 
@@ -565,6 +581,7 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
       displayName: this.getDisplayName(),
       description: this.description,
       support: this.support,
+      publicEmail: this.publicEmail,
       isLocal: this.Actor.isLocal(),
       updatedAt: this.updatedAt,
 
@@ -572,6 +589,7 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
 
       videosCount,
       viewsPerDay,
+      viewsGroupInterval,
       totalViews,
 
       avatars: actor.avatars
@@ -611,6 +629,9 @@ export class VideoChannelModel extends SequelizeModel<VideoChannelModel> {
       summary: this.description,
       support: this.support,
       postingRestrictedToMods: true,
+
+      email: this.publicEmail,
+
       attributedTo: [
         this.Account.Actor.url
       ]

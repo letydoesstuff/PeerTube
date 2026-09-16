@@ -6,9 +6,11 @@ import { MVideo, MVideoImmutable } from '@server/types/models/index.js'
 import { MRunner } from '@server/types/models/runners/index.js'
 import { UserNotificationModelForApi } from '@server/types/models/user/index.js'
 import { LiveVideoEventPayload, LiveVideoEventType } from '@peertube/peertube-models'
-import { logger } from '../helpers/logger.js'
+import { createLogger } from '../helpers/logger.js'
 import { authenticateRunnerSocket, authenticateSocket } from '../middlewares/index.js'
 import { isDevInstance } from '@peertube/peertube-node-utils'
+
+const logger = createLogger()
 
 class PeerTubeSocket {
   private static instance: PeerTubeSocket
@@ -40,7 +42,14 @@ class PeerTubeSocket {
         socket.on('disconnect', () => {
           logger.debug('User %d disconnected from SocketIO notifications.', userId)
 
-          this.userNotificationSockets[userId] = this.userNotificationSockets[userId].filter(s => s !== socket)
+          const remaining = this.userNotificationSockets[userId]?.filter(s => s !== socket)
+
+          // Don't keep an empty array around forever: it would leak one entry per user that ever connected
+          if (!remaining || remaining.length === 0) {
+            delete this.userNotificationSockets[userId]
+          } else {
+            this.userNotificationSockets[userId] = remaining
+          }
         })
       })
 

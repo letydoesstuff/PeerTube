@@ -1,13 +1,15 @@
 import { UserNotificationSettingValue, UserNotificationType } from '@peertube/peertube-models'
 import { t } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
-import { AccountBlocklistModel } from '@server/models/account/account-blocklist.js'
+import { AccountBlocklistModel } from '@server/models/blocklist/account-blocklist.js'
 import { UserModel } from '@server/models/user/user.js'
 import { MUserDefault, MUserWithNotificationSetting } from '@server/types/models/index.js'
 import { MChangeOwnershipFull } from '@server/types/models/video/change-ownership.js'
 import { AbstractNotification } from '../common/abstract-notification.js'
 import { buildChangeOwnershipNotification } from './change-ownership-utils.js'
+
+const logger = createLogger()
 
 export class RequestChannelChangeOwnership extends AbstractNotification<MChangeOwnershipFull> {
   private user: MUserDefault
@@ -59,11 +61,9 @@ export class RequestChannelChangeOwnership extends AbstractNotification<MChangeO
         initiator: this.payload.Initiator.getDisplayName(),
         channelName: this.payload.VideoChannel.name
       }),
-      locals: {
-        action: {
-          text: t('Review the request', language),
-          url: WEBSERVER.URL + '/my-account/notifications'
-        }
+      action: {
+        text: t('Review the request', language),
+        url: WEBSERVER.URL + '/my-account/notifications'
       }
     }
   }

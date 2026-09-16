@@ -16,7 +16,7 @@ import { isRedundancyAccepted } from '@server/lib/redundancy.js'
 import { VideoCommentModel } from '@server/models/video/video-comment.js'
 import { VideoModel } from '@server/models/video/video.js'
 import { retryTransactionWrapper } from '../../../helpers/database-utils.js'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { sequelizeTypescript } from '../../../initializers/database.js'
 import { APProcessorOptions } from '../../../types/activitypub-processor.model.js'
 import { MActorSignature, MCommentOwnerVideo, MVideoAccountLightBlacklistAllFiles } from '../../../types/models/index.js'
@@ -30,6 +30,8 @@ import { forwardVideoRelatedActivity } from '../send/shared/send-utils.js'
 import { checkUrlsSameHost, getLocalApproveReplyActivityPubUrl } from '../url.js'
 import { resolveThread } from '../video-comments.js'
 import { canVideoBeFederated, getOrCreateAPVideo } from '../videos/index.js'
+
+const logger = createLogger()
 
 async function processCreateActivity (options: APProcessorOptions<ActivityCreate<ActivityCreateObject>>) {
   const { activity, byActor } = options
@@ -47,22 +49,28 @@ async function processCreateActivity (options: APProcessorOptions<ActivityCreate
     // Comments will be fetched from videos
     if (options.fromFetch) return
 
-    return retryTransactionWrapper(processCreateVideoComment, activity, activityObject, byActor, options.fromFetch)
+    return retryTransactionWrapper(() => {
+      return processCreateVideoComment(activity as ActivityCreate<VideoCommentObject | string>, activityObject, byActor, false)
+    })
   }
 
   if (activityType === 'WatchAction') {
     // Watch actions are only sent to the inbox of the video origin, so we never have to process a fetched one
     if (options.fromFetch) return
 
-    return retryTransactionWrapper(processCreateWatchAction, activityObject, byActor)
+    return retryTransactionWrapper(() => processCreateWatchAction(activityObject, byActor))
   }
 
   if (activityType === 'CacheFile') {
-    return retryTransactionWrapper(processCreateCacheFile, activity, activityObject, byActor)
+    return retryTransactionWrapper(() => {
+      return processCreateCacheFile(activity as ActivityCreate<CacheFileObject | string>, activityObject, byActor)
+    })
   }
 
   if (activityType === 'Playlist') {
-    return retryTransactionWrapper(processCreatePlaylist, activity, activityObject, byActor)
+    return retryTransactionWrapper(() => {
+      return processCreatePlaylist(activity as ActivityCreate<PlaylistObject | string>, activityObject, byActor)
+    })
   }
 
   logger.warn('Unknown activity object type %s when creating activity.', activityType, { activity: activity.id })
@@ -143,6 +151,7 @@ async function processCreateVideoComment (
   let video: MVideoAccountLightBlacklistAllFiles
   let created: boolean
   let comment: MCommentOwnerVideo
+  let heldForAutoTags: boolean
 
   try {
     const resolveThreadResult = await resolveThread({ url: commentObject.id, isVideo: false })
@@ -151,6 +160,7 @@ async function processCreateVideoComment (
     video = resolveThreadResult.video
     created = resolveThreadResult.commentCreated
     comment = resolveThreadResult.comment
+    heldForAutoTags = resolveThreadResult.heldForAutoTags
   } catch (err) {
     logger.debug(
       'Cannot process video comment because we could not resolve thread %s. Maybe it was not a video thread, so skip it.',
@@ -187,7 +197,8 @@ async function processCreateVideoComment (
     }
   }
 
-  if (created) Notifier.Instance.notifyOnNewComment(comment)
+  // The `build-object-automatic-tags` job notifies once the held status of the comment is final
+  if (created && !heldForAutoTags) Notifier.Instance.notifyOnNewComment(comment)
 }
 
 // The origin instance re-sends us the comment when we approved the reply

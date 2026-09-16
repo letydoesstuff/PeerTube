@@ -8,7 +8,7 @@ import { RestExtractor } from '@app/core/rest'
 import { ServerService } from '@app/core/server/server.service'
 import { getDevLocale, isOnDevLocale } from '@app/helpers'
 import { CustomModalComponent } from '@app/modal/custom-modal.component'
-import { getCompleteLocale, getKeys, isDefaultLocale, peertubeTranslate } from '@peertube/peertube-core-utils'
+import { getCompleteLocale, getKeys, isDefaultLocale, objectKeysTyped, peertubeTranslate } from '@peertube/peertube-core-utils'
 import {
   ClientDoActionCallback,
   ClientDoActionName,
@@ -31,6 +31,7 @@ import { firstValueFrom, Observable, of } from 'rxjs'
 import { catchError, map, shareReplay } from 'rxjs/operators'
 import { environment } from '../../../environments/environment'
 import { RegisterClientHelpers } from '../../../types/register-client-option.model'
+import { Router } from '@angular/router'
 
 type FormFields = {
   video: {
@@ -50,6 +51,7 @@ export class PluginService implements ClientHook {
   private authHttp = inject(HttpClient)
   private restExtractor = inject(RestExtractor)
   private localeId = inject(LOCALE_ID)
+  private router = inject(Router)
 
   private static BASE_PLUGIN_API_URL = environment.apiUrl + '/api/v1/plugins'
   private static BASE_PLUGIN_URL = environment.apiUrl + '/plugins'
@@ -71,11 +73,11 @@ export class PluginService implements ClientHook {
   private pluginsManager: PluginsManager
 
   private actions = new Map<ClientDoActionName, ClientDoActionCallback>()
-
   constructor () {
     this.loadTranslations()
 
     this.pluginsManager = new PluginsManager({
+      router: this.buildRouter(),
       doAction: this.doAction.bind(this),
       peertubeHelpersFactory: this.buildPeerTubeHelpers.bind(this),
       onFormFields: this.onFormFields.bind(this),
@@ -157,7 +159,7 @@ export class PluginService implements ClientHook {
   }
 
   getAllRegisteredClientRoutes () {
-    return Object.keys(this.clientRoutes)
+    return objectKeysTyped(this.clientRoutes)
       .map((parentRoute: RegisterClientRouteOptions['parentRoute']) => {
         return Object.keys(this.clientRoutes[parentRoute])
           .map(route => {
@@ -171,6 +173,7 @@ export class PluginService implements ClientHook {
 
   async translateSetting (npmName: string, setting: RegisterClientFormFieldOptions) {
     for (const key of getKeys(setting, [ 'label', 'html', 'descriptionHTML' ])) {
+      // eslint-disable-next-line require-atomic-updates
       if (setting[key]) setting[key] = await this.translateBy(npmName, setting[key])
     }
 
@@ -238,6 +241,12 @@ export class PluginService implements ClientHook {
     }
 
     this.clientRoutes[parentRoute][route] = options
+  }
+
+  private buildRouter () {
+    return {
+      navigateByUrl: (url: string) => this.router.navigateByUrl(url)
+    }
   }
 
   private buildPeerTubeHelpers (pluginInfo: PluginInfo): RegisterClientHelpers {

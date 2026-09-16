@@ -1,11 +1,13 @@
 import { UserNotificationType } from '@peertube/peertube-models'
 import { t } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { VIDEO_LANGUAGES, WEBSERVER } from '@server/initializers/constants.js'
 import { UserNotificationModel } from '@server/models/user/user-notification.js'
 import { UserModel } from '@server/models/user/user.js'
 import { MUserDefault, MUserWithNotificationSetting, MVideoCaptionVideo, UserNotificationModelForApi } from '@server/types/models/index.js'
 import { AbstractNotification } from '../common/abstract-notification.js'
+
+const logger = createLogger()
 
 export class VideoTranscriptionGeneratedForOwner extends AbstractNotification<MVideoCaptionVideo> {
   private user: MUserDefault
@@ -60,11 +62,9 @@ export class VideoTranscriptionGeneratedForOwner extends AbstractNotification<MV
         language,
         videoName: video.name
       }),
-      locals: {
-        action: {
-          text: t('View video', userLanguage),
-          url: videoUrl
-        }
+      action: {
+        text: t('View video', userLanguage),
+        url: videoUrl
       }
     }
   }

@@ -44,13 +44,13 @@ import {
   isVideoLanguageValid,
   isVideoLicenceValid,
   isVideoNameValid,
-  isVideoOriginallyPublishedAtValid,
   isVideoPrivacyValid,
+  isVideoPublicationDateValid,
   isVideoSourceFilenameValid,
   isVideoSupportValid
 } from '../../../helpers/custom-validators/videos.js'
 import { cleanUpReqFiles } from '../../../helpers/express-utils.js'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { getVideoWithAttributes } from '../../../helpers/video.js'
 import { CONFIG } from '../../../initializers/config.js'
 import { CONSTRAINTS_FIELDS, OVERVIEWS } from '../../../initializers/constants.js'
@@ -68,6 +68,8 @@ import {
   isValidVideoPasswordHeader
 } from '../shared/index.js'
 import { addDurationToVideoFileIfNeeded, commonVideoFileChecks, isVideoFileAccepted } from './shared/index.js'
+
+const logger = createLogger()
 
 const getVideoUploadCommonValidator = () => [
   body('name')
@@ -308,7 +310,7 @@ export async function checkVideoFollowConstraints (req: express.Request, res: ex
   })
 }
 
-type FetchType = Extract<VideoLoadType, 'for-api' | 'full' | 'with-blacklist' | 'unsafe-immutable-only'>
+type FetchType = Extract<VideoLoadType, 'for-api' | 'ap' | 'full' | 'with-blacklist' | 'unsafe-immutable-only'>
 export const videoGetValidatorFactory = (fetchType: FetchType) => {
   return [
     isValidVideoIdParam('id'),
@@ -481,7 +483,7 @@ export function getCommonVideoEditAttributes () {
     body('originallyPublishedAt')
       .optional()
       .customSanitizer(toValueOrNull)
-      .custom(isVideoOriginallyPublishedAtValid),
+      .custom(isVideoPublicationDateValid),
     body('scheduleUpdate')
       .optional()
       .customSanitizer(toValueOrNull),

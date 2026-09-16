@@ -1,16 +1,19 @@
 import { ActivityDislike } from '@peertube/peertube-models'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { VideoModel } from '@server/models/video/video.js'
 import { retryTransactionWrapper } from '../../../helpers/database-utils.js'
 import { sequelizeTypescript } from '../../../initializers/database.js'
 import { AccountVideoRateModel } from '../../../models/account/account-video-rate.js'
 import { APProcessorOptions } from '../../../types/activitypub-processor.model.js'
 import { MActorSignature } from '../../../types/models/index.js'
-import { canVideoBeFederated, federateVideoIfNeeded, maybeGetOrCreateAPVideo } from '../videos/index.js'
+import { canVideoBeFederated, maybeGetOrCreateAPVideo, scheduleVideoFederation } from '../videos/index.js'
+
+const logger = createLogger()
 
 async function processDislikeActivity (options: APProcessorOptions<ActivityDislike>) {
   const { activity, byActor } = options
-  return retryTransactionWrapper(processDislike, activity, byActor)
+
+  return retryTransactionWrapper(() => processDislike(activity, byActor))
 }
 
 // ---------------------------------------------------------------------------
@@ -36,7 +39,7 @@ async function processDislike (activity: ActivityDislike, byActor: MActorSignatu
   }
 
   return sequelizeTypescript.transaction(async t => {
-    const video = await VideoModel.loadFull(onlyVideo.id, t)
+    const video = await VideoModel.load(onlyVideo.id, t)
 
     const existingRate = await AccountVideoRateModel.loadByAccountAndVideoOrUrl(byAccount.id, video.id, activity.id, t)
     if (existingRate?.type === 'dislike') return
@@ -57,6 +60,6 @@ async function processDislike (activity: ActivityDislike, byActor: MActorSignatu
 
     await rate.save({ transaction: t })
 
-    await federateVideoIfNeeded(video, false, t)
+    scheduleVideoFederation({ video, transaction: t })
   })
 }

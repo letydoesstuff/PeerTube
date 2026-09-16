@@ -14,12 +14,12 @@ import {
   isUserVideosHistoryEnabledValid
 } from '@server/helpers/custom-validators/users.js'
 import { saveInTransactionWithRetries } from '@server/helpers/database-utils.js'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { isThemeRegistered } from '@server/lib/plugins/theme-utils.js'
 import { UserNotificationSettingModel } from '@server/models/user/user-notification-setting.js'
 import { AbstractUserImporter } from './abstract-user-importer.js'
 
-const lTags = loggerTagsFactory('user-import')
+const logger = createLogger()
 
 type SanitizedObject = Pick<
   UserSettingsExportJSON,
@@ -84,7 +84,7 @@ export class UserSettingsImporter extends AbstractUserImporter<UserSettingsExpor
 
     await this.updateSettings(userImportData.notificationSettings)
 
-    logger.info('Settings of user %s imported.', this.user.username, lTags())
+    logger.info('Settings of user %s imported.', this.user.username)
 
     return { duplicate: false }
   }
@@ -108,7 +108,8 @@ export class UserSettingsImporter extends AbstractUserImporter<UserSettingsExpor
       newPeerTubeVersion: settingsImportData.newPeerTubeVersion,
       newPluginVersion: settingsImportData.newPluginVersion,
       myVideoStudioEditionFinished: settingsImportData.myVideoStudioEditionFinished,
-      myVideoTranscriptionGenerated: settingsImportData.myVideoTranscriptionGenerated
+      myVideoTranscriptionGenerated: settingsImportData.myVideoTranscriptionGenerated,
+      automaticBlocklist: settingsImportData.automaticBlocklist
     }
 
     await UserNotificationSettingModel.updateUserSettings(values, this.user.id)

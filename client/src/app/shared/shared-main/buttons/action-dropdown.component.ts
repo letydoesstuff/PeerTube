@@ -67,6 +67,7 @@ export class ActionDropdownComponent<T, D = never> implements OnChanges {
   readonly buttonStyled = input(true, { transform: booleanAttribute })
 
   readonly label = input<string>(undefined)
+  readonly ariaLabel = input<string>($localize`Open actions`)
   readonly theme = input<DropdownTheme>('secondary')
 
   readonly openChange = output<boolean>()
@@ -78,6 +79,7 @@ export class ActionDropdownComponent<T, D = never> implements OnChanges {
   labelExtra: TemplateRef<any>
 
   buttonClasses: Record<string, boolean> = {}
+  hasAtLeastAnIconOrAvatar = false
 
   ngOnChanges () {
     this.buttonClasses = {
@@ -88,6 +90,8 @@ export class ActionDropdownComponent<T, D = never> implements OnChanges {
       'primary-button': this.buttonStyled() && this.theme() === 'primary',
       'button-unstyle': !this.buttonStyled()
     }
+
+    this.hasAtLeastAnIconOrAvatar = this.getActions().some(actions => actions.some(a => a.iconName || a.actorAvatar))
   }
 
   getActions (): DropdownAction<T, D>[][] {

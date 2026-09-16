@@ -9,11 +9,12 @@ import {
   VideoEmbedPrivacyPolicy,
   VideoEmbedPrivacyPolicyType,
   VideoPrivacy,
+  VideoState,
   VideoStateType
 } from '@peertube/peertube-models'
 import { buildUUID } from '@peertube/peertube-node-utils'
 import { retryTransactionWrapper } from '@server/helpers/database-utils.js'
-import { LoggerTagsFn, logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { sequelizeTypescript } from '@server/initializers/database.js'
 import { ScheduleVideoUpdateModel } from '@server/models/video/schedule-video-update.js'
@@ -23,14 +24,13 @@ import { VideoLiveScheduleModel } from '@server/models/video/video-live-schedule
 import { VideoLiveModel } from '@server/models/video/video-live.js'
 import { VideoPasswordModel } from '@server/models/video/video-password.js'
 import { VideoModel } from '@server/models/video/video.js'
-import { MChannel, MChannelAccountLight, MUserAccountId, MVideoFile, MVideoFull } from '@server/types/models/index.js'
+import { MChannel, MChannelAccountLight, MUserAccountId, MVideoFileInfoHash, MVideoFull } from '@server/types/models/index.js'
 import { FilteredModelAttributes } from '@server/types/sequelize.js'
 import { FfprobeData } from 'fluent-ffmpeg'
 import { move } from 'fs-extra/esm'
 import { getLocalVideoActivityPubUrl } from './activitypub/url.js'
-import { federateVideoIfNeeded } from './activitypub/videos/federate.js'
-import { AutomaticTagger } from './automatic-tags/automatic-tagger.js'
-import { setAndSaveVideoAutomaticTags } from './automatic-tags/automatic-tags.js'
+import { scheduleVideoFederation } from './activitypub/videos/federate.js'
+import { createVideoAutomaticTagsJob } from './automatic-tags/automatic-tags.js'
 import { Hooks } from './plugins/hooks.js'
 import { createLocalVideoThumbnailsFromImage, createLocalVideoThumbnailsFromVideo } from './thumbnail.js'
 import { autoBlacklistVideoIfNeeded } from './video-blacklist.js'
@@ -40,11 +40,15 @@ import { addVideoJobsAfterCreation } from './video-jobs.js'
 import { VideoPathManager } from './video-path-manager.js'
 import { setVideoTags } from './video.js'
 
+const logger = createLogger('video')
+
 type VideoAttributes = Omit<VideoCreate, 'channelId'> & {
   duration: number
   isLive: boolean
   state: VideoStateType
   inputFilename: string
+
+  firstPublishedAt?: string
 
   embedPrivacyPolicy?: VideoEmbedPrivacyPolicyType
 }
@@ -77,8 +81,6 @@ type VideoAttributeHookFilter =
   | 'filter:api.video.live.video-attribute.result'
 
 export class LocalVideoCreator {
-  private readonly lTags: LoggerTagsFn
-
   private readonly videoFilePath: string | undefined
   private readonly videoFileProbe: FfprobeData
 
@@ -89,13 +91,11 @@ export class LocalVideoCreator {
   private readonly videoAttributeResultHook: VideoAttributeHookFilter
 
   private video: MVideoFull
-  private videoFile: MVideoFile
+  private videoFile: MVideoFileInfoHash
   private videoPath: string
 
   constructor (
     private readonly options: {
-      lTags: LoggerTagsFn
-
       videoFile: {
         path: string
         probe: FfprobeData
@@ -125,20 +125,26 @@ export class LocalVideoCreator {
     this.channel = options.channel
 
     this.videoAttributeResultHook = options.videoAttributeResultHook
-
-    this.lTags = options.lTags
   }
 
   async create () {
     this.video = new VideoModel(
       await Hooks.wrapObject(this.buildVideo(this.videoAttributes, this.channel), this.videoAttributeResultHook)
-    ) as MVideoFull
+    )
 
+    return logger.withContext([ this.video.uuid ], () => this.runCreate())
+  }
+
+  private async runCreate () {
     this.video.VideoChannel = this.channel
     this.video.url = getLocalVideoActivityPubUrl(this.video)
 
     if (this.videoFilePath) {
-      this.videoFile = await buildNewFile({ path: this.videoFilePath, mode: 'web-video', ffprobe: this.videoFileProbe })
+      this.videoFile = await buildNewFile({
+        path: this.videoFilePath,
+        mode: 'web-video',
+        ffprobe: this.videoFileProbe
+      }) as MVideoFileInfoHash
 
       this.videoPath = VideoPathManager.Instance.getFSVideoFileOutputPath(this.video, this.videoFile)
       await move(this.videoFilePath, this.videoPath)
@@ -171,9 +177,6 @@ export class LocalVideoCreator {
 
         await setVideoTags({ video: this.video, tags: this.videoAttributes.tags, transaction })
 
-        const automaticTags = await new AutomaticTagger().buildVideoAutomaticTags({ video: this.video, transaction })
-        await setAndSaveVideoAutomaticTags({ video: this.video, automaticTags, transaction })
-
         // Schedule an update in the future?
         if (this.videoAttributes.scheduleUpdate) {
           await ScheduleVideoUpdateModel.create({
@@ -191,14 +194,28 @@ export class LocalVideoCreator {
           }
         }
 
-        await autoBlacklistVideoIfNeeded({
+        const autoBlacklistStatus = await autoBlacklistVideoIfNeeded({
           video: this.video,
           user: this.options.user,
+          // A video with a file has its automatic tags built by `addVideoJobsAfterCreation`, before it is announced.
+          // A video without one (live) is federated right away, so hold it until the tagging job has run
+          holdIfAutoTagPolicy: !this.videoFile,
           isRemote: false,
           isNew: true,
           isNewFile: true,
           transaction
         })
+
+        // Keep it sync with `holdIfAutoTagPolicy` above
+        if (!this.videoFile) {
+          createVideoAutomaticTagsJob({
+            video: this.video,
+            moderation: autoBlacklistStatus === 'held-for-auto-tags'
+              ? 'release-hold'
+              : 'apply',
+            transaction
+          })
+        }
 
         if (this.videoAttributes.privacy === VideoPrivacy.PASSWORD_PROTECTED) {
           await VideoPasswordModel.addPasswords(this.videoAttributes.videoPasswords, this.video.id, transaction)
@@ -240,10 +257,10 @@ export class LocalVideoCreator {
               video: this.video,
               videoFile: this.videoFile,
               generateTranscription: this.videoAttributes.generateTranscription ?? true
-            }).catch(err => logger.error('Cannot build new video jobs of %s.', this.video.uuid, { err, ...this.lTags(this.video.uuid) }))
+            }).catch(err => logger.error('Cannot build new video jobs of %s.', this.video.uuid, { err }))
           })
         } else {
-          await federateVideoIfNeeded(this.video, true, transaction)
+          scheduleVideoFederation({ video: this.video, transaction })
         }
       }).catch(err => {
         // Reset elements to reinsert them in the database
@@ -294,6 +311,17 @@ export class LocalVideoCreator {
   }
 
   private buildVideo (videoInfo: VideoAttributes, channel: MChannel) {
+    const privacy = videoInfo.privacy || VideoPrivacy.PRIVATE
+
+    const now = new Date()
+
+    let firstPublishedAt: Date = null
+    if (videoInfo.firstPublishedAt) {
+      firstPublishedAt = new Date(videoInfo.firstPublishedAt)
+    } else if (privacy !== VideoPrivacy.PRIVATE && videoInfo.state === VideoState.PUBLISHED) {
+      firstPublishedAt = now
+    }
+
     return {
       name: videoInfo.name,
       state: videoInfo.state,
@@ -313,16 +341,18 @@ export class LocalVideoCreator {
 
       description: videoInfo.description,
       support: videoInfo.support,
-      privacy: videoInfo.privacy || VideoPrivacy.PRIVATE,
+      privacy,
       isLive: videoInfo.isLive,
       channelId: channel.id,
       originallyPublishedAt: videoInfo.originallyPublishedAt
         ? new Date(videoInfo.originallyPublishedAt)
         : null,
 
+      firstPublishedAt,
+
       publishedAt: this.videoAttributes.scheduleUpdate?.updateAt
         ? new Date(this.videoAttributes.scheduleUpdate?.updateAt)
-        : undefined,
+        : now,
 
       uuid: buildUUID(),
       duration: videoInfo.duration

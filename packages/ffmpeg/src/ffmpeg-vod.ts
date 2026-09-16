@@ -138,7 +138,9 @@ export class FFmpegVOD {
       canCopyAudio,
       canCopyVideo,
       fps,
-      scaleFilterValue
+      scaleFilterValue,
+
+      chainComplexFilters: null
     })
   }
 
@@ -169,7 +171,9 @@ export class FFmpegVOD {
       canCopyVideo: true,
       videoStreamOnly: false,
       fps: options.fps,
-      scaleFilterValue: this.getScaleFilterValue({ resolution: options.resolution, portraitMode: false })
+      scaleFilterValue: this.getScaleFilterValue({ resolution: options.resolution, portraitMode: false }),
+
+      chainComplexFilters: null
     })
 
     command.outputOption('-preset:v veryfast')

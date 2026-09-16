@@ -1,5 +1,5 @@
 import { VideoFileStream, VideoInclude } from '@peertube/peertube-models'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { ServerConfigManager } from '@server/lib/server-config-manager.js'
 import { getServerActor } from '@server/models/application/application.js'
 import express from 'express'
@@ -11,6 +11,8 @@ import { apiRateLimiter, asyncMiddleware, cacheRoute } from '../middlewares/inde
 import { AccountModel } from '../models/account/account.js'
 import { VideoChannelModel } from '../models/video/video-channel.js'
 import { VideoModel } from '../models/video/video.js'
+
+const logger = createLogger()
 
 const sitemapRouter = express.Router()
 
@@ -58,13 +60,13 @@ async function getSitemap (req: express.Request, res: express.Response) {
 async function getSitemapVideoChannelUrls () {
   const rows = await VideoChannelModel.listLocalsForSitemap('createdAt')
 
-  return rows.map(channel => ({ url: channel.getClientUrl() }))
+  return rows.map(channel => ({ url: channel.getClientUrl(), lastmod: channel.updatedAt.toISOString() }))
 }
 
 async function getSitemapAccountUrls () {
   const rows = await AccountModel.listLocalsForSitemap('createdAt')
 
-  return rows.map(account => ({ url: account.getClientUrl() }))
+  return rows.map(account => ({ url: account.getClientUrl(), lastmod: account.updatedAt.toISOString() }))
 }
 
 async function getSitemapLocalVideoUrls () {
@@ -105,6 +107,7 @@ async function getSitemapLocalVideoUrls () {
           url: process.env.EXPERIMENTAL_SITEMAP_VIDEO_URL === 'true'
             ? WEBSERVER.URL + '/videos/watch/' + v.uuid
             : WEBSERVER.URL + v.getWatchStaticPath(),
+          lastmod: (v.sitemapContentUpdatedAt ?? v.publishedAt).toISOString(),
           video: [
             {
               // Sitemap title should be < 100 characters

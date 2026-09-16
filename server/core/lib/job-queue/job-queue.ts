@@ -1,4 +1,4 @@
-import { pick, timeoutPromise } from '@peertube/peertube-core-utils'
+import { pick } from '@peertube/peertube-core-utils'
 import {
   ActivitypubFollowPayload,
   ActivitypubHttpBroadcastPayload,
@@ -6,6 +6,8 @@ import {
   ActivitypubHttpUnicastPayload,
   ActorKeysPayload,
   AfterVideoChannelImportPayload,
+  BuildAutomaticTagsPayload,
+  BuildObjectAutomaticTagsPayload,
   CreateUserExportPayload,
   EmailPayload,
   FederateVideoPayload,
@@ -27,7 +29,7 @@ import {
   VideoTranscodingPayload,
   VideoTranscriptionPayload
 } from '@peertube/peertube-models'
-import { jobStates } from '@server/helpers/custom-validators/jobs.js'
+import { allJobStates } from '@server/helpers/custom-validators/jobs.js'
 import { CONFIG, registerConfigChangedHandler } from '@server/initializers/config.js'
 import { processVideoRedundancy } from '@server/lib/job-queue/handlers/video-redundancy.js'
 import {
@@ -42,7 +44,8 @@ import {
   Worker,
   WorkerOptions
 } from 'bullmq'
-import { logger } from '../../helpers/logger.js'
+import { RedisOptions } from 'ioredis'
+import { createLogger } from '../../helpers/logger.js'
 import { JOB_ATTEMPTS, JOB_CONCURRENCY, JOB_REMOVAL_OPTIONS, JOB_TTL, REPEAT_JOBS, WEBSERVER } from '../../initializers/constants.js'
 import { Hooks } from '../plugins/hooks.js'
 import { Redis } from '../redis.js'
@@ -57,6 +60,8 @@ import { processActivityPubHttpUnicast } from './handlers/activitypub-http-unica
 import { refreshAPObject } from './handlers/activitypub-refresher.js'
 import { processActorKeys } from './handlers/actor-keys.js'
 import { processAfterVideoChannelImport } from './handlers/after-video-channel-import.js'
+import { processBuildAutomaticTags } from './handlers/build-automatic-tags.js'
+import { processBuildObjectAutomaticTags } from './handlers/build-object-automatic-tags.js'
 import { processCreateUserExport } from './handlers/create-user-export.js'
 import { processEmail } from './handlers/email.js'
 import { processFederateVideo } from './handlers/federate-video.js'
@@ -71,12 +76,16 @@ import { processVideoChannelImport } from './handlers/video-channel-import.js'
 import { processVideoFileImport } from './handlers/video-file-import.js'
 import { processVideoImport } from './handlers/video-import.js'
 import { processVideoLiveEnding } from './handlers/video-live-ending.js'
+import { processVideosStats } from './handlers/video-stats.js'
 import { processVideoStudioEdition } from './handlers/video-studio-edition.js'
 import { processVideoTranscoding } from './handlers/video-transcoding.js'
 import { processVideoTranscription } from './handlers/video-transcription.js'
-import { processVideosStats } from './handlers/video-stats.js'
+
+const logger = createLogger('job-queue')
 
 export type CreateJobTypeAndPayload =
+  | { type: 'build-automatic-tags', payload: BuildAutomaticTagsPayload }
+  | { type: 'build-object-automatic-tags', payload: BuildObjectAutomaticTagsPayload }
   | { type: 'activitypub-http-broadcast', payload: ActivitypubHttpBroadcastPayload }
   | { type: 'activitypub-http-broadcast-parallel', payload: ActivitypubHttpBroadcastPayload }
   | { type: 'activitypub-http-unicast', payload: ActivitypubHttpUnicastPayload }
@@ -111,9 +120,16 @@ export type CreateJobOptions = {
   priority?: number
   failParentOnFailure?: boolean
   deduplicationId?: string
+
+  // Instead of dropping the job added while another one with the same deduplication id is active,
+  // store it and automatically create it when the active job has finished
+  // It guarantees we don't miss a change that occurred during the processing of the active job
+  deduplicationKeepLastIfActive?: boolean
 }
 
-const handlers: { [id in JobType]: (job: Job) => Promise<any> } = {
+const handlers: { [id in JobType]: (job: Job, signal?: AbortSignal) => Promise<any> } = {
+  'build-automatic-tags': processBuildAutomaticTags,
+  'build-object-automatic-tags': processBuildObjectAutomaticTags,
   'activitypub-cleaner': processActivityPubCleaner,
   'activitypub-follow': processActivityPubFollow,
   'activitypub-http-broadcast-parallel': processActivityPubParallelHttpBroadcast,
@@ -150,6 +166,8 @@ const errorHandlers: { [id in JobType]?: (job: Job, err: any) => Promise<any> } 
 }
 
 const jobTypes: JobType[] = [
+  'build-automatic-tags',
+  'build-object-automatic-tags',
   'activitypub-cleaner',
   'activitypub-follow',
   'activitypub-http-broadcast-parallel',
@@ -180,7 +198,13 @@ const jobTypes: JobType[] = [
   'video-transcoding'
 ]
 
+const cancelableJobTypes: JobType[] = [ 'video-transcoding', 'video-transcription', 'video-studio-edition', 'generate-video-storyboard' ]
+
 const silentFailure = new Set<JobType>([ 'activitypub-http-unicast' ])
+
+// Recommended by BullMQ: let ioredis retry forever so blocking commands are not rejected during a transient
+// socket drop, and skip the ready check that would otherwise stall the reconnection
+const bullMQRedisOptions: RedisOptions = { maxRetriesPerRequest: null, enableReadyCheck: false }
 
 class JobQueue {
   private static instance: JobQueue
@@ -211,7 +235,7 @@ class JobQueue {
     }
 
     this.flowProducer = new FlowProducer({
-      connection: Redis.getRedisClientOptions('FlowProducer'),
+      connection: Redis.getRedisClientOptions('FlowProducer', bullMQRedisOptions),
       prefix: this.jobRedisPrefix
     })
     this.flowProducer.on('error', err => {
@@ -232,23 +256,31 @@ class JobQueue {
       autorun: false,
       concurrency: this.getJobConcurrency(handlerName),
       prefix: this.jobRedisPrefix,
-      connection: Redis.getRedisClientOptions('Worker'),
+      connection: Redis.getRedisClientOptions('Worker', bullMQRedisOptions),
       maxStalledCount: 10
     }
 
-    const handler = function (job: Job) {
+    const handler = function (options: { job: Job, signal: AbortSignal }) {
+      const { job, signal } = options
+
       const timeout = JOB_TTL[handlerName]
-      const p = handlers[handlerName](job)
+      if (!timeout) return handlers[handlerName](job, signal)
 
-      if (!timeout) return p
+      const timeoutId = setTimeout(() => {
+        worker.cancelJob(job.id, 'Timeout exceeded')
+      }, timeout)
 
-      return timeoutPromise(p, timeout)
+      return handlers[handlerName](job, signal)
+        .finally(() => clearTimeout(timeoutId))
     }
 
-    const processor = async (jobArg: Job) => {
-      const job = await Hooks.wrapObject(jobArg, 'filter:job-queue.process.params', { type: handlerName })
+    const processor = (jobArg: Job, _, signal: AbortSignal) => {
+      // So every logger call performed by the handler is tagged with the job, without having to inject tags manually
+      return logger.withContext([ handlerName, jobArg.id ], async () => {
+        const job = await Hooks.wrapObject(jobArg, 'filter:job-queue.process.params', { type: handlerName })
 
-      return Hooks.wrapPromiseFun(handler, job, 'filter:job-queue.process.result')
+        return Hooks.wrapPromiseFun(handler, { job, signal }, 'filter:job-queue.process.result')
+      })
     }
 
     const worker = new Worker(handlerName, processor, workerOptions)
@@ -275,7 +307,7 @@ class JobQueue {
 
   private buildQueue (handlerName: JobType) {
     const queueOptions: QueueOptions = {
-      connection: Redis.getRedisClientOptions('Queue'),
+      connection: Redis.getRedisClientOptions('Queue', bullMQRedisOptions),
       prefix: this.jobRedisPrefix
     }
 
@@ -293,7 +325,7 @@ class JobQueue {
   private buildQueueEvent (handlerName: JobType) {
     const queueEventsOptions: QueueEventsOptions = {
       autorun: false,
-      connection: Redis.getRedisClientOptions('QueueEvent'),
+      connection: Redis.getRedisClientOptions('QueueEvent', bullMQRedisOptions),
       prefix: this.jobRedisPrefix
     }
 
@@ -307,7 +339,8 @@ class JobQueue {
 
   // ---------------------------------------------------------------------------
 
-  async terminate () {
+  // Use force: true to not wait for active jobs to complete (they will be retried when detected as stalled)
+  async terminate (options: { force: boolean }) {
     const promises = Object.keys(this.workers)
       .map(handlerName => {
         const worker: Worker = this.workers[handlerName]
@@ -315,7 +348,7 @@ class JobQueue {
         const queueEvent: QueueEvents = this.queueEvents[handlerName]
 
         return Promise.all([
-          worker.close(false),
+          worker.close(options.force),
           queue.close(),
           queueEvent.close()
         ])
@@ -347,11 +380,11 @@ class JobQueue {
     }
   }
 
-  resume () {
+  async resume () {
     for (const handlerName of Object.keys(this.workers)) {
       const worker: Worker = this.workers[handlerName]
 
-      worker.resume()
+      await worker.resume()
     }
   }
 
@@ -371,7 +404,10 @@ class JobQueue {
       return
     }
 
-    const jobOptions = this.buildJobOptions(options.type as JobType, pick(options, [ 'priority', 'delay', 'deduplicationId' ]))
+    const jobOptions = this.buildJobOptions(
+      options.type,
+      pick(options, [ 'priority', 'delay', 'deduplicationId', 'deduplicationKeepLastIfActive' ])
+    )
 
     return queue.add('job', options.payload, jobOptions)
   }
@@ -412,7 +448,10 @@ class JobQueue {
       opts: {
         failParentOnFailure: true,
 
-        ...this.buildJobOptions(job.type as JobType, pick(job, [ 'priority', 'delay', 'failParentOnFailure', 'deduplicationId' ]))
+        ...this.buildJobOptions(
+          job.type,
+          pick(job, [ 'priority', 'delay', 'failParentOnFailure', 'deduplicationId', 'deduplicationKeepLastIfActive' ])
+        )
       }
     }
   }
@@ -426,7 +465,8 @@ class JobQueue {
 
       deduplication: options.deduplicationId
         ? {
-          id: options.deduplicationId
+          id: options.deduplicationId,
+          keepLastIfActive: options.deduplicationKeepLastIfActive
         }
         : undefined,
 
@@ -491,15 +531,39 @@ class JobQueue {
       const counts = await queue.getJobCounts()
 
       for (const s of states) {
-        total += counts[s]
+        total += counts[s] ?? 0
       }
     }
 
     return total
   }
 
+  async getJob (jobType: JobType, jobId: string): Promise<Job> {
+    const queue = this.queues[jobType]
+    if (!queue) throw new Error(`Unknown queue ${jobType}`)
+
+    return queue.getJob(jobId)
+  }
+
+  async canCancelJob (jobType: JobType, job: Job) {
+    if (!cancelableJobTypes.includes(jobType)) return false
+
+    const isActive = await job.isActive()
+
+    return isActive
+  }
+
+  cancelJob (jobType: JobType, job: Job) {
+    logger.info('Cancelling job %s in queue %s.', job.id, job.queueName)
+
+    const worker = this.workers[jobType]
+    if (!worker) throw new Error(`Unknown queue ${jobType}`)
+
+    return worker.cancelJob(job.id, 'Job cancelled by admin')
+  }
+
   private buildStateFilter (state?: JobState) {
-    if (!state) return Array.from(jobStates)
+    if (!state) return Array.from(allJobStates)
 
     const states = [ state ]
 

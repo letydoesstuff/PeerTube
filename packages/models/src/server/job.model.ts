@@ -3,7 +3,7 @@ import { VideoFileStreamType, VideoStateType } from '../videos/index.js'
 import { VideoStudioTaskCut } from '../videos/studio/index.js'
 import { SendEmailOptions } from './emailer.model.js'
 
-export type JobState = 'active' | 'completed' | 'failed' | 'waiting' | 'delayed' | 'paused' | 'waiting-children' | 'prioritized'
+export type JobState = 'active' | 'completed' | 'failed' | 'waiting' | 'delayed' | 'wait' | 'waiting-children' | 'prioritized' | 'repeat'
 
 export type JobType =
   | 'activitypub-cleaner'
@@ -15,13 +15,18 @@ export type JobType =
   | 'activitypub-refresher'
   | 'actor-keys'
   | 'after-video-channel-import'
+  | 'build-automatic-tags'
+  | 'build-object-automatic-tags'
+  | 'create-user-export'
   | 'email'
   | 'federate-video'
-  | 'transcoding-job-builder'
+  | 'generate-video-storyboard'
+  | 'import-user-archive'
   | 'manage-video-torrent'
-  | 'move-to-object-storage'
   | 'move-to-file-system'
+  | 'move-to-object-storage'
   | 'notify'
+  | 'transcoding-job-builder'
   | 'video-channel-import'
   | 'video-file-import'
   | 'video-import'
@@ -29,12 +34,10 @@ export type JobType =
   | 'video-redundancy'
   | 'video-studio-edition'
   | 'video-transcoding'
-  | 'videos-stats'
-  | 'generate-video-storyboard'
-  | 'create-user-export'
-  | 'import-user-archive'
   | 'video-transcription'
+  | 'videos-stats'
 
+// Client API
 export interface Job {
   id: number | string
   state: JobState | 'unknown'
@@ -46,11 +49,14 @@ export interface Job {
   createdAt: Date | string
   finishedOn: Date | string
   processedOn: Date | string
+  canCancel: boolean
 
   parent?: {
     id: string
   }
 }
+
+// ---------------------------------------------------------------------------
 
 export type ActivitypubHttpBroadcastPayload = {
   uris: string[]
@@ -73,6 +79,7 @@ export type ActivitypubHttpFetcherPayload = {
   type: FetchType
   videoId?: number
   accountId?: number
+  abortSignal?: AbortSignal
 }
 
 export type ActivitypubHttpUnicastPayload = {
@@ -146,7 +153,6 @@ export type ManageVideoTorrentPayload = {
 interface BaseTranscodingPayload {
   videoUUID: string
   canMoveVideoState: boolean
-  isNewVideo?: boolean
 }
 
 export interface HLSTranscodingPayload extends BaseTranscodingPayload {
@@ -206,12 +212,7 @@ export type MoveStoragePayload = MoveVideoStoragePayload | MoveCaptionPayload
 export interface MoveVideoStoragePayload {
   videoUUID: string
 
-  // FIXME: old API compatibility, remove in PeerTube v9
-  isNewVideo?: boolean
-  previousVideoState?: VideoStateType
-
   moveVideoState?: {
-    isNewVideo: boolean
     previousVideoState: VideoStateType
   }
 }
@@ -308,7 +309,9 @@ export type NotifyPayload = {
 
 export interface FederateVideoPayload {
   videoUUID: string
-  isNewVideoForFederation: boolean
+
+  // Actor that overrides the video channel account actor to send the update activity
+  overriddenByActorId?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -316,9 +319,9 @@ export interface FederateVideoPayload {
 export interface TranscodingJobBuilderPayload {
   videoUUID: string
 
-  optimizeJob?: {
-    isNewVideo: boolean
-  }
+  // This is a transcoding job to optimize the video
+  // Set {} for now, can accept more options in the future
+  optimizeJob?: {}
 
   // Array of jobs to create
   jobs?: {
@@ -358,4 +361,29 @@ export interface ImportUserArchivePayload {
 
 export interface VideoTranscriptionPayload {
   videoUUID: string
+}
+
+// ---------------------------------------------------------------------------
+
+export interface BuildAutomaticTagsPayload {
+  accountId: number
+  ofComments: boolean
+  ofVideos: boolean
+}
+
+// How the job has to handle the moderation policies bound to automatic tags:
+//  * `apply`: nothing is on hold, apply the policies using the tags built by the job
+//  * `release-hold`: the object has been put on hold (comment held for review, video auto blocked) while waiting for
+//     its tags, so the job has to confirm or release that hold
+//  * `none`: only rebuild the tags
+export type AutomaticTagsModeration = 'apply' | 'release-hold' | 'none'
+
+export interface BuildObjectAutomaticTagsPayload {
+  objectType: 'video' | 'comment'
+  objectId: number
+
+  moderation: AutomaticTagsModeration
+
+  // Only supported for comments
+  notify: boolean | null
 }

@@ -1,28 +1,40 @@
-import Bluebird from 'bluebird'
-import { URL } from 'url'
 import { ActivityPubOrderedCollection } from '@peertube/peertube-models'
 import { retryTransactionWrapper } from '@server/helpers/database-utils.js'
-import { logger } from '../../helpers/logger.js'
+import Bluebird from 'bluebird'
+import { URL } from 'url'
+import { createLogger } from '../../helpers/logger.js'
 import { ACTIVITY_PUB, WEBSERVER } from '../../initializers/constants.js'
 import { fetchAP } from './activity.js'
+
+const logger = createLogger()
 
 type HandlerFunction<T> = (items: T[]) => Promise<any> | Bluebird<any>
 type CleanerFunction = (startedDate: Date) => Promise<any>
 
-export async function crawlCollectionPage<T> (argUrl: string, handler: HandlerFunction<T>, cleaner?: CleanerFunction) {
+export async function crawlCollectionPage<T> (
+  argUrl: string,
+  handler: HandlerFunction<T>,
+  cleaner?: CleanerFunction,
+  abortSignal?: AbortSignal
+) {
   let url = argUrl
 
   logger.info('Crawling ActivityPub data on %s.', url)
 
   const startDate = new Date()
 
-  const response = await fetchAP<ActivityPubOrderedCollection<T>>(url)
+  const response = await fetchAP<ActivityPubOrderedCollection<T>>(url, { signal: abortSignal })
   const firstBody = response.body
 
   const limit = ACTIVITY_PUB.FETCH_PAGE_LIMIT
   let i = 0
   let nextLink = firstBody.first
   while (nextLink && i < limit) {
+    // Check if abort signal has been triggered
+    if (abortSignal?.aborted) {
+      throw new Error('ActivityPub crawl aborted')
+    }
+
     i++
 
     let body: any
@@ -34,7 +46,7 @@ export async function crawlCollectionPage<T> (argUrl: string, handler: HandlerFu
 
       url = nextLink
 
-      const res = await fetchAP<ActivityPubOrderedCollection<T>>(url)
+      const res = await fetchAP<ActivityPubOrderedCollection<T>>(url, { signal: abortSignal })
       body = res.body
     } else {
       // nextLink is already the object we want
@@ -51,5 +63,5 @@ export async function crawlCollectionPage<T> (argUrl: string, handler: HandlerFu
     }
   }
 
-  if (cleaner) await retryTransactionWrapper(cleaner, startDate)
+  if (cleaner) await retryTransactionWrapper(() => cleaner(startDate))
 }

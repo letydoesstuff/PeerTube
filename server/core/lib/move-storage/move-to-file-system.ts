@@ -1,5 +1,5 @@
 import { FileStorage, VideoStateType } from '@peertube/peertube-models'
-import { logger, LoggerTags, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { P2P_MEDIA_LOADER_PEER_VERSION } from '@server/initializers/constants.js'
 import {
@@ -21,7 +21,7 @@ import { getHLSDirectory, getHLSResolutionPlaylistFilename } from '@server/lib/p
 import { updateHLSMasterOnCaptionChange, upsertCaptionPlaylistOnFS } from '@server/lib/video-captions.js'
 import { VideoPathManager } from '@server/lib/video-path-manager.js'
 import { moveToFailedMoveToFileSystemState, moveToNextState } from '@server/lib/video-state.js'
-import { updateTorrentMetadata } from '@server/lib/webtorrent.js'
+import { updateTorrentForFileAndSave } from '@server/lib/webtorrent.js'
 import { VideoModel } from '@server/models/video/video.js'
 import { MStreamingPlaylistVideo, MVideo, MVideoCaption, MVideoFile, MVideoWithAllFiles } from '@server/types/models/index.js'
 import { MVideoSource } from '@server/types/models/video/video-source.js'
@@ -29,23 +29,19 @@ import { join } from 'path'
 import { moveCaptionToStorage } from './shared/move-caption.js'
 import { moveVideoToStorage, onMoveVideoToStorageFailure } from './shared/move-video.js'
 
-const lTagsBase = loggerTagsFactory('move-file-system')
+const logger = createLogger()
 
 export async function moveVideoToFS (options: {
   videoUUID: string
 
   moveVideoState?: {
-    isNewVideo: boolean
     previousVideoState: VideoStateType
   }
-
-  loggerTags: LoggerTags['tags']
 }) {
-  const { videoUUID, moveVideoState, loggerTags } = options
+  const { videoUUID, moveVideoState } = options
 
   await moveVideoToStorage({
     videoUUID,
-    loggerTags: [ ...lTagsBase().tags, ...loggerTags ],
 
     targetStorage: FileStorage.FILE_SYSTEM,
 
@@ -64,30 +60,19 @@ export async function moveVideoToFS (options: {
 
 export function moveCaptionToFS (options: {
   captionId: number
-  loggerTags: LoggerTags['tags']
 }) {
-  const { captionId, loggerTags } = options
+  const { captionId } = options
 
-  return moveCaptionToStorage({
-    captionId,
-    loggerTags: [ ...lTagsBase().tags, ...loggerTags ],
-    moveCaptionFiles
-  })
+  return moveCaptionToStorage({ captionId, moveCaptionFiles })
 }
 
 export async function onMoveVideoToFSFailure (options: {
   videoUUID: string
-  loggerTags: LoggerTags['tags']
   err: Error
 }) {
-  const { videoUUID, err, loggerTags } = options
+  const { videoUUID, err } = options
 
-  await onMoveVideoToStorageFailure({
-    videoUUID,
-    err,
-    loggerTags: [ ...lTagsBase().tags, ...loggerTags ],
-    moveToFailedState: moveToFailedMoveToFileSystemState
-  })
+  await onMoveVideoToStorageFailure({ videoUUID, err, moveToFailedState: moveToFailedMoveToFileSystemState })
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +95,7 @@ async function moveVideoSourceFile (source: MVideoSource) {
   source.storage = FileStorage.FILE_SYSTEM
   await source.save()
 
-  logger.debug('Removing original video file %s because it\'s now on file system', oldFileUrl, lTagsBase())
+  logger.debug('Removing original video file %s because it\'s now on file system', oldFileUrl)
 
   await removeOriginalFileObjectStorage(source)
 }
@@ -170,7 +155,7 @@ async function moveHLSFiles (video: MVideoWithAllFiles) {
     }
 
     if (updatedFile === true) {
-      playlist.assignP2PMediaLoaderInfoHashes(video, playlist.VideoFiles)
+      await playlist.buildAndSetInfoHashes(video, playlist.VideoFiles)
       playlist.p2pMediaLoaderPeerVersion = P2P_MEDIA_LOADER_PEER_VERSION
 
       await playlist.save()
@@ -192,10 +177,9 @@ async function onVideoFileMoved (options: {
 
   file.storage = FileStorage.FILE_SYSTEM
 
-  await updateTorrentMetadata(videoOrPlaylist, file)
-  await file.save()
+  await updateTorrentForFileAndSave(videoOrPlaylist, file)
 
-  logger.debug('Removing web video file %s because it\'s now on file system', oldFileUrl, lTagsBase())
+  logger.debug('Removing web video file %s because it\'s now on file system', oldFileUrl)
   await objetStorageRemover()
 }
 
@@ -218,7 +202,7 @@ async function moveCaptionFiles (captions: MVideoCaption[], hls: MStreamingPlayl
 
       await caption.save()
 
-      logger.debug('Removing caption file %s because it\'s now on file system', oldFileUrl, lTagsBase())
+      logger.debug('Removing caption file %s because it\'s now on file system', oldFileUrl)
       await removeCaptionObjectStorage(caption)
     }
 
@@ -238,7 +222,7 @@ async function moveCaptionFiles (captions: MVideoCaption[], hls: MStreamingPlayl
       await caption.save()
 
       if (oldM3U8Filename) {
-        logger.debug(`Removing video caption playlist file ${oldM3U8Url} because it's now on file system`, lTagsBase())
+        logger.debug(`Removing video caption playlist file ${oldM3U8Url} because it's now on file system`)
 
         await removeHLSFileObjectStorageByFilename(hls.Video, oldM3U8Filename)
       }

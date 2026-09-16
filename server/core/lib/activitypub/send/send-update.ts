@@ -3,7 +3,7 @@ import { getServerActor } from '@server/models/application/application.js'
 import { PlayerSettingModel } from '@server/models/video/player-setting.js'
 import { MPlayerSetting } from '@server/types/models/video/player-setting.js'
 import { Transaction } from 'sequelize'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { AccountModel } from '../../../models/account/account.js'
 import { VideoShareModel } from '../../../models/video/video-share.js'
 import { VideoModel } from '../../../models/video/video.js'
@@ -12,7 +12,7 @@ import {
   MActor,
   MActorLight,
   MChannelDefault,
-  MVideoAPLight,
+  MVideoAP,
   MVideoFull,
   MVideoPlaylistFull,
   MVideoRedundancyVideo
@@ -22,10 +22,10 @@ import { getLocalChannelPlayerSettingsActivityPubUrl, getLocalVideoPlayerSetting
 import { canVideoBeFederated } from '../videos/federate.js'
 import { broadcastToFollowers, getActorsInvolvedInVideo, sendVideoRelatedActivity } from './shared/send-utils.js'
 
-export async function sendUpdateVideo (videoArg: MVideoAPLight, transaction: Transaction, overriddenByActor?: MActor) {
-  if (!canVideoBeFederated(videoArg)) return undefined
+const logger = createLogger()
 
-  const video = await videoArg.lightAPToFullAP(transaction)
+export async function sendUpdateVideo (video: MVideoAP, transaction: Transaction, overriddenByActor?: MActor) {
+  if (!canVideoBeFederated(video)) return undefined
 
   logger.info('Creating job to update video %s.', video.url)
 
@@ -123,7 +123,7 @@ export async function sendUpdateVideoPlaylist (videoPlaylist: MVideoPlaylistFull
 }
 
 export async function sendUpdateVideoPlayerSettings (video: MVideoFull, settings: MPlayerSetting, transaction: Transaction) {
-  if (!canVideoBeFederated(video, false)) return
+  if (!canVideoBeFederated(video)) return
 
   const byActor = video.VideoChannel.Account.Actor
   const settingsUrl = getLocalVideoPlayerSettingsActivityPubUrl(video)
@@ -183,7 +183,7 @@ function buildUpdateActivity (
 
   return audiencify(
     {
-      type: 'Update' as 'Update',
+      type: 'Update',
       id: url,
       actor: byActor.url,
       object: audiencify(object, audience)

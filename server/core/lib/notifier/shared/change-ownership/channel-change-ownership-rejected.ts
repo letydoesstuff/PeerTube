@@ -1,9 +1,11 @@
 import { UserNotificationType } from '@peertube/peertube-models'
 import { t } from '@server/helpers/i18n.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { WEBSERVER } from '@server/initializers/constants.js'
 import { MUserWithNotificationSetting } from '@server/types/models/index.js'
 import { AbstractChannelChangeOwnershipResponse } from './abstract-channel-change-ownership-response.js'
+
+const logger = createLogger()
 
 export class ChannelChangeOwnershipRejected extends AbstractChannelChangeOwnershipResponse {
   log () {
@@ -28,11 +30,9 @@ export class ChannelChangeOwnershipRejected extends AbstractChannelChangeOwnersh
         nextOwner: this.payload.NextOwner.getDisplayName(),
         channelName: this.payload.VideoChannel.name
       }),
-      locals: {
-        action: {
-          text: t('View your notifications', language),
-          url: WEBSERVER.URL + '/my-account/notifications'
-        }
+      action: {
+        text: t('View your notifications', language),
+        url: WEBSERVER.URL + '/my-account/notifications'
       }
     }
   }

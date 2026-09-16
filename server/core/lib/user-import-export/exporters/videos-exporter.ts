@@ -1,6 +1,6 @@
 import { pick, sortBy } from '@peertube/peertube-core-utils'
 import { ActivityCreate, FileStorage, VideoExportJSON, VideoObject, VideoPrivacy } from '@peertube/peertube-models'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { audiencify, getVideoAudience } from '@server/lib/activitypub/audience.js'
 import { buildCreateActivity } from '@server/lib/activitypub/send/send-create.js'
 import { buildChaptersAPHasPart } from '@server/lib/activitypub/video-chapters.js'
@@ -29,7 +29,6 @@ import {
   MVideoCaptionLanguageUrl,
   MVideoChapter,
   MVideoFile,
-  MVideoFull,
   MVideoLiveWithSettingSchedules,
   MVideoPassword
 } from '@server/types/models/index.js'
@@ -41,6 +40,8 @@ import { createReadStream } from 'fs'
 import { extname, join } from 'path'
 import { PassThrough, Readable } from 'stream'
 import { AbstractUserExporter, ExportResult } from './abstract-user-exporter.js'
+
+const logger = createLogger()
 
 export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
   // oxlint-disable-next-line no-useless-constructor
@@ -87,7 +88,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
 
   private async exportVideo (videoId: number) {
     const [ video, captions, source, chapters, playerSettings, embedPrivacyDomains ] = await Promise.all([
-      VideoModel.loadFull(videoId),
+      VideoModel.loadAP(videoId),
       VideoCaptionModel.listVideoCaptions(videoId),
       VideoSourceModel.loadLatest(videoId),
       VideoChapterModel.listChaptersOfVideo(videoId),
@@ -101,10 +102,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
 
     const live = video.isLive
       ? await VideoLiveModel.loadByVideoIdFull(videoId)
-      : undefined // We already have captions, so we can set it to the video object
-    ;(video as any).VideoCaptions = captions
-    // Then fetch more attributes for AP serialization
-    const videoAP = await video.lightAPToFullAP(undefined)
+      : undefined
 
     const { relativePathsFromJSON, staticFiles, exportedVideoFileOrSource } = await this.exportVideoFiles({ video, captions })
 
@@ -122,14 +120,14 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
       }),
       staticFiles,
       relativePathsFromJSON,
-      activityPubOutbox: await this.exportVideoAP(videoAP, chapters, exportedVideoFileOrSource)
+      activityPubOutbox: await this.exportVideoAP(video, chapters, exportedVideoFileOrSource)
     }
   }
 
   // ---------------------------------------------------------------------------
 
   private exportVideoJSON (options: {
-    video: MVideoFull
+    video: MVideoAP
     captions: MVideoCaption[]
     live: MVideoLiveWithSettingSchedules
     passwords: MVideoPassword[]
@@ -147,6 +145,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
       createdAt: video.createdAt.toISOString(),
       updatedAt: video.updatedAt.toISOString(),
       publishedAt: video.publishedAt.toISOString(),
+      firstPublishedAt: video.firstPublishedAt?.toISOString(),
       originallyPublishedAt: video.originallyPublishedAt
         ? video.originallyPublishedAt.toISOString()
         : undefined,
@@ -352,7 +351,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
       attachment: this.options.withVideoFiles && exportedVideoFileOrSource
         ? [
           {
-            type: 'Video' as 'Video',
+            type: 'Video',
             url: join(this.options.relativeStaticDirPath, this.getArchiveVideoFilePath(video, exportedVideoFileOrSource)),
 
             // FIXME: typings
@@ -373,7 +372,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
   // ---------------------------------------------------------------------------
 
   private async exportVideoFiles (options: {
-    video: MVideoFull
+    video: MVideoAP
     captions: MVideoCaption[]
   }) {
     const { video, captions } = options
@@ -447,7 +446,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
   private async generateVideoFileReadStream (options: {
     videoFile: MVideoFile
     separatedAudioFile: MVideoFile
-    video: MVideoFull
+    video: MVideoAP
   }): Promise<Readable> {
     const { video, videoFile, separatedAudioFile } = options
 
@@ -484,7 +483,7 @@ export class VideosExporter extends AbstractUserExporter<VideoExportJSON> {
 
   // ---------------------------------------------------------------------------
 
-  private async getArchiveVideo (video: MVideoFull) {
+  private async getArchiveVideo (video: MVideoAP) {
     const source = await VideoSourceModel.loadLatest(video.id)
 
     const { videoFile, separatedAudioFile } = video.getMaxQualityAudioAndVideoFiles()

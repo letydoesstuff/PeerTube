@@ -14,13 +14,13 @@ import { decachePlugin } from '@server/helpers/decache.js'
 import { ApplicationModel } from '@server/models/application/application.js'
 import { MOAuthTokenUser, MUser } from '@server/types/models/index.js'
 import express from 'express'
-import { createReadStream, createWriteStream } from 'fs'
 import { ensureDir, outputFile, readJSON } from 'fs-extra/esm'
+import { appendFile, readFile } from 'fs/promises'
 import { Server } from 'http'
 import { createRequire } from 'module'
 import { basename, join } from 'path'
 import { isLibraryCodeValid, isPackageJSONValid } from '../../helpers/custom-validators/plugins.js'
-import { logger } from '../../helpers/logger.js'
+import { createLogger } from '../../helpers/logger.js'
 import { CONFIG } from '../../initializers/config.js'
 import { PLUGIN_GLOBAL_CSS_PATH } from '../../initializers/constants.js'
 import { PluginModel } from '../../models/server/plugin.js'
@@ -33,6 +33,8 @@ import {
 import { ClientHtml } from '../html/client-html.js'
 import { installNpmPlugin, installNpmPluginFromDisk, rebuildNativePlugins, removeNpmPlugin } from './package-manager.js'
 import { RegisterHelpers } from './register-helpers.js'
+
+const logger = createLogger()
 
 const require = createRequire(import.meta.url)
 
@@ -79,6 +81,10 @@ export class PluginManager implements ServerHook {
 
   private hooks: { [name: string]: HookInformationValue[] } = {}
   private translations: PluginLocalesTranslations = {}
+
+  // Plugins are registered after the HTTP server started accepting requests
+  // And are never registered at all when PeerTube runs with `--no-plugins`
+  private registrationDone = false
 
   private server: Server
 
@@ -155,6 +161,8 @@ export class PluginManager implements ServerHook {
     return this.getRegisteredPluginsOrThemes(PluginType.THEME)
   }
 
+  // ---------------------------------------------------------------------------
+
   getIdAndPassAuths () {
     return this.getRegisteredPlugins()
       .map(p => ({
@@ -177,6 +185,32 @@ export class PluginManager implements ServerHook {
       .filter(v => v.externalAuths.length !== 0)
   }
 
+  // ---------------------------------------------------------------------------
+
+  getVideoAutoTaggers () {
+    return this.getRegisteredPlugins()
+      .map(p => ({
+        npmName: p.npmName,
+        name: p.name,
+        version: p.version,
+        autoTaggers: p.registerHelpers.getVideoAutoTaggers()
+      }))
+      .filter(p => p.autoTaggers.length !== 0)
+  }
+
+  getCommentAutoTaggers () {
+    return this.getRegisteredPlugins()
+      .map(p => ({
+        npmName: p.npmName,
+        name: p.name,
+        version: p.version,
+        autoTaggers: p.registerHelpers.getCommentAutoTaggers()
+      }))
+      .filter(p => p.autoTaggers.length !== 0)
+  }
+
+  // ---------------------------------------------------------------------------
+
   getRegisteredSettings (npmName: string) {
     const result = this.getRegisteredPluginOrTheme(npmName)
     if (result?.type !== PluginType.PLUGIN) return []
@@ -196,12 +230,14 @@ export class PluginManager implements ServerHook {
   }
 
   async isTokenValid (token: MOAuthTokenUser, type: 'access' | 'refresh') {
+    if (!this.registrationDone) return true
+
     const auth = this.getAuth(token.User.pluginAuth, token.authName)
-    if (!auth) return true
+    if (!auth) return false // Token is invalid since the auth doesn't exist anymore
 
     if (auth.hookTokenValidity) {
       try {
-        const { valid } = await auth.hookTokenValidity({ token, type })
+        const { valid } = await auth.hookTokenValidity({ token, user: token.User, type })
 
         if (valid === false) {
           logger.info('Rejecting %s token validity from auth %s of plugin %s', type, token.authName, token.User.pluginAuth)
@@ -303,6 +339,8 @@ export class PluginManager implements ServerHook {
     }
 
     this.sortHooksByPriority()
+
+    this.registrationDone = true
   }
 
   async removeUnsecurePluginsIfNeededBeforeRegistration () {
@@ -577,16 +615,10 @@ export class PluginManager implements ServerHook {
     }
   }
 
-  private concatFiles (input: string, output: string) {
-    return new Promise<void>((res, rej) => {
-      const inputStream = createReadStream(input)
-      const outputStream = createWriteStream(output, { flags: 'a' })
+  private async concatFiles (input: string, output: string) {
+    const css = await readFile(input, 'utf-8')
 
-      inputStream.pipe(outputStream)
-
-      inputStream.on('end', () => res())
-      inputStream.on('error', err => rej(err))
-    })
+    return appendFile(output, stripSourceMappingURLComments(css))
   }
 
   private async regeneratePluginGlobalCSS () {
@@ -687,4 +719,10 @@ export class PluginManager implements ServerHook {
   static get Instance () {
     return this.instance || (this.instance = new this())
   }
+}
+
+function stripSourceMappingURLComments (css: string) {
+  return css
+    .replace(/\/\*#\s*sourceMappingURL=[^*]*\*\//gs, '')
+    .replace(/\/\/#\s*sourceMappingURL=.*/g, '')
 }

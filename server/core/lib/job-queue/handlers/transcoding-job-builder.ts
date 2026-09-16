@@ -1,12 +1,13 @@
-import { pick } from '@peertube/peertube-core-utils'
 import { TranscodingJobBuilderPayload, VideoFileStream } from '@peertube/peertube-models'
 import { createOptimizeOrMergeAudioJobs } from '@server/lib/transcoding/create-transcoding-job.js'
 import { UserModel } from '@server/models/user/user.js'
 import { VideoJobInfoModel } from '@server/models/video/video-job-info.js'
 import { VideoModel } from '@server/models/video/video.js'
 import { Job } from 'bullmq'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { JobQueue } from '../job-queue.js'
+
+const logger = createLogger()
 
 /**
  * Create transcoding jobs.
@@ -25,8 +26,6 @@ async function processTranscodingJobBuilder (job: Job) {
     const videoFile = video.getMaxQualityFile(VideoFileStream.VIDEO) || video.getMaxQualityFile(VideoFileStream.AUDIO)
 
     await createOptimizeOrMergeAudioJobs({
-      ...pick(payload.optimizeJob, [ 'isNewVideo' ]),
-
       video,
       videoFile,
       user

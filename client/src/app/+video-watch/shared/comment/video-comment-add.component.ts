@@ -1,6 +1,7 @@
 import { getLocaleDirection, NgClass } from '@angular/common'
 import {
   booleanAttribute,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   inject,
@@ -10,7 +11,8 @@ import {
   OnInit,
   output,
   SimpleChanges,
-  viewChild
+  viewChild,
+  ChangeDetectionStrategy
 } from '@angular/core'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { Notifier, User } from '@app/core'
@@ -34,6 +36,7 @@ import { Observable } from 'rxjs'
   selector: 'my-video-comment-add',
   templateUrl: './video-comment-add.component.html',
   styleUrls: [ './video-comment-add.component.scss' ],
+  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [
     FormsModule,
     ReactiveFormsModule,
@@ -47,6 +50,7 @@ import { Observable } from 'rxjs'
   ]
 })
 export class VideoCommentAddComponent extends FormReactive implements OnChanges, OnInit {
+  private cd = inject(ChangeDetectorRef)
   protected formReactiveService = inject(FormReactiveService)
   private notifier = inject(Notifier)
   private videoCommentService = inject(VideoCommentService)
@@ -155,12 +159,16 @@ export class VideoCommentAddComponent extends FormReactive implements OnChanges,
         this.addingComment = false
         this.commentCreated.emit(comment)
         this.form.reset()
+
+        this.cd.markForCheck()
       },
 
       error: err => {
         this.addingComment = false
 
         this.notifier.handleError(err)
+
+        this.cd.markForCheck()
       }
     })
   }

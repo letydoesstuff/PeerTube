@@ -30,14 +30,12 @@ import './shared/nsfw/peertube-nsfw-plugin'
 import './shared/p2p-media-loader/hls-plugin'
 import './shared/p2p-media-loader/p2p-media-loader-plugin'
 import './shared/peertube/peertube-plugin'
-import './shared/video-filter/video-flip-horizontally-plugin'
 import { ControlBarOptionsBuilder, HLSOptionsBuilder, WebVideoOptionsBuilder } from './shared/player-options-builder'
 import './shared/playlist/playlist-plugin'
 import './shared/resolutions/peertube-resolutions-plugin'
 import './shared/settings/menu-focus-fixed'
 import './shared/settings/resolution-menu-button'
 import './shared/settings/resolution-menu-item'
-import './shared/video-filter/video-filter-menu-button'
 import './shared/settings/settings-dialog'
 import './shared/settings/settings-menu-button'
 import './shared/settings/settings-menu-item'
@@ -47,6 +45,8 @@ import './shared/stats/stats-card'
 import './shared/stats/stats-plugin'
 import './shared/upnext/end-card'
 import './shared/upnext/upnext-plugin'
+import './shared/video-filter/video-filter-menu-button'
+import './shared/video-filter/video-flip-horizontally-plugin'
 import './shared/web-video/web-video-plugin'
 import {
   PeerTubePlayerConstructorOptions,
@@ -215,7 +215,8 @@ export class PeerTubePlayer {
         'p2pEnabled',
         'liveOptions',
         'hls',
-        'duration'
+        'duration',
+        'videoUUID'
       ])
     })
 
@@ -306,8 +307,7 @@ export class PeerTubePlayer {
     this.player.stats({
       videoUUID: this.currentLoadOptions.videoUUID,
       videoIsLive: this.currentLoadOptions.isLive,
-      mode: this.currentLoadOptions.mode,
-      p2pEnabled: this.currentLoadOptions.p2pEnabled
+      mode: this.currentLoadOptions.mode
     })
 
     this.player.videoFlipHorizontallyPlugin()
@@ -465,6 +465,8 @@ export class PeerTubePlayer {
       previousVideo: () => this.currentLoadOptions.previousVideo
     })
 
+    const autoplay = this.getAutoPlayValue(this.currentLoadOptions.autoplay)
+
     const videojsOptions = {
       html5,
 
@@ -477,10 +479,14 @@ export class PeerTubePlayer {
         ? this.options.muted
         : undefined, // Undefined so the player knows it has to check the local storage
 
-      autoplay: this.getAutoPlayValue(this.currentLoadOptions.autoplay),
+      autoplay,
 
       poster: getPoster(),
       preload: 'none' as 'none',
+
+      // The poster is only worth prioritizing if we actually display it: on autoplay it's hidden as soon as playback
+      // starts, so eagerly fetching it would just compete with the video segments
+      mainContent: this.options.mainContent === true && autoplay === false,
 
       inactivityTimeout: this.options.inactivityTimeout,
       playbackRates: [ 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3 ],

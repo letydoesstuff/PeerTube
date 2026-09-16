@@ -6,7 +6,7 @@
 */
 
 import { promisify1, promisify2, promisify3 } from '@peertube/peertube-core-utils'
-import { exec, ExecOptions } from 'child_process'
+import { exec } from 'child_process'
 import { ED25519KeyPairOptions, generateKeyPair, randomBytes, RSAKeyPairOptions, scrypt } from 'crypto'
 import truncate from 'lodash-es/truncate.js'
 import { pipeline } from 'stream'
@@ -90,7 +90,7 @@ export function parseBytes (value: string | number): number {
   const t = /^(\d+)\s*TB$/
   const g = /^(\d+)\s*GB$/
   const m = /^(\d+)\s*MB$/
-  const b = /^(\d+)\s*B$/
+  const b = /^(\d+)\s*(?:KB|B)$/
 
   let match: RegExpMatchArray
 
@@ -186,8 +186,6 @@ function pageToStartAndCount (page: number, itemsPerPage: number) {
 
 // ---------------------------------------------------------------------------
 
-type SemVersion = { major: number, minor: number, patch: number }
-
 /**
  * Parses a semantic version string into its separate components.
  * Fairly lax, and allows for missing or additional segments in the string.
@@ -204,19 +202,7 @@ function parseSemVersion (s: string) {
     major: parseInt(parsed[1]),
     minor: parseInt(parsed[2]),
     patch: parsed[3] ? parseInt(parsed[3]) : 0
-  } as SemVersion
-}
-
-// ---------------------------------------------------------------------------
-
-function execShell (command: string, options?: ExecOptions) {
-  return new Promise<{ err?: Error, stdout: string, stderr: string }>((res, rej) => {
-    exec(command, options, (err, stdout, stderr) => {
-      if (err) return rej({ err, stdout, stderr })
-
-      return res({ stdout, stderr })
-    })
-  })
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +263,6 @@ const pipelinePromise = promisify(pipeline)
 export {
   execPromise,
   execPromise2,
-  execShell,
   generateED25519KeyPairPromise,
   generateRSAKeyPairPromise,
   mapToJSON,

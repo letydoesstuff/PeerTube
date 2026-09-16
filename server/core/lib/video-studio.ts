@@ -1,9 +1,12 @@
 import { buildAspectRatio } from '@peertube/peertube-core-utils'
 import { getVideoStreamDuration } from '@peertube/peertube-ffmpeg'
 import { VideoStudioEditionPayload, VideoStudioTask, VideoStudioTaskPayload } from '@peertube/peertube-models'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
-import { createTorrentAndSetInfoHashFromPath } from '@server/lib/webtorrent.js'
+import { sequelizeTypescript } from '@server/initializers/database.js'
+import { buildNonDuplicatedFederateVideoJob } from '@server/lib/activitypub/videos/federate.js'
+import { createTorrentForFileFromPath } from '@server/lib/webtorrent.js'
+import { VideoInfohashModel } from '@server/models/video/video-infohash.js'
 import { VideoModel } from '@server/models/video/video.js'
 import { MUser, MVideoFile, MVideoFull, MVideoWithAllFiles, MVideoWithFile } from '@server/types/models/index.js'
 import { move, remove } from 'fs-extra/esm'
@@ -16,7 +19,7 @@ import { buildNewFile, removeHLSPlaylist, removeWebVideoFile } from './video-fil
 import { addRemoteStoryboardJobIfNeeded, buildLocalStoryboardJobIfNeeded } from './video-jobs.js'
 import { VideoPathManager } from './video-path-manager.js'
 
-const lTags = loggerTagsFactory('video-studio')
+const logger = createLogger('studio')
 
 export function buildTaskFileFieldname (indice: number, fieldName = 'file') {
   return `tasks[${indice}][options][${fieldName}]`
@@ -31,7 +34,7 @@ export function getStudioTaskFilePath (filename: string) {
 }
 
 export async function safeCleanupStudioTMPFiles (tasks: VideoStudioTaskPayload[]) {
-  logger.info('Removing TMP studio task files', { tasks, ...lTags() })
+  logger.info('Removing TMP studio task files', { tasks })
 
   for (const task of tasks) {
     try {
@@ -107,10 +110,15 @@ export async function onVideoStudioEnded (options: {
 
     await safeCleanupStudioTMPFiles(tasks)
 
-    await createTorrentAndSetInfoHashFromPath(video, newFile, outputPath)
+    const { infoHash, torrentFilename } = await createTorrentForFileFromPath(video, newFile, outputPath)
     await removeAllFiles(video, newFile)
 
-    await newFile.save()
+    await sequelizeTypescript.transaction(async t => {
+      newFile.torrentFilename = torrentFilename
+      await newFile.save({ transaction: t })
+
+      await VideoInfohashModel.replaceFileInfohash(newFile.id, infoHash, t)
+    })
 
     video.duration = await getVideoStreamDuration(outputPath)
     video.aspectRatio = buildAspectRatio({ width: newFile.width, height: newFile.height })
@@ -118,20 +126,12 @@ export async function onVideoStudioEnded (options: {
 
     await JobQueue.Instance.createSequentialJobFlow(
       await buildLocalStoryboardJobIfNeeded({ video, federate: false }),
-      {
-        type: 'federate-video' as 'federate-video',
-        payload: {
-          videoUUID: video.uuid,
-          isNewVideoForFederation: false
-        }
-      },
+      buildNonDuplicatedFederateVideoJob({ video }),
       {
         type: 'transcoding-job-builder' as 'transcoding-job-builder',
         payload: {
           videoUUID: video.uuid,
-          optimizeJob: {
-            isNewVideo: false
-          }
+          optimizeJob: {}
         }
       }
     )

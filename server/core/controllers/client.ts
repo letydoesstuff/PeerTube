@@ -2,7 +2,7 @@ import { buildFileLocale, getCompleteLocale, is18nLocale, LOCALE_FILES } from '@
 import { HttpStatusCode } from '@peertube/peertube-models'
 import { currentDir, root } from '@peertube/peertube-node-utils'
 import { toCompleteUUID } from '@server/helpers/custom-validators/misc.js'
-import { logger } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { CONFIG } from '@server/initializers/config.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
 import { getServerActor } from '@server/models/application/application.js'
@@ -13,9 +13,12 @@ import { STATIC_MAX_AGE } from '../initializers/constants.js'
 import { ClientHtml, sendHTML, serveIndexHTML } from '../lib/html/client-html.js'
 import { asyncMiddleware, buildRateLimiter, embedCSP } from '../middlewares/index.js'
 
+const logger = createLogger()
+
 const clientsRouter = express.Router()
 
 const clientsRateLimiter = buildRateLimiter({
+  enabled: CONFIG.RATES_LIMIT.CLIENT.ENABLED,
   windowMs: CONFIG.RATES_LIMIT.CLIENT.WINDOW_MS,
   max: CONFIG.RATES_LIMIT.CLIENT.MAX
 })

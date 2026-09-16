@@ -8,9 +8,11 @@ import { checkFFmpeg, checkMissedConfig, checkNodeVersion } from './core/initial
 
 // Do not use barrels because we don't want to load all modules here (we need to initialize database first)
 import { initI18n, useI18n } from '@server/helpers/i18n.js'
-import { logger } from './core/helpers/logger.js'
+import { createLogger } from './core/helpers/logger.js'
 import { CONFIG } from './core/initializers/config.js'
 import { API_VERSION, WEBSERVER, loadLanguages } from './core/initializers/constants.js'
+
+const logger = createLogger()
 
 const missed = checkMissedConfig()
 if (missed.length !== 0) {
@@ -43,7 +45,7 @@ try {
 // ----------- Database -----------
 
 // Initialize database and models
-import { checkDatabaseConnectionOrDie, initDatabaseModels, sequelizeTypescript } from './core/initializers/database.js'
+import { checkDatabaseConnectionOrDie, initDatabaseModels } from './core/initializers/database.js'
 checkDatabaseConnectionOrDie()
 
 import { migrate } from './core/initializers/migrator.js'
@@ -66,7 +68,7 @@ import { program as cli } from 'commander'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express from 'express'
-import { frameguard } from 'helmet'
+import { frameguard, xContentTypeOptions } from 'helmet'
 import anonymize from 'ip-anonymize'
 import morgan, { token } from 'morgan'
 
@@ -74,6 +76,10 @@ const app = express().disable('x-powered-by')
 
 // Trust our proxy (IP forwarding...)
 app.set('trust proxy', CONFIG.TRUST_PROXY)
+
+// Tag every logger call made while handling a request with a request id, first so every other middleware benefits from it
+import { requestLoggerContext } from './core/middlewares/logger-context.js'
+app.use(requestLoggerContext)
 
 app.use((_req, res, next) => {
   // OpenTelemetry
@@ -94,6 +100,8 @@ import { baseCSP } from './core/middlewares/csp.js'
 if (CONFIG.CSP.ENABLED) {
   app.use(baseCSP)
 }
+
+app.use(xContentTypeOptions())
 
 if (CONFIG.SECURITY.FRAMEGUARD.ENABLED) {
   app.use(frameguard({
@@ -140,20 +148,24 @@ import { PluginManager } from './core/lib/plugins/plugin-manager.js'
 import { Redis } from './core/lib/redis.js'
 import { ActorFollowScheduler } from './core/lib/schedulers/actor-follow-scheduler.js'
 import { AutoFollowIndexInstances } from './core/lib/schedulers/auto-follow-index-instances.js'
+import { BlocklistSubscriptionsScheduler } from './core/lib/schedulers/blocklist-subscriptions-scheduler.js'
 import { GeoIPUpdateScheduler } from './core/lib/schedulers/geo-ip-update-scheduler.js'
+import { ManualMigrationScriptsScheduler } from './core/lib/schedulers/manual-migration-scripts-scheduler.js'
 import { PeerTubeVersionCheckScheduler } from './core/lib/schedulers/peertube-version-check-scheduler.js'
 import { PluginsCheckScheduler } from './core/lib/schedulers/plugins-check-scheduler.js'
 import { RemoveDanglingResumableUploadsScheduler } from './core/lib/schedulers/remove-dangling-resumable-uploads-scheduler.js'
 import { RemoveOldHistoryScheduler } from './core/lib/schedulers/remove-old-history-scheduler.js'
 import { RemoveOldStatsScheduler } from './core/lib/schedulers/remove-old-stats-scheduler.js'
+import { RemoveOldUserLoginDevicesScheduler } from './core/lib/schedulers/remove-old-user-login-devices-scheduler.js'
 import { RunnerJobWatchDogScheduler } from './core/lib/schedulers/runner-job-watch-dog-scheduler.js'
 import { UpdateVideosScheduler } from './core/lib/schedulers/update-videos-scheduler.js'
 import { VideoStatsBufferScheduler } from './core/lib/schedulers/video-stats-buffer-scheduler.js'
 import { VideosRedundancyScheduler } from './core/lib/schedulers/videos-redundancy-scheduler.js'
+import { WatchedWordsSubscriptionsScheduler } from './core/lib/schedulers/watched-words-subscriptions-scheduler.js'
 import { YoutubeDlUpdateScheduler } from './core/lib/schedulers/youtube-dl-update-scheduler.js'
+import { registerGracefulShutdown } from './core/lib/shutdown.js'
 import { advertiseDoNotTrack } from './core/middlewares/dnt.js'
 import { apiFailMiddleware } from './core/middlewares/error.js'
-import { omit } from '@peertube/peertube-core-utils'
 
 // ----------- Command line -----------
 
@@ -169,8 +181,7 @@ cli
 if (isTestOrDevInstance()) {
   app.use(cors({
     origin: '*',
-    exposedHeaders: 'Retry-After',
-    credentials: true
+    exposedHeaders: [ 'Retry-After', 'X-Request-Id' ]
   }))
 }
 
@@ -273,10 +284,10 @@ app.use((err, req, res: express.Response, _next) => {
     ? (process as any)._getActiveRequests()
     : undefined
 
-  // Remove too big metadata
-  const sanitizedErr = omit(err, [ 'body' ])
+  // Remove too big metadata and alter original error to keep type
+  err.body = undefined
 
-  logger.error('Error in controller.', { err: sanitizedErr, sql, activeRequests, url: req.originalUrl })
+  logger.error('Error in controller.', { err, sql, activeRequests, url: req.originalUrl })
 
   return res.fail({
     status: err.status || HttpStatusCode.INTERNAL_SERVER_ERROR_500,
@@ -288,6 +299,9 @@ app.use((err, req, res: express.Response, _next) => {
 const { server, trackerServer } = createWebsocketTrackerServer(app)
 
 server.requestTimeout = CONFIG.HTTP_TIMEOUTS.REQUEST
+
+// Register it before the application is started so the process can always be stopped, even during a long migration
+registerGracefulShutdown(server)
 
 // ----------- Run -----------
 
@@ -326,6 +340,8 @@ async function startApplication () {
   PluginsCheckScheduler.Instance.enable()
   PeerTubeVersionCheckScheduler.Instance.enable()
   AutoFollowIndexInstances.Instance.enable()
+  BlocklistSubscriptionsScheduler.Instance.enable()
+  WatchedWordsSubscriptionsScheduler.Instance.enable()
   RemoveDanglingResumableUploadsScheduler.Instance.enable()
   VideoChannelSyncLatestScheduler.Instance.enable()
   VideoStatsBufferScheduler.Instance.enable()
@@ -333,6 +349,8 @@ async function startApplication () {
   RunnerJobWatchDogScheduler.Instance.enable()
   RemoveExpiredUserExportsScheduler.Instance.enable()
   UpdateTokenSessionScheduler.Instance.enable()
+  RemoveOldUserLoginDevicesScheduler.Instance.enable()
+  ManualMigrationScriptsScheduler.Instance.enable()
 
   OpenTelemetryMetrics.Instance.registerMetrics({ trackerServer })
 
@@ -379,14 +397,4 @@ async function startApplication () {
 
     if (cliOptions['benchmarkStartup']) process.exit(0)
   })
-
-  process.on('exit', () => {
-    sequelizeTypescript.close()
-      .catch(err => logger.error('Cannot close database connection.', { err }))
-
-    JobQueue.Instance.terminate()
-      .catch(err => logger.error('Cannot terminate job queue.', { err }))
-  })
-
-  process.on('SIGINT', () => process.exit(0))
 }

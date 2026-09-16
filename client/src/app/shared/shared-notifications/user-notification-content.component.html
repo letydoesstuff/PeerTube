@@ -337,6 +337,25 @@
       </div>
     }
 
+    @case (32) { <!-- UserNotificationType.AUTOMATIC_BLOCKLIST_UPDATE -->
+      <my-global-icon iconName="no"></my-global-icon>
+
+      <div class="message">
+        <span i18n>Automatic blocklist update:&nbsp;</span>
+          @if (n.payload.data?.blockedAccountsCount || n.payload.data?.blockedHostsCount) {
+            <span i18n>
+              <strong>{n.payload.data?.blockedAccountsCount || 0, plural, =1 {1 account} other {{{ n.payload.data?.blockedAccountsCount || 0 }} accounts}}</strong> and <strong>{n.payload.data?.blockedHostsCount || 0, plural, =1 {1 server} other {{{ n.payload.data?.blockedHostsCount || 0 }} servers}}</strong> were blocked.&nbsp;
+            </span>
+          }
+
+          @if (n.payload.data?.unblockedAccountsCount || n.payload.data?.unblockedHostsCount) {
+            <span i18n>
+              <strong>{n.payload.data?.unblockedAccountsCount || 0, plural, =1 {1 account} other {{{ n.payload.data?.unblockedAccountsCount || 0 }} accounts}}</strong> and <strong>{n.payload.data?.unblockedHostsCount || 0, plural, =1 {1 server} other {{{ n.payload.data?.unblockedHostsCount || 0 }} servers}}</strong> were unblocked.
+            </span>
+          }
+      </div>
+    }
+
     @default {
       <my-global-icon iconName="alert"></my-global-icon>
 

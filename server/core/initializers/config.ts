@@ -9,17 +9,126 @@ import {
   VideoRedundancyConfigFilter,
   VideosRedundancyStrategy
 } from '@peertube/peertube-models'
-import { buildPath, root } from '@peertube/peertube-node-utils'
+import { buildPath } from '@peertube/peertube-node-utils'
 import { TranscriptionEngineName, WhisperBuiltinModelName } from '@peertube/peertube-transcription'
-import { decacheModule } from '@server/helpers/decache.js'
 import bytes from 'bytes'
-import { type Config } from 'config'
-import { createRequire } from 'module'
-import { dirname, join } from 'path'
+import { Load, Util, type ConfigSource } from 'config/lib/util.js'
+import { basename, dirname, join } from 'path'
 import { parseBytes, parseDurationToMs } from '../helpers/core-utils.js'
 
-const require = createRequire(import.meta.url)
-let config: Config = require('config')
+type ConfigInstance = {
+  get: <T>(property: string) => T
+  has: (property: string) => boolean
+  util: {
+    getConfigSources: () => ConfigSource[]
+    getEnv: (varName: string) => string
+  }
+}
+
+// Reimplement the bootstrap of the `config` module singleton, so we can rebuild the configuration
+// on reload without having to purge the CommonJS require cache
+function loadConfig (): ConfigInstance {
+  // `environments` is optional at runtime, but is typed as a required argument by the config module
+  const load = Load.fromEnvironment(undefined)
+
+  const additional: { name: string, config: any }[] = []
+  let envConfig: any = {}
+  let cmdLineConfig: any = {}
+
+  load.setEnv('CONFIG_DIR', load.options.configDir)
+
+  if (process.env.NODE_CONFIG) {
+    try {
+      envConfig = JSON.parse(process.env.NODE_CONFIG)
+    } catch {
+      console.error('The $NODE_CONFIG environment variable is malformed JSON')
+    }
+
+    additional.push({ name: '$NODE_CONFIG', config: envConfig })
+  }
+
+  const cmdLineArg = load.getCmdLineArg('NODE_CONFIG')
+  if (cmdLineArg) {
+    try {
+      cmdLineConfig = JSON.parse(cmdLineArg)
+    } catch {
+      console.error('The --NODE_CONFIG={json} command line argument is malformed JSON')
+    }
+
+    additional.push({ name: '--NODE_CONFIG argument', config: cmdLineConfig })
+  }
+
+  // Place the mixed NODE_CONFIG into the environment
+  load.setEnv('NODE_CONFIG', JSON.stringify(Util.extendDeep({}, envConfig, cmdLineConfig)))
+
+  load.scan(additional)
+
+  runStrictnessChecks(load)
+
+  if (!load.initParam('SUPPRESS_NO_CONFIG_WARNING') && Object.keys(load.config).length === 0) {
+    console.error('WARNING: No configurations found in configuration directory: ' + load.options.configDir)
+    console.error('WARNING: To disable this warning set SUPPRESS_NO_CONFIG_WARNING in the environment.')
+  }
+
+  // Ensure the configuration cannot be accidentally mutated at runtime
+  if (!load.initParam('ALLOW_CONFIG_MUTATIONS', false)) {
+    Util.makeImmutable(load.config)
+  }
+
+  return {
+    get: <T>(property: string): T => {
+      const value = Util.getPath(load.config, property)
+      if (value === undefined) throw new Error(`Configuration property "${property}" is not defined`)
+
+      return value
+    },
+    has: (property: string): boolean => Util.getPath(load.config, property) !== undefined,
+    util: {
+      getConfigSources: () => load.getSources(),
+      getEnv: (varName: string) => load.getEnv(varName)
+    }
+  }
+}
+
+// Warn (or throw if NODE_CONFIG_STRICT_MODE is set) when NODE_ENV/NODE_APP_INSTANCE match no config file
+// See https://github.com/node-config/node-config/wiki/Strict-Mode
+function runStrictnessChecks (load: Load) {
+  if (load.initParam('SUPPRESS_STRICTNESS_CHECK')) return
+
+  const sourceFilenames = load.getSources().map(s => basename(s.name))
+
+  const warnOrThrow = (message: string) => {
+    const beStrict = process.env.NODE_CONFIG_STRICT_MODE
+    const prefix = beStrict ? 'FATAL: ' : 'WARNING: '
+    const seeURL = 'See https://github.com/node-config/node-config/wiki/Strict-Mode'
+
+    console.error(prefix + message)
+    console.error(prefix + seeURL)
+
+    if ([ 'true', '1' ].includes(beStrict)) throw new Error(prefix + message + ' ' + seeURL)
+  }
+
+  for (const env of load.options.nodeEnv) {
+    // Anchored regex to avoid false positives, so `test` does not match `contest.yaml`
+    const anyFileMatchesEnv = sourceFilenames.some(filename => new RegExp(`^${env}[.-]`).test(filename))
+
+    // development is special cased because it's the default value
+    if (env && env !== 'development' && !anyFileMatchesEnv) {
+      warnOrThrow(`${load.getEnv('nodeEnv')} value of '${env}' did not match any deployment config file names.`)
+    }
+
+    if (env === 'default' || env === 'local') {
+      warnOrThrow(`${load.getEnv('nodeEnv')} value of '${env}' is ambiguous.`)
+    }
+  }
+
+  const appInstance = load.options.appInstance
+  if (appInstance && !sourceFilenames.some(filename => filename.includes(appInstance))) {
+    warnOrThrow(`NODE_APP_INSTANCE value of '${appInstance}' did not match any instance config file names.`)
+  }
+}
+
+let config = loadConfig()
 
 const configChangedHandlers: Function[] = []
 
@@ -122,6 +231,14 @@ const CONFIG = {
 
   NSFW_FLAGS_SETTINGS: {
     ENABLED: config.get<boolean>('nsfw_flags_settings.enabled')
+  },
+
+  BLOCKLIST: {
+    PUBLIC_LOG: {
+      get ENABLED () {
+        return config.get<boolean>('blocklist.public_log.enabled')
+      }
+    }
   },
 
   DOWNLOAD: {
@@ -332,48 +449,80 @@ const CONFIG = {
   },
   RATES_LIMIT: {
     API: {
+      ENABLED: config.get<boolean>('rates_limit.api.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.api.window')),
       MAX: config.get<number>('rates_limit.api.max')
     },
     SIGNUP: {
+      ENABLED: config.get<boolean>('rates_limit.signup.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.signup.window')),
       MAX: config.get<number>('rates_limit.signup.max')
     },
     LOGIN: {
+      ENABLED: config.get<boolean>('rates_limit.login.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.login.window')),
       MAX: config.get<number>('rates_limit.login.max')
     },
     RECEIVE_CLIENT_LOG: {
+      ENABLED: config.get<boolean>('rates_limit.receive_client_log.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.receive_client_log.window')),
       MAX: config.get<number>('rates_limit.receive_client_log.max')
     },
     ASK_SEND_EMAIL: {
+      ENABLED: config.get<boolean>('rates_limit.ask_send_email.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.ask_send_email.window')),
       MAX: config.get<number>('rates_limit.ask_send_email.max')
     },
+    CONFIRM_TOKEN: {
+      ENABLED: config.get<boolean>('rates_limit.confirm_token.enabled'),
+      WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.confirm_token.window')),
+      MAX: config.get<number>('rates_limit.confirm_token.max')
+    },
     PLUGINS: {
+      ENABLED: config.get<boolean>('rates_limit.plugins.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.plugins.window')),
       MAX: config.get<number>('rates_limit.plugins.max')
     },
     WELL_KNOWN: {
+      ENABLED: config.get<boolean>('rates_limit.well_known.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.well_known.window')),
       MAX: config.get<number>('rates_limit.well_known.max')
     },
     FEEDS: {
+      ENABLED: config.get<boolean>('rates_limit.feeds.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.feeds.window')),
       MAX: config.get<number>('rates_limit.feeds.max')
     },
     ACTIVITY_PUB: {
+      ENABLED: config.get<boolean>('rates_limit.activity_pub.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.activity_pub.window')),
       MAX: config.get<number>('rates_limit.activity_pub.max')
     },
     CLIENT: {
+      ENABLED: config.get<boolean>('rates_limit.client.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.client.window')),
       MAX: config.get<number>('rates_limit.client.max')
     },
     DOWNLOAD_GENERATE_VIDEO: {
+      ENABLED: config.get<boolean>('rates_limit.download_generate_video.enabled'),
       WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.download_generate_video.window')),
       MAX: config.get<number>('rates_limit.download_generate_video.max')
+    },
+    REPORT_ABUSE: {
+      ENABLED: config.get<boolean>('rates_limit.report_abuse.enabled'),
+      WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.report_abuse.window')),
+      MAX: config.get<number>('rates_limit.report_abuse.max')
+    },
+    CREATE_COMMENT: {
+      ENABLED: config.get<boolean>('rates_limit.create_comment.enabled'),
+      WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.create_comment.window')),
+      MAX: config.get<number>('rates_limit.create_comment.max')
+    },
+    LOGIN_LOCKOUT: {
+      ENABLED: config.get<boolean>('rates_limit.login_lockout.enabled'),
+      WINDOW_MS: parseDurationToMs(config.get<string>('rates_limit.login_lockout.window')),
+      MAX: config.get<number>('rates_limit.login_lockout.max'),
+      MAX_PER_IP: config.get<number>('rates_limit.login_lockout.max_per_ip')
     }
   },
   TRUST_PROXY: config.get<string[]>('trust_proxy'),
@@ -385,6 +534,7 @@ const CONFIG = {
       MAX_FILES: config.get<number>('log.rotation.max_files')
     },
     ANONYMIZE_IP: config.get<boolean>('log.anonymize_ip'),
+    TAG_REQUESTS: config.get<boolean>('log.tag_requests'),
     LOG_PING_REQUESTS: config.get<boolean>('log.log_ping_requests'),
     LOG_TRACKER_UNKNOWN_INFOHASH: config.get<boolean>('log.log_tracker_unknown_infohash'),
     LOG_HTTP_REQUESTS: config.get<boolean>('log.log_http_requests'),
@@ -609,6 +759,9 @@ const CONFIG = {
     },
     get DISABLE_ROOT_AUTH () {
       return config.get<boolean>('user.disable_root_auth')
+    },
+    get ALLOW_CROSS_PROVIDER_AUTH () {
+      return config.get<boolean>('user.allow_cross_provider_auth')
     },
     get VIDEO_QUOTA () {
       return parseBytes(config.get<number>('user.video_quota'))
@@ -1247,7 +1400,7 @@ function getLocalConfigFilePath () {
   return join(localConfigDir, filename + '.json')
 }
 
-function getConfigModule (): Config {
+function getConfigModule (): ConfigInstance {
   return config
 }
 
@@ -1287,31 +1440,7 @@ function buildVideosRedundancy (objs: any[]): VideosRedundancyStrategy[] {
 }
 
 export function reloadConfig () {
-  function getConfigDirectories () {
-    if (process.env.NODE_CONFIG_DIR) {
-      return process.env.NODE_CONFIG_DIR.split(':')
-    }
-
-    return [ join(root(), 'config') ]
-  }
-
-  function purge () {
-    const directories = getConfigDirectories()
-
-    for (const fileName in require.cache) {
-      if (directories.some(dir => fileName.includes(dir)) === false) {
-        continue
-      }
-
-      delete require.cache[fileName]
-    }
-
-    decacheModule(require, 'config')
-  }
-
-  purge()
-
-  config = require('config')
+  config = loadConfig()
 
   for (const configChangedHandler of configChangedHandlers) {
     configChangedHandler()

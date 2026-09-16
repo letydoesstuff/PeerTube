@@ -45,6 +45,11 @@ rates_limit:
     max:
       __name: PEERTUBE_RATES_LIMIT_ASK_SEND_EMAIL_MAX
       __format: json
+  confirm_token:
+    window: PEERTUBE_RATES_LIMIT_CONFIRM_TOKEN_WINDOW
+    max:
+      __name: PEERTUBE_RATES_LIMIT_CONFIRM_TOKEN_MAX
+      __format: json
   receive_client_log:
     window: PEERTUBE_RATES_LIMIT_RECEIVE_CLIENT_LOG_WINDOW
     max:
@@ -125,6 +130,7 @@ redis:
   port:
     __name: PEERTUBE_REDIS_PORT
     __format: json
+  socket: PEERTUBE_REDIS_SOCKET
   auth: PEERTUBE_REDIS_AUTH
   db:
     __name: PEERTUBE_REDIS_DB
@@ -283,6 +289,9 @@ log:
       __format: json
   anonymize_ip:
     __name: PEERTUBE_LOG_ANONYMIZE_IP
+    __format: json
+  tag_requests:
+    __name: PEERTUBE_LOG_TAG_REQUESTS
     __format: json
   log_tracker_unknown_infohash:
     __name: PEERTUBE_LOG_LOG_TRACKER_UNKNOWN_INFOHASH
@@ -500,6 +509,10 @@ nsfw_flags_settings:
     __name: PEERTUBE_NSFW_FLAGS_SETTINGS_ENABLED
     __format: json
 
+download:
+  max_total_bytes_per_second: PEERTUBE_DOWNLOAD_MAX_TOTAL_BYTES_PER_SECOND
+  max_bytes_per_ip_per_second: PEERTUBE_DOWNLOAD_MAX_BYTES_PER_IP_PER_SECOND
+
 download_generate_video:
   max_parallel_downloads:
     __name: PEERTUBE_DOWNLOAD_GENERATE_VIDEO_MAX_PARALLEL_DOWNLOADS
@@ -539,6 +552,9 @@ signup:
         __format: json
 
 user:
+  allow_cross_provider_auth:
+    __name: PEERTUBE_USER_ALLOW_CROSS_PROVIDER_AUTH
+    __format: json
   video_quota:
     __name: PEERTUBE_USER_VIDEO_QUOTA
     __format: json

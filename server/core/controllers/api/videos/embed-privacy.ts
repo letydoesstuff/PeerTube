@@ -8,9 +8,9 @@ import {
   VideoEmbedPrivacyUpdate
 } from '@peertube/peertube-models'
 import { getAuthUser } from '@server/helpers/express-utils.js'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { VIDEO_EMBED_PRIVACY_POLICIES, WEBSERVER } from '@server/initializers/constants.js'
-import { federateVideoIfNeeded } from '@server/lib/activitypub/videos/index.js'
+import { scheduleVideoFederation } from '@server/lib/activitypub/videos/index.js'
 import { checkCanManageVideo } from '@server/middlewares/validators/shared/videos.js'
 import { VideoChannelActivityModel } from '@server/models/video/video-channel-activity.js'
 import { VideoEmbedPrivacyDomainModel } from '@server/models/video/video-embed-privacy-domain.js'
@@ -25,7 +25,8 @@ import {
   updateVideoEmbedPrivacyValidator
 } from '../../../middlewares/validators/index.js'
 
-const lTags = loggerTagsFactory('api', 'video', 'embed-privacy')
+const logger = createLogger('api', 'video', 'embed-privacy')
+
 const videoEmbedPrivacyRouter = express.Router()
 
 videoEmbedPrivacyRouter.get(
@@ -76,9 +77,15 @@ async function isVideoEmbedOnDomainAllowed (req: express.Request, res: express.R
   const video = res.locals.videoWithBlacklist
   const isOnInstance = req.query.domain === WEBSERVER.HOST
 
-  const domainAllowed = video.embedPrivacyPolicy === VideoEmbedPrivacyPolicy.ALL_ALLOWED || isOnInstance
-    ? true
-    : await VideoEmbedPrivacyDomainModel.isDomainAllowed(video.id, req.query.domain)
+  let domainAllowed: boolean
+
+  if (video.embedPrivacyPolicy === VideoEmbedPrivacyPolicy.DISABLED) {
+    domainAllowed = false
+  } else if (video.embedPrivacyPolicy === VideoEmbedPrivacyPolicy.ALL_ALLOWED || isOnInstance) {
+    domainAllowed = true
+  } else {
+    domainAllowed = await VideoEmbedPrivacyDomainModel.isDomainAllowed(video.id, req.query.domain)
+  }
 
   const user = getAuthUser(res)
 
@@ -86,7 +93,7 @@ async function isVideoEmbedOnDomainAllowed (req: express.Request, res: express.R
     ? null
     : false
 
-  if (domainAllowed === false && user) {
+  if (domainAllowed === false && user && video.embedPrivacyPolicy !== VideoEmbedPrivacyPolicy.DISABLED) {
     userBypassAllowed = await checkCanManageVideo({
       user,
       video: await VideoModel.loadWithRights(video.id),
@@ -101,30 +108,33 @@ async function isVideoEmbedOnDomainAllowed (req: express.Request, res: express.R
   return res.json({ domainAllowed, userBypassAllowed } satisfies VideoEmbedPrivacyAllowed)
 }
 
-async function updateVideoEmbedPrivacy (req: express.Request, res: express.Response) {
+function updateVideoEmbedPrivacy (req: express.Request, res: express.Response) {
   const video = res.locals.videoFull
-  const body = req.body as VideoEmbedPrivacyUpdate
 
-  await VideoPasswordModel.sequelize.transaction(async (t: Transaction) => {
-    video.embedPrivacyPolicy = body.policy
+  return logger.withContext([ video.uuid ], async () => {
+    const body = req.body as VideoEmbedPrivacyUpdate
 
-    await video.save({ transaction: t })
+    await VideoPasswordModel.sequelize.transaction(async (t: Transaction) => {
+      video.embedPrivacyPolicy = body.policy
 
-    await VideoEmbedPrivacyDomainModel.deleteAllDomains(video.id, t)
-    await VideoEmbedPrivacyDomainModel.addDomains(body.domains, video.id, t)
+      await video.save({ transaction: t })
 
-    await VideoChannelActivityModel.addVideoActivity({
-      action: VideoChannelActivityAction.UPDATE_EMBED_POLICY,
-      user: res.locals.oauth.token.User,
-      channel: video.VideoChannel,
-      video,
-      transaction: t
+      await VideoEmbedPrivacyDomainModel.deleteAllDomains(video.id, t)
+      await VideoEmbedPrivacyDomainModel.addDomains(body.domains, video.id, t)
+
+      await VideoChannelActivityModel.addVideoActivity({
+        action: VideoChannelActivityAction.UPDATE_EMBED_POLICY,
+        user: res.locals.oauth.token.User,
+        channel: video.VideoChannel,
+        video,
+        transaction: t
+      })
+
+      scheduleVideoFederation({ video, transaction: t })
     })
 
-    await federateVideoIfNeeded(video, false, t)
+    logger.info(`Video embed policy for video with name ${video.name} and uuid ${video.uuid} have been updated`)
+
+    return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
   })
-
-  logger.info(`Video embed policy for video with name ${video.name} and uuid ${video.uuid} have been updated`, lTags(video.uuid))
-
-  return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
 }

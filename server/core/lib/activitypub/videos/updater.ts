@@ -1,6 +1,7 @@
 import { VideoObject, VideoPrivacy } from '@peertube/peertube-models'
 import { resetSequelizeInstance, runInReadCommittedTransaction } from '@server/helpers/database-utils.js'
-import { logger, loggerTagsFactory, LoggerTagsFn } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
+import { createVideoAutomaticTagsJob } from '@server/lib/automatic-tags/automatic-tags.js'
 import { Notifier } from '@server/lib/notifier/index.js'
 import { PeerTubeSocket } from '@server/lib/peertube-socket.js'
 import { Hooks } from '@server/lib/plugins/hooks.js'
@@ -15,16 +16,16 @@ import {
 } from '@server/types/models/index.js'
 import { Transaction } from 'sequelize'
 import { haveActorsSameRemoteHost } from '../actors/check-actor.js'
-import { APVideoAbstractBuilder, getVideoAttributesFromObject, updateVideoRates } from './shared/index.js'
 import { checkUrlsSameHost } from '../url.js'
+import { APVideoAbstractBuilder, getVideoAttributesFromObject, updateVideoRates } from './shared/index.js'
+
+const logger = createLogger('ap', 'video', 'update')
 
 export class APVideoUpdater extends APVideoAbstractBuilder {
   private readonly wasPrivateVideo: boolean
   private readonly wasUnlistedVideo: boolean
 
   private readonly oldVideoChannel: MChannelAccountLight
-
-  protected lTags: LoggerTagsFn
 
   constructor (
     protected readonly videoObject: VideoObject,
@@ -37,15 +38,17 @@ export class APVideoUpdater extends APVideoAbstractBuilder {
     this.wasUnlistedVideo = this.video.privacy === VideoPrivacy.UNLISTED
 
     this.oldVideoChannel = this.video.VideoChannel
-
-    this.lTags = loggerTagsFactory('ap', 'video', 'update', video.uuid, video.url)
   }
 
   async update (overrideTo?: string[]) {
+    return logger.withContext([ this.video.uuid, this.video.url ], () => this.runUpdate(overrideTo))
+  }
+
+  private async runUpdate (overrideTo?: string[]) {
     logger.debug(
       'Updating remote video "%s".',
       this.videoObject.uuid,
-      { videoObject: this.videoObject, ...this.lTags() }
+      { videoObject: this.videoObject }
     )
 
     if (!checkUrlsSameHost(this.contextUrl, this.videoObject.id)) {
@@ -77,10 +80,11 @@ export class APVideoUpdater extends APVideoAbstractBuilder {
         runInReadCommittedTransaction(t => this.setTags(videoUpdated, t)),
         runInReadCommittedTransaction(t => this.setTrackers(videoUpdated, t)),
         runInReadCommittedTransaction(t => this.setStoryboard(videoUpdated, t)),
-        runInReadCommittedTransaction(t => this.setAutomaticTags({ video: videoUpdated, transaction: t, oldVideo })),
         runInReadCommittedTransaction(t => this.setThumbnails(videoUpdated, t)),
         this.setOrDeleteLive(videoUpdated)
       ])
+
+      const rebuildAutomaticTags = this.automaticTagsNeedRebuild({ video: videoUpdated, oldVideo })
 
       await runInReadCommittedTransaction(t => this.setCaptions(videoUpdated, t))
 
@@ -89,12 +93,18 @@ export class APVideoUpdater extends APVideoAbstractBuilder {
 
       await autoBlacklistVideoIfNeeded({
         video: videoUpdated,
+        // Already published: don't hold it while its automatic tags are rebuilt
+        holdIfAutoTagPolicy: false,
         user: undefined,
         isRemote: true,
         isNew: false,
         isNewFile: oldInputFileUpdatedAt !== videoUpdated.inputFileUpdatedAt,
         transaction: undefined
       })
+
+      if (rebuildAutomaticTags) {
+        createVideoAutomaticTagsJob({ video: videoUpdated, moderation: 'apply' })
+      }
 
       await updateVideoRates(videoUpdated, this.videoObject)
 
@@ -108,7 +118,7 @@ export class APVideoUpdater extends APVideoAbstractBuilder {
 
       Hooks.runAction('action:activity-pub.remote-video.updated', { video: videoUpdated, videoAPObject: this.videoObject })
 
-      logger.info('Remote video with uuid %s updated', this.videoObject.uuid, this.lTags())
+      logger.info('Remote video with uuid %s updated', this.videoObject.uuid)
 
       return videoUpdated
     } catch (err) {
@@ -191,7 +201,7 @@ export class APVideoUpdater extends APVideoAbstractBuilder {
     }
 
     // This is just a debug because we will retry the insert
-    logger.debug('Cannot update the remote video.', { err, ...this.lTags() })
+    logger.debug('Cannot update the remote video.', { err })
     throw err
   }
 }

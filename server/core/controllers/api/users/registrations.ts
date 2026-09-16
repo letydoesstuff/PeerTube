@@ -13,7 +13,7 @@ import { Hooks } from '@server/lib/plugins/hooks.js'
 import { UserRegistrationModel } from '@server/models/user/user-registration.js'
 import express from 'express'
 import { auditLoggerFactory, UserAuditView } from '../../../helpers/audit-logger.js'
-import { logger } from '../../../helpers/logger.js'
+import { createLogger } from '../../../helpers/logger.js'
 import { CONFIG } from '../../../initializers/config.js'
 import { Notifier } from '../../../lib/notifier/index.js'
 import {
@@ -42,9 +42,12 @@ import {
   usersRequestRegistrationValidator
 } from '../../../middlewares/index.js'
 
+const logger = createLogger()
+
 const auditLogger = auditLoggerFactory('users')
 
 const registrationRateLimiter = buildRateLimiter({
+  enabled: CONFIG.RATES_LIMIT.SIGNUP.ENABLED,
   windowMs: CONFIG.RATES_LIMIT.SIGNUP.WINDOW_MS,
   max: CONFIG.RATES_LIMIT.SIGNUP.MAX,
   skipFailedRequests: true

@@ -1,5 +1,5 @@
 import { CommonModule, getLocaleDirection } from '@angular/common'
-import { Component, forwardRef, inject, input, LOCALE_ID, model } from '@angular/core'
+import { ChangeDetectionStrategy, Component, forwardRef, inject, input, LOCALE_ID, model } from '@angular/core'
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms'
 import { AuthService } from '@app/core'
 import { VideoChannel } from '@peertube/peertube-models'
@@ -18,6 +18,7 @@ import { CollaboratorStateComponent } from '../shared-main/channel/collaborator-
     }
   ],
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [
     CommonModule,
     ActorAvatarComponent,

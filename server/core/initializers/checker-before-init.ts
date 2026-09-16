@@ -1,12 +1,16 @@
 import { promisify0 } from '@peertube/peertube-core-utils'
-import config from 'config'
 import { parseSemVersion } from '../helpers/core-utils.js'
-import { logger } from '../helpers/logger.js'
+import { createLogger } from '../helpers/logger.js'
+import { getConfigModule } from './config.js'
+
+const logger = createLogger()
 
 // ONLY USE CORE MODULES IN THIS FILE!
 
 // Check the config files
 export function checkMissedConfig () {
+  const config = getConfigModule()
+
   const required = [
     'listen.port',
     'listen.hostname',
@@ -53,6 +57,7 @@ export function checkMissedConfig () {
     'log.rotation.max_file_size',
     'log.rotation.max_files',
     'log.anonymize_ip',
+    'log.tag_requests',
     'log.log_ping_requests',
     'log.log_tracker_unknown_infohash',
     'log.prettify_sql',
@@ -176,6 +181,8 @@ export function checkMissedConfig () {
     'rates_limit.signup.max',
     'rates_limit.ask_send_email.window',
     'rates_limit.ask_send_email.max',
+    'rates_limit.confirm_token.window',
+    'rates_limit.confirm_token.max',
     'rates_limit.receive_client_log.window',
     'rates_limit.receive_client_log.max',
     'rates_limit.plugins.window',

@@ -1,4 +1,4 @@
-import { randomInt } from '@peertube/peertube-core-utils'
+import { LIVE_SEGMENT_EXTENSION, randomInt } from '@peertube/peertube-core-utils'
 import {
   AbuseState,
   AbuseStateType,
@@ -14,6 +14,8 @@ import {
   PlayerThemeVideoSetting,
   RunnerJobState,
   RunnerJobStateType,
+  StreamSyncState,
+  StreamSyncStateType,
   UploadImageType,
   UploadImageType_Type,
   UserExportState,
@@ -28,8 +30,6 @@ import {
   VideoChannelActivityTargetType,
   VideoChannelCollaboratorState,
   VideoChannelCollaboratorStateType,
-  VideoChannelSyncState,
-  VideoChannelSyncStateType,
   VideoCommentPolicy,
   VideoCommentPolicyType,
   VideoEmbedPrivacyPolicy,
@@ -49,7 +49,7 @@ import {
   VideoState,
   VideoStateType
 } from '@peertube/peertube-models'
-import { isTestInstance, isTestOrDevInstance, root } from '@peertube/peertube-node-utils'
+import { isDevInstance, isTestInstance, isTestOrDevInstance, root } from '@peertube/peertube-node-utils'
 import { RepeatOptions } from 'bullmq'
 import { Encoding, randomBytes } from 'crypto'
 import { readJsonSync } from 'fs-extra/esm'
@@ -62,7 +62,7 @@ import { CONFIG, registerConfigChangedHandler } from './config.js'
 
 // ---------------------------------------------------------------------------
 
-export const LAST_MIGRATION_VERSION = 1040
+export const LAST_MIGRATION_VERSION = 1125
 
 // ---------------------------------------------------------------------------
 
@@ -81,6 +81,22 @@ export const PAGINATION = {
       MAX: 50
     }
   }
+}
+
+// Comment trees are truncated so we don't have to build/send/render a whole thread at once
+export const VIDEO_COMMENTS_TREE = {
+  DEPTH: {
+    DEFAULT: 5,
+    MAX: 10
+  },
+  REPLIES_PER_LEVEL: {
+    DEFAULT: 10,
+    MAX: 30
+  },
+  MAX_COMMENTS_PER_REQUEST: 300,
+  // A tree can make the database walk through `count * (repliesPerLevel ^ maxDepth - 1) / (repliesPerLevel - 1)`
+  // comments before we truncate it to MAX_COMMENTS_PER_REQUEST
+  MAX_SEARCHED_COMMENTS: 2_000_000
 }
 
 export const WEBSERVER = {
@@ -155,8 +171,10 @@ export const SORTABLE_COLUMNS = {
 
   ACCOUNTS_BLOCKLIST: [ 'createdAt' ],
   SERVERS_BLOCKLIST: [ 'createdAt' ],
+  BLOCKLIST_SUBSCRIPTIONS: [ 'name', 'createdAt', 'lastSyncAt' ],
 
   WATCHED_WORDS_LISTS: [ 'createdAt', 'updatedAt', 'listName' ],
+  WATCHED_WORDS_SUBSCRIPTIONS: [ 'name', 'createdAt', 'lastSyncAt' ],
 
   USER_NOTIFICATIONS: [ 'createdAt', 'read' ],
 
@@ -211,6 +229,8 @@ export const REMOTE_SCHEME = {
 // ---------------------------------------------------------------------------
 
 export const JOB_ATTEMPTS: { [id in JobType]: number } = {
+  'build-automatic-tags': 1,
+  'build-object-automatic-tags': 2,
   'activitypub-http-broadcast': 1,
   'activitypub-http-broadcast-parallel': 1,
   'activitypub-http-unicast': 1,
@@ -242,6 +262,9 @@ export const JOB_ATTEMPTS: { [id in JobType]: number } = {
 }
 // Excluded keys are jobs that can be configured by admins
 export const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'video-import'>]: number } = {
+  'build-automatic-tags': 1,
+  // Auto taggers can be plugins calling a slow external service
+  'build-object-automatic-tags': 5,
   'activitypub-http-broadcast': 1,
   'activitypub-http-broadcast-parallel': 30,
   'activitypub-http-unicast': 30,
@@ -270,6 +293,8 @@ export const JOB_CONCURRENCY: { [id in Exclude<JobType, 'video-transcoding' | 'v
   'video-transcription': 1
 }
 export const JOB_TTL: { [id in JobType]: number } = {
+  'build-automatic-tags': 60000 * 60 * 24 * 7, // 7 days: plugin auto taggers can be slow and this job rebuilds every object
+  'build-object-automatic-tags': 1000 * 60 * 30, // 30 minutes
   'activitypub-http-broadcast': 60000 * 10, // 10 minutes
   'activitypub-http-broadcast-parallel': 60000 * 10, // 10 minutes
   'activitypub-http-unicast': 60000 * 10, // 10 minutes
@@ -357,6 +382,14 @@ export const REQUEST_TIMEOUTS = {
   REDUNDANCY: JOB_TTL['video-redundancy']
 }
 
+// Container runtimes send a SIGKILL if we take too long to exit (docker waits 10 seconds, kubernetes 30 seconds)
+export const SHUTDOWN_TIMEOUTS = {
+  // Time we let in flight HTTP requests complete before destroying their sockets
+  HTTP_CONNECTIONS: 2000, // 2 seconds
+  // Time we let the whole graceful shutdown complete before exiting anyway
+  GLOBAL: 8000 // 8 seconds
+}
+
 export const SCHEDULER_INTERVALS_MS = {
   RUNNER_JOB_WATCH_DOG: Math.min(CONFIG.REMOTE_RUNNERS.STALLED_JOBS.VOD, CONFIG.REMOTE_RUNNERS.STALLED_JOBS.LIVE),
   ACTOR_FOLLOW_SCORES: 60000 * 60 * 20, // 20 hours
@@ -374,8 +407,26 @@ export const SCHEDULER_INTERVALS_MS = {
   REMOVE_EXPIRED_USER_EXPORTS: 1000 * 3600, // 1 hour
   UPDATE_INBOX_STATS: 1000 * 60, // 1 minute
   REMOVE_DANGLING_RESUMABLE_UPLOADS: 60000 * 60, // 1 hour
-  CHANNEL_SYNC_CHECK_INTERVAL: CONFIG.IMPORT.VIDEO_CHANNEL_SYNCHRONIZATION.CHECK_INTERVAL
+  CHANNEL_SYNC_CHECK_INTERVAL: CONFIG.IMPORT.VIDEO_CHANNEL_SYNCHRONIZATION.CHECK_INTERVAL,
+  BLOCKLIST_SUBSCRIPTIONS_SYNC: 60000 * 60, // 1 hour
+  WATCHED_WORDS_SUBSCRIPTIONS_SYNC: 60000 * 60, // 1 hour
+  REMOVE_OLD_USER_LOGIN_DEVICES: 60000 * 60 * 24, // 1 day
+  CHECK_MANUAL_MIGRATION_SCRIPTS: 60000 * 60 * 12 // 12 hours
 }
+
+export const MANUAL_MIGRATION_SCRIPTS = [
+  'peertube-4.0',
+  'peertube-4.2',
+  'peertube-5.0',
+  'peertube-6.3',
+  'peertube-7.2',
+  'peertube-8.0',
+  'peertube-8.1',
+  'peertube-8.3'
+]
+
+// Devices not seen again after this delay are forgotten, so a login from that IP/user-agent pair will be treated as new again
+export const USER_LOGIN_DEVICE_MAX_AGE = 60000 * 60 * 24 * 365 // 1 year
 
 // ---------------------------------------------------------------------------
 
@@ -402,7 +453,8 @@ export const CONSTRAINTS_FIELDS = {
     MODERATOR_MESSAGE: { min: 2, max: 3000 } // Length
   },
   VIDEO_BLACKLIST: {
-    REASON: { min: 2, max: 300 } // Length
+    REASON: { min: 2, max: 300 }, // Length
+    INTERNAL_NOTE: { min: 2, max: 300 } // Length
   },
   VIDEO_CHANNELS: {
     NAME: { min: 1, max: 120 }, // Length
@@ -461,7 +513,8 @@ export const CONSTRAINTS_FIELDS = {
     DISLIKES: { min: 0 },
     FILE_SIZE: { min: -1 },
     PARTIAL_UPLOAD_SIZE: { max: 50 * 1024 * 1024 * 1024 }, // 50GB
-    URL: { min: 3, max: 2000 } // Length
+    URL: { min: 3, max: 2000 }, // Length
+    PASSWORD: { min: 2, max: 100 } // Length
   },
   VIDEO_SOURCE: {
     FILENAME: { min: 1, max: 1000 } // Length
@@ -542,9 +595,6 @@ export const CONSTRAINTS_FIELDS = {
     ERROR_MESSAGE: { min: 1, max: 5000 }, // Length
     PROGRESS: { min: 0, max: 100 } // Value
   },
-  VIDEO_PASSWORD: {
-    LENGTH: { min: 2, max: 100 }
-  },
   VIDEO_CHAPTERS: {
     TITLE: { min: 1, max: 100 } // Length
   },
@@ -583,6 +633,9 @@ export const REMOTE_VIEWS = {
 }
 
 export const MAX_LOCAL_VIEWER_WATCH_SECTIONS = 100
+
+// Changing this requires re-indexing existing videos
+export const VIDEO_SEARCH_INDEXED_DESCRIPTION_LENGTH = 1000
 
 export let CONTACT_FORM_LIFETIME = 60000 * 60 // 1 hour
 
@@ -675,11 +728,11 @@ export const VIDEO_IMPORT_STATES: { [id in VideoImportStateType]: string } = {
   [VideoImportState.PROCESSING]: 'Processing'
 }
 
-export const VIDEO_CHANNEL_SYNC_STATE: { [id in VideoChannelSyncStateType]: string } = {
-  [VideoChannelSyncState.FAILED]: 'Failed',
-  [VideoChannelSyncState.SYNCED]: 'Synchronized',
-  [VideoChannelSyncState.PROCESSING]: 'Processing',
-  [VideoChannelSyncState.WAITING_FIRST_RUN]: 'Waiting first run'
+export const STREAM_SYNC_STATE: { [id in StreamSyncStateType]: string } = {
+  [StreamSyncState.FAILED]: 'Failed',
+  [StreamSyncState.SYNCED]: 'Synchronized',
+  [StreamSyncState.PROCESSING]: 'Processing',
+  [StreamSyncState.WAITING_FIRST_RUN]: 'Waiting first run'
 }
 
 export const ABUSE_STATES: { [id in AbuseStateType]: string } = {
@@ -773,7 +826,8 @@ export const VIDEO_CHANNEL_ACTIVITY_TARGETS: { [id in VideoChannelActivityTarget
 export const VIDEO_EMBED_PRIVACY_POLICIES: { [id in VideoEmbedPrivacyPolicyType]: string } = {
   [VideoEmbedPrivacyPolicy.ALL_ALLOWED]: 'All allowed',
   [VideoEmbedPrivacyPolicy.ALLOWLIST]: 'Allowlist',
-  [VideoEmbedPrivacyPolicy.REMOTE_RESTRICTIONS]: 'Remote restrictions'
+  [VideoEmbedPrivacyPolicy.REMOTE_RESTRICTIONS]: 'Remote restrictions',
+  [VideoEmbedPrivacyPolicy.DISABLED]: 'Disabled'
 }
 
 export const CHANGE_OWNERSHIP_STATES: { [id in ChangeOwnershipStateType]: string } = {
@@ -937,9 +991,11 @@ export let PRIVATE_RSA_KEY_SIZE = 2048
 export const BCRYPT_SALT_SIZE = 10
 
 export const ENCRYPTION = {
-  ALGORITHM: 'aes-256-cbc',
-  IV: 16,
-  SALT: 'peertube',
+  ALGORITHM: 'aes-256-gcm',
+  IV: 12, // 96-bit IV, the NIST-recommended size for GCM
+  SALT: 16, // random salt length
+  AUTH_TAG: 16,
+  KEY_LENGTH: 32,
   ENCODING: 'hex' as Encoding
 }
 
@@ -1113,6 +1169,9 @@ export const LRU_CACHE = {
   FILENAME_TO_PATH_PERMANENT_FILE_CACHE: {
     MAX_SIZE: 5000
   },
+  LIVE_SEGMENT_SHA_REMOVED_SEGMENTS: {
+    MAX_SIZE: 1000
+  },
   STATIC_VIDEO_FILES_RIGHTS_CHECK: {
     MAX_SIZE: 5000,
     TTL: parseDurationToMs('10 seconds')
@@ -1155,8 +1214,19 @@ export const DIRECTORIES = {
 export const RESUMABLE_UPLOAD_SESSION_LIFETIME = SCHEDULER_INTERVALS_MS.REMOVE_DANGLING_RESUMABLE_UPLOADS
 
 export const VIDEO_LIVE = {
-  EXTENSION: '.ts',
+  EXTENSION: LIVE_SEGMENT_EXTENSION,
   CLEANUP_DELAY: 1000 * 60 * 5, // 5 minutes
+  // Delay before aborting a session on RTMP disconnection, so we kill ffmpeg even if it still has data to process
+  ABORT_DELAY_ON_RTMP_DISCONNECT: 2000, // 2 seconds
+  // Max time we wait for ffmpeg to exit after we sent it a SIGINT, before killing it
+  FFMPEG_EXIT_TIMEOUT: 10000, // 10 seconds
+  // Time we give a remote runner to flush its last chunks after we aborted the session
+  // If this delay is too short, the last chunks of this session can land in the directory *after* we told everyone we released it
+  REMOTE_RUNNER_FLUSH_DELAY: 5000, // 5 seconds
+  // Max time a new session waits for the previous session of a permanent live to release the live directory
+  PREVIOUS_SESSION_CLEANUP_TIMEOUT: 30000, // 30 seconds
+  // Max time we wait for ffmpeg to fill the live master playlist it just created before giving up on it
+  MASTER_PLAYLIST_READ_TIMEOUT: 5000, // 5 seconds
   SEGMENT_TIME_SECONDS: {
     DEFAULT_LATENCY: 4, // 4 seconds
     SMALL_LATENCY: 2 // 2 seconds
@@ -1181,12 +1251,14 @@ export const MEMOIZE_TTL = {
   LIVE_ABLE_TO_UPLOAD: 1000 * 60, // 1 minute
   LIVE_CHECK_SOCKET_HEALTH: 1000 * 60, // 1 minute
   GET_STATS_FOR_OPEN_TELEMETRY_METRICS: 1000 * 60, // 1 minute
-  EMBED_HTML: 1000 * 10 // 10 seconds
+  EMBED_HTML: 1000 * 10, // 10 seconds
+  VIDEO_SEO: 1000 * 10 // 10 seconds
 }
 
 export const MEMOIZE_LENGTH = {
   INFO_HASH_EXISTS: 200,
-  VIDEO_DURATION: 200
+  VIDEO_DURATION: 200,
+  VIDEO_SEO: 200
 }
 
 export const totalCPUs = Math.max(cpus().length, 1)
@@ -1252,9 +1324,8 @@ export const TRACKER_RATE_LIMITS = {
   BLOCK_IP_LIFETIME: parseDurationToMs('3 minutes')
 }
 
-// We use -2 instead of 2 because of historical reason
-// When p2p-media-loader bumps to v3, we'll be able to switch to 3 directly
-export const P2P_MEDIA_LOADER_PEER_VERSION = -2
+// Bump when the p2p-media-loader peer protocol/infohash derivation changes in an incompatible way
+export const P2P_MEDIA_LOADER_PEER_VERSION = 2
 
 // ---------------------------------------------------------------------------
 
@@ -1303,6 +1374,7 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     SCHEDULER_INTERVALS_MS.REMOVE_OLD_HISTORY = 5000
     SCHEDULER_INTERVALS_MS.UPDATE_VIDEOS = 5000
     SCHEDULER_INTERVALS_MS.AUTO_FOLLOW_INDEX_INSTANCES = 5000
+
     SCHEDULER_INTERVALS_MS.UPDATE_INBOX_STATS = 5000
     SCHEDULER_INTERVALS_MS.CHECK_PEERTUBE_VERSION = 2000
     SCHEDULER_INTERVALS_MS.UPDATE_TOKEN_SESSION = 2000
@@ -1322,6 +1394,7 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     MEMOIZE_TTL.OVERVIEWS_SAMPLE = 3000
     MEMOIZE_TTL.LIVE_ABLE_TO_UPLOAD = 3000
     MEMOIZE_TTL.EMBED_HTML = 1
+    MEMOIZE_TTL.VIDEO_SEO = 1
     OVERVIEWS.VIDEOS.SAMPLE_THRESHOLD = 2
 
     PLUGIN_EXTERNAL_AUTH_TOKEN_LIFETIME = 5000
@@ -1331,7 +1404,10 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     VIEWER_SYNC_REDIS = 1000
   }
 
-  if (isTestInstance()) {
+  if (isDevInstance()) {
+    SCHEDULER_INTERVALS_MS.BLOCKLIST_SUBSCRIPTIONS_SYNC = 60000
+    SCHEDULER_INTERVALS_MS.WATCHED_WORDS_SUBSCRIPTIONS_SYNC = 60000
+  } else if (isTestInstance()) {
     SCHEDULER_INTERVALS_MS.ACTOR_FOLLOW_SCORES = 1000
 
     ACTIVITY_PUB.COLLECTION_ITEMS_PER_PAGE = 2
@@ -1350,6 +1426,9 @@ if (process.env.PRODUCTION_CONSTANTS !== 'true') {
     VIDEO_LIVE.SEGMENT_TIME_SECONDS.DEFAULT_LATENCY = 2
     VIDEO_LIVE.SEGMENT_TIME_SECONDS.SMALL_LATENCY = 1
     VIDEO_LIVE.EDGE_LIVE_DELAY_SEGMENTS_NOTIFICATION = 1
+
+    SCHEDULER_INTERVALS_MS.BLOCKLIST_SUBSCRIPTIONS_SYNC = 5000
+    SCHEDULER_INTERVALS_MS.WATCHED_WORDS_SUBSCRIPTIONS_SYNC = 5000
 
     RUNNER_JOBS.LAST_CONTACT_UPDATE_INTERVAL = 2000
 
@@ -1453,8 +1532,9 @@ export async function buildLanguages () {
   languages['el'] = 'Greek'
   languages['tok'] = 'Toki Pona'
 
-  // Override Portuguese label
-  languages['pt'] = 'Portuguese (Brazilian)'
+  // Override Portuguese labels
+  // Keep generic "pt" (ISO-639-1) as plain Portuguese, and use explicit BCP47 codes for regional variants
+  languages['pt-BR'] = 'Portuguese (Brazilian)'
   languages['pt-PT'] = 'Portuguese (Portugal)'
 
   // Override Spanish labels
@@ -1527,6 +1607,10 @@ function buildVideoMimetypeExt () {
         'video/vnd.dlna.mpeg-tts': '.mts',
 
         'video/m2ts': '.m2ts',
+
+        // Some OS recognize .ts files as text, so we need to add a specific mimetype for them
+        // See https://stackoverflow.com/questions/14230396/ts-files-always-get-recognized-as-text-vnd-trolltech-linguist-and-never-as-vide
+        'text/vnd.trolltech.linguist': '.ts',
 
         // Old formats reliant on MPEG-1/MPEG-2
         'video/mpv': '.mpv',

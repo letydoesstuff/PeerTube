@@ -1,6 +1,6 @@
 import { ActivityPubOrderedCollection, ActivitypubHttpFetcherPayload, VideoObject } from '@peertube/peertube-models'
 import { runInReadCommittedTransaction } from '@server/helpers/database-utils.js'
-import { logger, loggerTagsFactory } from '@server/helpers/logger.js'
+import { createLogger } from '@server/helpers/logger.js'
 import { JobQueue } from '@server/lib/job-queue/index.js'
 import { VideoCommentModel } from '@server/models/video/video-comment.js'
 import { VideoShareModel } from '@server/models/video/video-share.js'
@@ -11,7 +11,7 @@ import { crawlCollectionPage } from '../../crawl.js'
 import { addVideoShares } from '../../share.js'
 import { addVideoComments } from '../../video-comments.js'
 
-const lTags = loggerTagsFactory('ap', 'video')
+const logger = createLogger('ap', 'video')
 
 export type SyncParam = {
   rates: boolean
@@ -20,19 +20,21 @@ export type SyncParam = {
   refreshVideo?: boolean
 }
 
-export async function syncVideoExternalAttributes (
+export function syncVideoExternalAttributes (
   video: MVideo,
   fetchedVideo: VideoObject,
   syncParam: Pick<SyncParam, 'rates' | 'shares' | 'comments'>
 ) {
-  logger.info('Adding likes/dislikes/shares/comments of video %s.', video.uuid)
+  return logger.withContext([ video.uuid, video.url ], async () => {
+    logger.info('Adding likes/dislikes/shares/comments of video %s.', video.uuid)
 
-  const ratePromise = updateVideoRates(video, fetchedVideo)
-  if (syncParam.rates) await ratePromise
+    const ratePromise = updateVideoRates(video, fetchedVideo)
+    if (syncParam.rates) await ratePromise
 
-  await syncShares(video, fetchedVideo, syncParam.shares)
+    await syncShares(video, fetchedVideo, syncParam.shares)
 
-  await syncComments(video, fetchedVideo, syncParam.comments)
+    await syncComments(video, fetchedVideo, syncParam.comments)
+  })
 }
 
 export async function updateVideoRates (video: MVideo, fetchedVideo: VideoObject) {
@@ -82,7 +84,7 @@ function syncShares (video: MVideo, fetchedVideo: VideoObject, isSync: boolean) 
   const cleaner = crawlStartDate => VideoShareModel.cleanOldSharesOf(video.id, crawlStartDate)
 
   return crawlCollectionPage<string>(uri, handler, cleaner)
-    .catch(err => logger.error('Cannot add shares of video %s.', video.uuid, { err, rootUrl: uri, ...lTags(video.uuid, video.url) }))
+    .catch(err => logger.error('Cannot add shares of video %s.', video.uuid, { err, rootUrl: uri }))
 }
 
 function syncComments (video: MVideo, fetchedVideo: VideoObject, isSync: boolean) {
@@ -97,7 +99,7 @@ function syncComments (video: MVideo, fetchedVideo: VideoObject, isSync: boolean
   const cleaner = crawlStartDate => VideoCommentModel.cleanOldCommentsOf(video.id, crawlStartDate)
 
   return crawlCollectionPage<string>(uri, handler, cleaner)
-    .catch(err => logger.error('Cannot add comments of video %s.', video.uuid, { err, rootUrl: uri, ...lTags(video.uuid, video.url) }))
+    .catch(err => logger.error('Cannot add comments of video %s.', video.uuid, { err, rootUrl: uri }))
 }
 
 function createJob (payload: ActivitypubHttpFetcherPayload) {
